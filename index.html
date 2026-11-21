@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Video Map</title>
+  <meta name="description" content="Video and a live map of where you are, on one screen.">
+  <meta name="theme-color" content="#0b0d10">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Video Map">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <main id="stage" class="stage" data-layout="both">
+
+    <section id="videoPane" class="pane pane-video" aria-label="Video">
+      <video id="player" class="player" controls playsinline webkit-playsinline preload="metadata" hidden></video>
+      <div id="embed" class="embed" hidden></div>
+
+      <div id="videoEmpty" class="empty">
+        <p class="empty-title">No video yet</p>
+        <div class="empty-actions">
+          <input id="filePickerMain" class="visually-hidden" type="file" accept="video/*" tabindex="-1" aria-hidden="true" data-file-input>
+          <label class="btn btn-primary" for="filePickerMain" role="button" tabindex="0" data-pick-file>
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>
+            From this phone
+          </label>
+          <button class="btn" type="button" data-open="source">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>
+            From a link
+          </button>
+        </div>
+      </div>
+
+      <div id="videoError" class="notice" role="alert" hidden>
+        <p id="videoErrorText" class="notice-text"></p>
+        <button class="btn" type="button" data-open="source">Choose another video</button>
+      </div>
+    </section>
+
+    <div id="bar" class="bar" role="toolbar" aria-label="Screen layout">
+      <div class="seg" role="group" aria-label="What to show">
+        <button class="seg-btn" type="button" data-layout="video" aria-pressed="false" aria-label="Video only" title="Video only">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path class="solid" d="M10 9.2v5.6l4.8-2.8z"/></svg>
+        </button>
+        <button class="seg-btn" type="button" data-layout="both" aria-pressed="true" aria-label="Video and map" title="Video and map">
+          <svg class="icon icon-split" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M12 5v14"/></svg>
+        </button>
+        <button class="seg-btn" type="button" data-layout="map" aria-pressed="false" aria-label="Map only" title="Map only">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-10.4a6.5 6.5 0 0 1 13 0C18.5 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.3"/></svg>
+        </button>
+      </div>
+
+      <div id="grip" class="grip" role="separator" tabindex="0" aria-label="Drag to resize video and map" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50">
+        <span class="grip-handle" aria-hidden="true"></span>
+      </div>
+
+      <button class="bar-btn" type="button" data-open="source" aria-label="Choose a video" title="Choose a video">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>
+      </button>
+      <button class="bar-btn" type="button" data-open="menu" aria-label="Settings" title="Settings">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle class="solid" cx="5" cy="12" r="1.7"/><circle class="solid" cx="12" cy="12" r="1.7"/><circle class="solid" cx="19" cy="12" r="1.7"/></svg>
+      </button>
+    </div>
+
+    <section id="mapPane" class="pane pane-map" aria-label="Map">
+      <div id="map" class="map"></div>
+
+      <div class="map-tools">
+        <button class="map-btn" type="button" data-open="search" aria-label="Find a place" title="Find a place">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.6-4.6"/></svg>
+        </button>
+        <button class="map-btn" type="button" data-open="map" aria-label="Map type and places" title="Map type and places">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4 8.5 4.5L12 13 3.5 8.5z"/><path d="m4.5 12.5 7.5 4 7.5-4"/><path d="m4.5 16 7.5 4 7.5-4"/></svg>
+        </button>
+        <div id="weather" class="weather" hidden></div>
+      </div>
+
+      <div id="road" class="road" hidden>
+        <span id="roadRef" class="road-ref" hidden></span>
+        <span id="roadName" class="road-name" dir="auto"></span>
+      </div>
+
+      <div id="mapStatus" class="map-status" role="status" hidden></div>
+
+      <div id="locPrompt" class="map-card" hidden>
+        <p id="locPromptText" class="map-card-text">See where you are on the map.</p>
+        <button id="locButton" class="btn btn-primary" type="button">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 3.6 3.9 10.3c-.6.2-.5 1 .1 1.1l6.3 1.6 1.6 6.3c.2.6 1 .7 1.2.1z"/></svg>
+          <span id="locButtonLabel">Show my location</span>
+        </button>
+      </div>
+
+      <div class="map-gauges">
+        <div id="limit" class="limit" role="img" hidden></div>
+        <button id="speed" class="speed" type="button" aria-label="Speed. Tap to change unit." hidden>
+          <span id="speedValue" class="speed-value">–</span>
+          <span id="speedUnit" class="speed-unit">km/h</span>
+        </button>
+      </div>
+
+      <button id="followBtn" class="fab" type="button" data-mode="off" aria-pressed="false" aria-label="Keep the map on me" title="Keep the map on me" hidden>
+        <svg class="icon icon-north" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 3.6 3.9 10.3c-.6.2-.5 1 .1 1.1l6.3 1.6 1.6 6.3c.2.6 1 .7 1.2.1z"/></svg>
+        <svg class="icon icon-heading" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 18.5 20 12 16.6 5.5 20z"/></svg>
+      </button>
+
+      <aside id="place" class="place" aria-label="Place details" hidden>
+        <div class="place-head">
+          <div class="place-names">
+            <h2 id="placeTitle" class="place-title" dir="auto"></h2>
+            <p id="placeAlt" class="place-alt" dir="auto" hidden></p>
+            <p id="placeKind" class="place-kind"></p>
+          </div>
+          <button id="placeClose" class="icon-btn" type="button" aria-label="Close place details">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
+        <dl id="placeRows" class="place-rows" hidden></dl>
+        <p id="placeNote" class="place-note" role="status" hidden></p>
+        <div id="placeActions" class="place-actions">
+          <button id="placeRoute" class="btn" type="button">Show route</button>
+          <a id="placeMaps" class="btn btn-primary" target="_blank" rel="noopener">Open in Maps</a>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <dialog id="sheet-source" class="sheet" aria-labelledby="sourceTitle">
+    <div class="sheet-body">
+      <header class="sheet-head">
+        <h2 id="sourceTitle">Choose a video</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+
+      <input id="filePickerSheet" class="visually-hidden" type="file" accept="video/*" tabindex="-1" aria-hidden="true" data-file-input>
+      <label class="btn btn-primary btn-wide" for="filePickerSheet" role="button" tabindex="0" data-pick-file>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>
+        From this phone
+      </label>
+
+      <form id="linkForm" class="link-form" novalidate>
+        <label class="field-label" for="linkInput">Or paste a link</label>
+        <div class="link-row">
+          <input id="linkInput" class="field" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="YouTube or video link" enterkeyhint="go">
+          <button id="pasteBtn" class="btn" type="button" hidden>Paste</button>
+          <button class="btn btn-primary" type="submit">Play</button>
+        </div>
+        <p id="linkError" class="field-error" role="alert" hidden></p>
+      </form>
+
+      <section id="recents" class="recents" aria-labelledby="recentsTitle" hidden>
+        <h3 id="recentsTitle">Recent links</h3>
+        <ul id="recentList" class="recent-list"></ul>
+      </section>
+
+      <button id="stopVideo" class="btn btn-wide" type="button" hidden>Close this video</button>
+    </div>
+  </dialog>
+
+  <dialog id="sheet-search" class="sheet" aria-labelledby="searchTitle">
+    <div class="sheet-body">
+      <header class="sheet-head">
+        <h2 id="searchTitle">Find a place</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+
+      <form id="searchForm" class="link-row" role="search" novalidate>
+        <input id="searchInput" class="field" type="search" inputmode="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Name or address" enterkeyhint="search" aria-label="Name or address">
+        <button class="btn btn-primary" type="submit">Search</button>
+      </form>
+      <p id="searchNote" class="sheet-note" role="status" hidden></p>
+      <ul id="searchResults" class="result-list"></ul>
+    </div>
+  </dialog>
+
+  <dialog id="sheet-map" class="sheet" aria-labelledby="mapTitle">
+    <div class="sheet-body">
+      <header class="sheet-head">
+        <h2 id="mapTitle">Map</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+
+      <div class="tiles" role="radiogroup" aria-label="Map type">
+        <label><input type="radio" name="mapType" value="auto"><span><b>Auto</b><small>Day and night</small></span></label>
+        <label><input type="radio" name="mapType" value="city"><span><b>3D City</b><small>White model</small></span></label>
+        <label><input type="radio" name="mapType" value="streets"><span><b>Streets</b><small>Colors and icons</small></span></label>
+        <label><input type="radio" name="mapType" value="night"><span><b>Night</b><small>Dark colors</small></span></label>
+        <label><input type="radio" name="mapType" value="satellite"><span><b>Satellite</b><small>Real photos</small></span></label>
+        <label><input type="radio" name="mapType" value="detailed"><span><b>Detailed</b><small>Every feature</small></span></label>
+      </div>
+
+      <section aria-labelledby="placesTitle">
+        <h3 id="placesTitle" class="sheet-sub">Show on the map</h3>
+        <div id="placeToggles" class="chips"></div>
+        <p class="sheet-note">Zoom in to see them all. Tap any place for its details.</p>
+      </section>
+
+      <div class="setting">
+        <label class="setting-text" for="optRoad">
+          <span class="setting-name">Road name and speed limit</span>
+          <span class="setting-note">Shows the road you are on, and its limit where one is recorded.</span>
+        </label>
+        <input id="optRoad" class="switch" type="checkbox" role="switch">
+      </div>
+
+      <div class="setting">
+        <label class="setting-text" for="optWeather">
+          <span class="setting-name">Weather</span>
+          <span class="setting-note">Temperature and conditions where you are.</span>
+        </label>
+        <input id="optWeather" class="switch" type="checkbox" role="switch">
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="sheet-menu" class="sheet" aria-labelledby="menuTitle">
+    <div class="sheet-body">
+      <header class="sheet-head">
+        <h2 id="menuTitle">Settings</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+
+      <div class="setting">
+        <label class="setting-text" for="optAwake">
+          <span class="setting-name">Keep the screen on</span>
+          <span id="awakeNote" class="setting-note">Stops the phone from locking while the app is open.</span>
+        </label>
+        <input id="optAwake" class="switch" type="checkbox" role="switch">
+      </div>
+
+      <div class="setting">
+        <label class="setting-text" for="optSwap">
+          <span class="setting-name">Map first</span>
+          <span class="setting-note">Puts the map on the left (or on top) and the video after it.</span>
+        </label>
+        <input id="optSwap" class="switch" type="checkbox" role="switch">
+      </div>
+
+      <div class="setting setting-choice" role="radiogroup" aria-labelledby="unitName">
+        <span id="unitName" class="setting-name">Units</span>
+        <div class="choice">
+          <label><input type="radio" name="unit" value="kmh"><span>km/h</span></label>
+          <label><input type="radio" name="unit" value="mph"><span>mph</span></label>
+        </div>
+      </div>
+
+      <section id="installHint" class="hint" hidden>
+        <h3>Put it on your Home Screen</h3>
+        <p>In Safari, tap the Share button, then <strong>Add to Home Screen</strong>. It then opens full screen like an app.</p>
+      </section>
+
+      <footer class="about">
+        <p>Watch video only when parked, or let a passenger watch.</p>
+        <p>
+          Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors,
+          served by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>
+          (© <a href="https://www.openmaptiles.org" target="_blank" rel="noopener">OpenMapTiles</a>).
+          Satellite photos © Esri, Maxar, Earthstar Geographics.
+          Search by <a href="https://photon.komoot.io" target="_blank" rel="noopener">Photon</a>,
+          place details by <a href="https://overpass-api.de" target="_blank" rel="noopener">Overpass</a>,
+          routes by <a href="https://project-osrm.org" target="_blank" rel="noopener">OSRM</a>,
+          weather by <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>.
+          Map drawn with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre</a>.
+        </p>
+        <p class="version">Video Map <span id="version"></span></p>
+      </footer>
+    </div>
+  </dialog>
+
+  <script src="vendor/maplibre/maplibre-gl.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
