@@ -22,7 +22,7 @@ import {
 import { MAP_TYPES, MapView } from './map.js';
 import { drivingRoute, placeAt, placeDetails, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const STORE_PREFIX = 'video-map:';
 
 const $ = (id) => document.getElementById(id);
@@ -56,7 +56,7 @@ const DEFAULT_SETTINGS = {
   places: ['fuel', 'parking'], // place categories shown on the map
   roadInfo: true, // road name and speed limit
   weather: true,
-  follow: 'north', // how the map follows you: 'north' | 'heading'
+  follow: 'north', // how the map follows you: 'north' (the map does not turn) | 'heading'
   splitPortrait: null,
   splitLandscape: null,
 };
@@ -490,6 +490,17 @@ async function applyMapType() {
   if (!mapView) return;
   const shown = await mapView.setType(activeMapType());
   if (shown) setStatus(lastFix || !locationWanted ? null : 'Finding your location…');
+  labelFollow();
+}
+
+/** Say what the follow button does now. The view that does not turn is isometric in the 3D city, north up elsewhere. */
+function labelFollow() {
+  const still = activeMapType() === 'city' ? 'the isometric view' : 'north up';
+  let label = 'Keep the map on me';
+  if (followMode === 'heading') label = `Following you, the way you travel is up. Tap for ${still}.`;
+  else if (followMode === 'north') label = `Following you, ${still}. Tap to turn the map the way you travel.`;
+  followBtn.setAttribute('aria-label', label);
+  followBtn.title = label;
 }
 
 function setFollow(mode) {
@@ -500,14 +511,7 @@ function setFollow(mode) {
   }
   followBtn.dataset.mode = mode === 'off' ? settings.follow : mode;
   followBtn.setAttribute('aria-pressed', String(mode !== 'off'));
-  const label =
-    mode === 'heading'
-      ? 'Following you, the way you travel is up. Tap for north up.'
-      : mode === 'north'
-        ? 'Following you, north is up. Tap to turn the map the way you travel.'
-        : 'Keep the map on me';
-  followBtn.setAttribute('aria-label', label);
-  followBtn.title = label;
+  labelFollow();
   if (mapView) mapView.setFollowMode(mode);
 }
 

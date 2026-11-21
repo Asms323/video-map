@@ -14,15 +14,22 @@ the phone: no App Store, no Apple developer account, no Mac.
 
 - A real map of the whole world, with street and place names in the local
   script and in Latin letters.
-- **3D City**, the look it opens with: the city as a white scale model seen
-  from above at an angle. Every building is a white block of its recorded
-  height, standing on the real ground, with grey roads at their real widths.
+- **3D City**, the look it opens with: the city as an **isometric** scale
+  model. It is seen corner-on from the classic isometric angle, through a lens
+  so long that parallel streets stay parallel. Every building is a block of
+  its recorded height, in its recorded colour where mappers noted one and
+  white otherwise, standing on the real ground, with grey roads at their real
+  widths.
+- **Real sunlight.** The model is lit from where the sun actually is at that
+  place and time, and every building casts the shadow it casts right now:
+  long in the morning and evening, short at noon, none after sunset.
 - Four more looks: **Streets** (colours and icons), **Night**, **Satellite**
   (real photos with the names on top) and **Detailed** (the classic
   OpenStreetMap picture). **Auto** shows 3D City by day and Night when the
   phone is in dark mode.
 - Your position, direction of travel and speed. The round button switches
-  between north-up and a **driving view** where the road ahead points up.
+  between a view that does not turn (isometric in the 3D city, north-up in
+  the other looks) and a **driving view** where the road ahead points up.
 - The **name of the road** you are on, and its **speed limit** where
   OpenStreetMap has one. The speed turns red when you are over it.
 - **Places** you choose to mark: fuel, charging, parking, food and coffee,
@@ -69,6 +76,11 @@ particular are missing on many roads. Building heights are recorded for
 landmark towers but for few ordinary buildings; those without one are drawn as
 low blocks, and a tower's special shape is not known, only its outline and
 height.
+
+The sunlight is worked out on the phone from the date, the time and the place;
+nothing is downloaded for it. Shadows are those of flat-roofed blocks on level
+ground: they fall on streets and open ground, not across the walls and roofs
+of other buildings, and clouds are not taken into account.
 
 ## Put it online (free, from a phone)
 
@@ -132,7 +144,8 @@ js/app.js               the app: layout, video, location, search, place details
 js/map.js               the map: styles, markers, following, taps
 js/services.js          the open data services
 js/lib.js               everything that needs no browser: parsing, distances,
-                        road matching, place categories, map styles
+                        road matching, place categories, map styles, the
+                        sun's position and the shadows it casts
 sw.js                   offline start
 manifest.webmanifest    Home Screen name and icons
 icons/                  made by tools/make_icons.py

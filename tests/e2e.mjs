@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
 
+import { bearingDegrees, sunPosition } from '../js/lib.js';
 import { listen } from './serve.mjs';
 
 const require = createRequire(import.meta.url);
@@ -338,8 +339,10 @@ const camera = (page) =>
   page.evaluate(() => {
     const live = window.__map;
     const centre = live.getCenter();
-    return { lat: centre.lat, lng: centre.lng, zoom: live.getZoom(), bearing: live.getBearing(), pitch: live.getPitch() };
+    return { lat: centre.lat, lng: centre.lng, zoom: live.getZoom(), bearing: live.getBearing(), pitch: live.getPitch(), lens: live.getVerticalFieldOfView() };
   });
+// The 3D city is seen isometric: from the south-west, at the angle where a cube's edges all measure the same, through a long lens.
+const isometric = (view) => near(view.pitch, 54.7, 0.3) && near(view.bearing, 45, 0.5) && near(view.lens, 6, 0.01);
 
 const phone = (page) =>
   page.evaluate(() => {
@@ -355,7 +358,7 @@ const whereAmI = (page) =>
     const pane = window.__map.getContainer();
     return { x: point.x / pane.clientWidth, y: point.y / pane.clientHeight };
   });
-// Followed flat, I am in the middle; followed at an angle, a little below it.
+// Followed without turning, I am in the middle; turned the way I travel, a little below it.
 const inTheMiddle = (spot) => near(spot.x, 0.5, 0.02) && near(spot.y, 0.5, 0.02);
 const belowTheMiddle = (spot) => near(spot.x, 0.5, 0.02) && near(spot.y, 0.7, 0.03);
 
@@ -405,7 +408,25 @@ const browser = await chromium.launch({
   proxy: RECORD && proxy ? { server: proxy, bypass: 'localhost,127.0.0.1' } : undefined,
 });
 
-async function newPhone({ width = 390, height = 844, dark = false, location = true, recordMap = false, noMap = false, workers = 'block' } = {}) {
+// The city is lit by the real sun, so the checks pick the time of day: mid-morning in Riyadh at
+// the March equinox by default. The clock keeps running from there.
+const MORNING = '2026-03-20T07:00:00Z';
+const MIDNIGHT = '2026-03-20T21:00:00Z';
+function clockFrom(iso) {
+  const RealDate = Date;
+  const shift = new RealDate(iso).getTime() - RealDate.now();
+  window.Date = class extends RealDate {
+    constructor(...args) {
+      if (args.length === 0) super(RealDate.now() + shift);
+      else super(...args);
+    }
+    static now() {
+      return RealDate.now() + shift;
+    }
+  };
+}
+
+async function newPhone({ width = 390, height = 844, dark = false, location = true, recordMap = false, noMap = false, workers = 'block', time = MORNING } = {}) {
   const context = await browser.newContext({
     viewport: { width, height },
     deviceScaleFactor: 2,
@@ -416,6 +437,7 @@ async function newPhone({ width = 390, height = 844, dark = false, location = tr
     serviceWorkers: workers,
   });
   await standIns(context, { recordMap, noMap });
+  await context.addInitScript(clockFrom, time);
   await context.addInitScript(keepMapHandle);
   if (location) await context.addInitScript(gpsOnRoute, ROUTE_LINE);
   const page = await context.newPage();
@@ -439,7 +461,7 @@ try {
   await page.goto(`${base}/`);
   await page.waitForSelector('.me');
   await styleHas(page, 'city-buildings');
-  await page.waitForFunction(() => window.__map.getPitch() > 59.5);
+  await page.waitForFunction(() => window.__map.getPitch() > 54);
   await mapAtRest(page);
 
   let video = await box(page, '#videoPane');
@@ -458,13 +480,34 @@ try {
   );
 
   check('shows where I am', await page.locator('.me .me-dot').isVisible());
-  check('follows me, north up', (await page.getAttribute('#followBtn', 'aria-pressed')) === 'true' && (await page.getAttribute('#followBtn', 'data-mode')) === 'north');
+  check('follows me without turning the map', (await page.getAttribute('#followBtn', 'aria-pressed')) === 'true' && (await page.getAttribute('#followBtn', 'data-mode')) === 'north');
+  check('the button says the view is isometric', /isometric view/.test(await page.getAttribute('#followBtn', 'aria-label')), await page.getAttribute('#followBtn', 'aria-label'));
   check('speed readout shows the speed', (await text(page, '#speedValue')) === '50' && (await text(page, '#speedUnit')) === 'km/h');
   check('arrow shows the way I am travelling', await page.locator('.me').evaluate((el) => el.classList.contains('has-heading')));
   let view = await camera(page);
   let me = await phone(page);
   let spot = await whereAmI(page);
-  check('the city is seen from an angle, north up, with me a little below the middle', near(view.pitch, 60, 0.5) && near(view.bearing, 0, 0.5) && view.zoom >= 16 && belowTheMiddle(spot), JSON.stringify({ view, spot }));
+  check('the city is drawn isometric, with me in the middle', isometric(view) && view.zoom >= 16 && inTheMiddle(spot), JSON.stringify({ view, spot }));
+
+  // Lit by the real sun, with the shadows that go with it.
+  const sun = sunPosition(new Date(MORNING), me.lat, me.lng);
+  let light = await page.evaluate(() => window.__map.getLight());
+  check(
+    'the city is lit from where the sun is',
+    light.anchor === 'map' && turn(light.position[1], sun.azimuth) < 1 && near(light.position[2], 90 - sun.altitude, 1),
+    `light ${JSON.stringify(light.position)}, sun ${sun.azimuth.toFixed(1)}° round, ${sun.altitude.toFixed(1)}° up`,
+  );
+  await page.waitForFunction(() => window.__map.querySourceFeatures('city-shade').length > 0, null, { timeout: 15000 });
+  await mapAtRest(page);
+  const shade = await page.evaluate(() => {
+    const pieces = window.__map.getSource('city-shade').serialize().data.features.flatMap((feature) => feature.geometry.coordinates);
+    // Each piece is the strip a wall sweeps: wall end, wall end, and the same two slid along the ground.
+    const [a, , , slid] = pieces[0][0];
+    return { pieces: pieces.length, from: a, to: slid, onScreen: window.__map.queryRenderedFeatures({ layers: ['city-shadows'] }).length };
+  });
+  const fall = bearingDegrees({ lng: shade.from[0], lat: shade.from[1] }, { lng: shade.to[0], lat: shade.to[1] });
+  check('buildings cast shadows on the ground', shade.pieces > 20 && shade.onScreen > 0, JSON.stringify({ pieces: shade.pieces, onScreen: shade.onScreen }));
+  check('shadows fall away from the sun', turn(fall, sun.azimuth + 180) < 1.5, `shadows point ${fall.toFixed(1)}°, sun is at ${sun.azimuth.toFixed(1)}°`);
 
   await page.waitForFunction(() => document.getElementById('roadName').textContent.trim() !== '');
   check('names the road I am on, from the map data', (await text(page, '#roadName')) === 'Al Olaya Street', await text(page, '#roadName'));
@@ -480,7 +523,12 @@ try {
       ground: live.getLayer('city-ground').type,
     };
   });
-  check('3D City: every building is a white block of its real height', model.kind === 'fill-extrusion' && model.color === '#f4f4f1' && model.height.includes('render_height') && model.blocks > 0, JSON.stringify(model));
+  const colouring = JSON.stringify(model.color);
+  check(
+    '3D City: every building is a block of its real height, in its recorded colour or the white of the model',
+    model.kind === 'fill-extrusion' && colouring.includes('"colour"') && colouring.includes('#f2f2f0') && model.height.includes('render_height') && model.blocks > 0,
+    JSON.stringify(model),
+  );
   check('3D City: grey roads on the real ground', model.roads > 20 && model.ground === 'raster');
 
   await page.waitForSelector('#weather:not([hidden])');
@@ -510,23 +558,23 @@ try {
   await drive(page, 120);
   me = await phone(page);
   spot = await whereAmI(page);
-  check('map moves with me', belowTheMiddle(spot), JSON.stringify(spot));
+  check('map moves with me', inTheMiddle(spot), JSON.stringify(spot));
   await shot(page, 'map-city.png');
 
   // Driving view: the way I travel is up.
   await page.click('#followBtn');
-  await page.waitForFunction(() => window.__map.getPitch() > 61.5);
+  await page.waitForFunction((heading) => Math.abs(((window.__map.getBearing() - heading + 540) % 360) - 180) < 2, me.heading);
   await mapAtRest(page);
   view = await camera(page);
-  check('driving view turns the map my way', (await page.getAttribute('#followBtn', 'data-mode')) === 'heading' && near(view.pitch, 62, 0.5) && turn(view.bearing, me.heading) < 2, `map ${view.bearing.toFixed(1)}°, me ${me.heading.toFixed(1)}°`);
+  check('driving view turns the map my way', (await page.getAttribute('#followBtn', 'data-mode')) === 'heading' && near(view.pitch, 54.7, 0.3) && turn(view.bearing, me.heading) < 2, `map ${view.bearing.toFixed(1)}°, me ${me.heading.toFixed(1)}°`);
   spot = await whereAmI(page);
   check('driving view shows the road ahead', belowTheMiddle(spot), JSON.stringify(spot));
   await shot(page, 'map-driving.png');
   await page.click('#followBtn');
-  await page.waitForFunction(() => Math.abs(window.__map.getBearing()) < 0.5 && window.__map.getPitch() < 60.5);
+  await page.waitForFunction(() => Math.abs(window.__map.getBearing() - 45) < 0.5);
   await mapAtRest(page);
   view = await camera(page);
-  check('tapping again goes back to north up', (await page.getAttribute('#followBtn', 'data-mode')) === 'north' && near(view.bearing, 0, 0.5) && near(view.pitch, 60, 0.5));
+  check('tapping again goes back to the isometric view', (await page.getAttribute('#followBtn', 'data-mode')) === 'north' && isometric(view), JSON.stringify(view));
   check('the choice is remembered', (await saved(page, 'settings')).follow === 'north');
 
   // Dragging the map stops following; the button brings it back.
@@ -539,12 +587,12 @@ try {
   await page.waitForFunction(() => document.getElementById('followBtn').getAttribute('aria-pressed') === 'false');
   await mapAtRest(page);
   spot = await whereAmI(page);
-  check('dragging the map stops following', spot.x > 0.65 && spot.y > 0.75, JSON.stringify(spot));
+  check('dragging the map stops following', spot.x > 0.65 && spot.y > 0.55, JSON.stringify(spot));
   await page.click('#followBtn');
   await page.waitForFunction(() => document.getElementById('followBtn').getAttribute('aria-pressed') === 'true');
   await mapAtRest(page);
   spot = await whereAmI(page);
-  check('the button brings the map back to me', belowTheMiddle(spot), JSON.stringify(spot));
+  check('the button brings the map back to me', inTheMiddle(spot), JSON.stringify(spot));
 
   // ── Places on the map ───────────────────────────────────────────────────
   console.log('\nPlaces');
@@ -645,7 +693,7 @@ try {
   await mapAtRest(page);
   view = await camera(page);
   await drawnBecomes(page, 'vm-pin', true);
-  check('the map goes to the place', metersApart(view, { lat: 24.7113804, lng: 46.6743526 }) < 5 && near(view.pitch, 60, 0.5));
+  check('the map goes to the place', metersApart(view, { lat: 24.7113804, lng: 46.6743526 }) < 5 && isometric(view), JSON.stringify(view));
   check('says how far it is and where', /^Shopping mall · \d+0 m away · King Fahd Road/.test(await text(page, '#placeKind')), await text(page, '#placeKind'));
   await page.click('#placeClose');
 
@@ -701,7 +749,10 @@ try {
   await page.waitForFunction(() => window.__map.getPitch() < 1);
   await mapAtRest(page);
   spot = await whereAmI(page);
-  check('Streets: the coloured street map, seen from straight above', (await overlaysKept()) && inTheMiddle(spot), JSON.stringify(spot));
+  view = await camera(page);
+  check('Streets: the coloured street map, seen from straight above', (await overlaysKept()) && inTheMiddle(spot) && near(view.bearing, 0, 0.5), JSON.stringify(spot));
+  check('Streets: back to the ordinary lens, with no sun or shadows of its own', near(view.lens, 36.87, 0.01) && !(await layerIds(page)).includes('city-shadows'), `lens ${view.lens}`);
+  check('Streets: the button says north is up', /north up/.test(await page.getAttribute('#followBtn', 'aria-label')), await page.getAttribute('#followBtn', 'aria-label'));
   await shot(page, 'map-streets.png');
 
   await pickType('night');
@@ -726,9 +777,13 @@ try {
 
   await pickType('city');
   await hasLayer('city-buildings');
-  await page.waitForFunction(() => window.__map.getPitch() > 59.5);
+  await page.waitForFunction(() => window.__map.getPitch() > 54);
   await mapAtRest(page);
-  check('3D City can be chosen by name, and tilts the map again', (await overlaysKept()) && (await saved(page, 'settings')).mapType === 'city');
+  view = await camera(page);
+  check('3D City can be chosen by name, and is isometric again', (await overlaysKept()) && (await saved(page, 'settings')).mapType === 'city' && isometric(view), JSON.stringify(view));
+  await page.waitForFunction(() => window.__map.querySourceFeatures('city-shade').length > 0, null, { timeout: 15000 });
+  light = await page.evaluate(() => window.__map.getLight());
+  check('3D City: the sun and the shadows come back with it', light.anchor === 'map');
 
   await pickType('auto');
   await hasLayer('city-buildings');
@@ -948,7 +1003,7 @@ try {
   await side.page.mouse.up();
   check('dragging the bar sideways resizes the panes', near((await box(side.page, '#videoPane')).width, video.width - 120, 2));
   await side.page.click('#followBtn');
-  await side.page.waitForFunction(() => document.getElementById('followBtn').dataset.mode === 'heading' && window.__map.getPitch() > 61.5);
+  await side.page.waitForFunction(() => document.getElementById('followBtn').dataset.mode === 'heading' && Math.abs(window.__map.getBearing() - 45) > 5);
   await side.page.setInputFiles('#filePickerMain', CLIP);
   await side.page.evaluate(() => {
     document.getElementById('player').loop = true;
@@ -970,7 +1025,23 @@ try {
   check('no errors in the page', side.errors.length === 0, side.errors.join(' | '));
   await side.context.close();
 
-  // ── 3. A small phone, in the dark ───────────────────────────────────────
+  // ── 3. The 3D city at night, and a small phone in the dark ──────────────
+  console.log('\n3D city after dark');
+  const late = await newPhone({ time: MIDNIGHT });
+  await late.page.goto(`${base}/`);
+  await late.page.waitForSelector('.me');
+  await styleHas(late.page, 'city-buildings');
+  await late.page.waitForFunction(() => window.__map.getPitch() > 54);
+  await mapAtRest(late.page);
+  await late.page.waitForTimeout(1500); // longer than the pause before shadows are laid
+  const dark = await late.page.evaluate(() => ({
+    light: window.__map.getLight(),
+    shadows: window.__map.getSource('city-shade').serialize().data.features.length,
+  }));
+  check('with the sun down the city has an even light and no shadows', dark.light.anchor === 'viewport' && dark.shadows === 0, JSON.stringify(dark));
+  check('no errors in the page', late.errors.length === 0, late.errors.join(' | '));
+  await late.context.close();
+
   console.log('\nSmall phone, dark mode');
   const small = await newPhone({ width: 320, height: 568, dark: true });
   await small.page.goto(`${base}/`);
@@ -1033,7 +1104,8 @@ try {
   await offline.page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   await offline.context.setOffline(true);
   await offline.page.reload();
-  await offline.page.waitForFunction(() => document.getElementById('version')?.textContent === '1.2.0');
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  await offline.page.waitForFunction((wanted) => document.getElementById('version')?.textContent === wanted, version);
   check('opens with no connection', (await offline.page.title()) === 'Video Map');
   check('the map library is available offline', await offline.page.evaluate(() => typeof window.maplibregl === 'object' && document.querySelector('.maplibregl-canvas') !== null));
   await offline.page.waitForFunction(() => !document.getElementById('mapStatus').hidden);

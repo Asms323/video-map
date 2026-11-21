@@ -641,7 +641,9 @@ test('cityModelStyle draws the city as a white model on its real ground', () => 
   assert.ok(at('city-ground') < at('city-road-minor'));
   assert.ok(at('city-road-minor-edge') < at('city-road-minor'), 'kerbs lie under the road surface');
   assert.ok(at('city-road-minor') < at('city-road-big'), 'main roads are drawn over side streets');
-  assert.ok(at('city-road-big') < at('city-shadows') && at('city-shadows') < at('city-buildings'));
+  // On the ground: the soft rim at the foot of each building, then the cast shadows.
+  assert.ok(at('city-road-big') < at('city-contact') && at('city-contact') < at('city-shadows'));
+  assert.ok(at('city-shadows') < at('city-buildings'), 'buildings stand on their shadows');
   assert.deepEqual(ids.slice(-2), ['poi_r1', 'road-name'], 'the map names stay on top');
 
   const buildings = style.layers[at('city-buildings')];
@@ -655,11 +657,164 @@ test('cityModelStyle draws the city as a white model on its real ground', () => 
   assert.ok(Math.abs(width[width.indexOf(16) + 1] - 7 / 1.1) < 1e-9);
   assert.ok(Math.abs(width[width.indexOf(20) + 1] - (7 / 1.1) * 16) < 1e-9);
 
-  assert.equal(style.light.anchor, 'viewport');
-  assert.equal(buildings.paint['fill-extrusion-vertical-gradient'], false);
+  // Shadows are a flat 3D layer of their own, filled in by the app as the sun moves.
+  const shadows = style.layers[at('city-shadows')];
+  assert.equal(shadows.type, 'fill-extrusion');
+  assert.equal(shadows.source, 'city-shade');
+  assert.ok(shadows.paint['fill-extrusion-opacity'] < 1, 'one even shade where shadows cross');
+  assert.deepEqual(style.sources['city-shade'], { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+
+  // A building keeps the colour mappers gave it; the rest are the white of the model.
+  const colour = buildings.paint['fill-extrusion-color'];
+  assert.deepEqual(colour.slice(0, 3), ['case', ['has', 'colour'], ['to-color', ['get', 'colour'], '#f2f2f0']]);
+  assert.equal(buildings.paint['fill-extrusion-vertical-gradient'], true);
   assert.match(style.sources.imagery.attribution, /Esri/);
   assert.equal(style.sources[VECTOR_SOURCE], BASE_STYLE.sources[VECTOR_SOURCE]);
   // The app's own layers go on top of it like on any other style.
   assert.deepEqual(placeLayerIds(withOverlays(style, { categories: ['fuel'] })), ['poi_r1', 'vm-places']);
   assert.equal(BASE_STYLE.layers.length, 4);
+});
+
+// ── Sun and shadows ──────────────────────────────────────────────────────
+
+import { buildingShadows, footprintsIn, shadowReach, sunLight, sunPosition } from '../js/lib.js';
+
+
+test('sunPosition finds the sun in the sky', () => {
+  const at = (iso, place) => sunPosition(new Date(iso), place.lat, place.lng);
+  const close = (got, want, by, label) => assert.ok(Math.abs(got - want) <= by, `${label}: got ${got}, want ${want}`);
+
+  // Midday at midsummer and midwinter: due south, 90° minus the gap between latitude and the sun's.
+  const summer = at('2026-06-21T08:55:00Z', RIYADH);
+  close(summer.altitude, 90 - (24.7136 - 23.44), 0.3, 'midsummer noon height');
+  const winter = at('2026-12-21T08:51:30Z', RIYADH);
+  close(winter.altitude, 90 - (24.7136 + 23.44), 0.3, 'midwinter noon height');
+  close(winter.azimuth, 180, 0.5, 'midwinter noon direction');
+
+  // At the equinox the sun is overhead on the equator, rises due east and sets due west.
+  close(at('2026-03-20T12:07:30Z', { lat: 0, lng: 0 }).altitude, 90, 0.5, 'equinox noon on the equator');
+  const sunrise = at('2026-03-20T03:00:00Z', RIYADH);
+  close(sunrise.altitude, 0, 1, 'equinox sunrise height');
+  close(sunrise.azimuth, 90, 1, 'equinox sunrise direction');
+  const sunset = at('2026-03-20T15:02:00Z', RIYADH);
+  close(sunset.altitude, 0, 1, 'equinox sunset height');
+  close(sunset.azimuth, 270, 1, 'equinox sunset direction');
+
+  // Afternoon: in the south-west. Midnight: below the horizon, in the north.
+  const afternoon = at('2026-03-20T12:00:00Z', RIYADH);
+  assert.ok(afternoon.azimuth > 225 && afternoon.azimuth < 270 && afternoon.altitude > 30 && afternoon.altitude < 50, JSON.stringify(afternoon));
+  const midnight = at('2026-06-21T21:00:00Z', RIYADH);
+  assert.ok(midnight.altitude < -35 && (midnight.azimuth < 20 || midnight.azimuth > 340), JSON.stringify(midnight));
+
+  // A northern city at its own midsummer noon.
+  close(at('2026-06-21T12:02:00Z', { lat: 51.5074, lng: -0.1278 }).altitude, 90 - 51.5074 + 23.44, 0.3, 'London');
+});
+
+test('shadowReach points shadows away from the sun and sizes them by its height', () => {
+  const noonish = shadowReach({ azimuth: 135, altitude: 45 });
+  assert.equal(noonish.bearing, 315);
+  assert.ok(Math.abs(noonish.factor - 1) < 1e-9, 'at 45° a shadow is as long as the building is tall');
+  assert.ok(Math.abs(shadowReach({ azimuth: 300, altitude: 60 }).factor - 1 / Math.sqrt(3)) < 1e-9);
+  assert.equal(shadowReach({ azimuth: 300, altitude: 60 }).bearing, 120);
+
+  // A low sun would throw shadows across the whole district: they stop at 3.5 times the height.
+  assert.equal(shadowReach({ azimuth: 100, altitude: 5 }).factor, 3.5);
+  // On the horizon or below it there are none.
+  assert.equal(shadowReach({ azimuth: 100, altitude: 2 }), null);
+  assert.equal(shadowReach({ azimuth: 0, altitude: -30 }), null);
+  assert.equal(shadowReach(null), null);
+});
+
+test('sunLight lights the map from the sun by day and evenly by night', () => {
+  const day = sunLight({ azimuth: 135.04, altitude: 50 });
+  assert.equal(day.anchor, 'map', 'fixed to the ground, not to the screen');
+  assert.deepEqual(day.position, [1.5, 135, 40]);
+  assert.equal(day.color, '#ffffff');
+
+  // A low sun still comes from its own direction, a little warm, but never from below 35° up.
+  const evening = sunLight({ azimuth: 250, altitude: 8 });
+  assert.deepEqual(evening.position, [1.5, 250, 55]);
+  assert.match(evening.color, /^#ff[ef][0-9a-f]{3}$/);
+  assert.notEqual(evening.color, '#ffffff');
+  // Straight overhead is kept a touch off the vertical so walls still catch some light.
+  assert.equal(sunLight({ azimuth: 180, altitude: 89 }).position[2], 10);
+
+  const night = sunLight({ azimuth: 0, altitude: -20 });
+  assert.equal(night.anchor, 'viewport');
+  assert.ok(night.intensity < day.intensity);
+  assert.deepEqual(sunLight(null), night);
+});
+
+// A 20 m square block with its south-west corner at (46.67, 24.7).
+const blockRing = (lng = 46.67, lat = 24.7, size = 20) => {
+  const dLat = size / 111320;
+  const dLng = size / (111320 * Math.cos((lat * Math.PI) / 180));
+  return [[lng, lat], [lng + dLng, lat], [lng + dLng, lat + dLat], [lng, lat + dLat], [lng, lat]];
+};
+const inMeters = ([lng, lat]) => [
+  Math.round((lng - 46.67) * 111320 * Math.cos((24.7 * Math.PI) / 180) * 10) / 10,
+  Math.round((lat - 24.7) * 111320 * 10) / 10,
+];
+const AROUND = { west: 46.66, east: 46.68, south: 24.69, north: 24.71 };
+
+test('footprintsIn takes apart the grouped buildings of a map tile', () => {
+  const far = blockRing(46.9, 24.9);
+  const features = [
+    { properties: { render_height: 12 }, geometry: { type: 'MultiPolygon', coordinates: [[blockRing()], [far]] } },
+    { properties: { render_height: 30, render_min_height: 20 }, geometry: { type: 'Polygon', coordinates: [blockRing()] } },
+    // Left out: an outline whose parts are drawn instead, no height, nothing but air, not an area.
+    { properties: { render_height: 40, hide_3d: true }, geometry: { type: 'Polygon', coordinates: [blockRing()] } },
+    { properties: {}, geometry: { type: 'Polygon', coordinates: [blockRing()] } },
+    { properties: { render_height: 5, render_min_height: 5 }, geometry: { type: 'Polygon', coordinates: [blockRing()] } },
+    { properties: { render_height: 9 }, geometry: { type: 'LineString', coordinates: blockRing() } },
+    { properties: { render_height: 9 }, geometry: { type: 'Polygon', coordinates: [far] } },
+    null,
+  ];
+  const found = footprintsIn(features, AROUND);
+  assert.equal(found.length, 2);
+  assert.deepEqual(found[0], { height: 12, base: 0, polygons: [[blockRing()]] });
+  assert.deepEqual([found[1].height, found[1].base], [30, 20]);
+  assert.deepEqual(footprintsIn([], AROUND), []);
+});
+
+test('buildingShadows sweeps the walls that face away from the sun', () => {
+  const block = [{ height: 10, base: 0, polygons: [[blockRing()]] }];
+  // Sun in the south-west, 45° up: a 10 m block throws 10 m of shadow to the north-east.
+  const reach = shadowReach({ azimuth: 225, altitude: 45 });
+  const shade = buildingShadows(block, reach);
+  assert.equal(shade.type, 'FeatureCollection');
+  assert.equal(shade.features.length, 1);
+  assert.equal(shade.features[0].geometry.type, 'MultiPolygon');
+  const pieces = shade.features[0].geometry.coordinates.map((polygon) => polygon[0].map(inMeters));
+  // Only the east and north walls have their backs to the sun; each sweeps a strip 7.1 m east and north.
+  assert.deepEqual(pieces, [
+    [[20, 0], [20, 20], [27.1, 27.1], [27.1, 7.1], [20, 0]],
+    [[20, 20], [0, 20], [7.1, 27.1], [27.1, 27.1], [20, 20]],
+  ]);
+
+  // The same block drawn the other way round casts the same shadow.
+  const backwards = [{ height: 10, base: 0, polygons: [[[...blockRing()].reverse()]] }];
+  assert.equal(buildingShadows(backwards, reach).features[0].geometry.coordinates.length, 2);
+
+  // Sun due south: only the north wall counts, and the strip runs straight north.
+  const north = buildingShadows(block, shadowReach({ azimuth: 180, altitude: 45 })).features[0].geometry.coordinates;
+  assert.deepEqual(north.map((polygon) => polygon[0].map(inMeters)), [[[20, 20], [0, 20], [0, 30], [20, 30], [20, 20]]]);
+
+  // A courtyard: its sunward wall shades the yard too.
+  const yard = blockRing(46.67 + 5 / (111320 * Math.cos((24.7 * Math.PI) / 180)), 24.7 + 5 / 111320, 10);
+  const withYard = buildingShadows([{ height: 10, base: 0, polygons: [[blockRing(), yard]] }], shadowReach({ azimuth: 180, altitude: 45 }));
+  const yardPieces = withYard.features[0].geometry.coordinates.map((polygon) => polygon[0].map(inMeters));
+  assert.equal(yardPieces.length, 2);
+  assert.deepEqual(yardPieces[1].slice(0, 2).map(([, y]) => y), [5, 5], "the strip starts at the yard's south wall");
+
+  // A part that starts 20 m up (a bridge between towers) drops its shadow further out, drawn whole.
+  const bridge = buildingShadows([{ height: 30, base: 20, polygons: [[blockRing()]] }], shadowReach({ azimuth: 180, altitude: 45 }));
+  const bridgePieces = bridge.features[0].geometry.coordinates.map((polygon) => polygon[0].map(inMeters));
+  assert.deepEqual(bridgePieces[0], [[0, 20], [20, 20], [20, 40], [0, 40], [0, 20]], 'the footprint, 20 m to the north');
+  assert.deepEqual(bridgePieces[1], [[20, 40], [0, 40], [0, 50], [20, 50], [20, 40]], 'and 10 m more for its own height');
+
+  // Too small to see, no sun, nothing to shade: no shadows.
+  assert.deepEqual(buildingShadows(block, reach, 25).features, []);
+  assert.deepEqual(buildingShadows(block, null).features, []);
+  assert.deepEqual(buildingShadows([], reach).features, []);
 });

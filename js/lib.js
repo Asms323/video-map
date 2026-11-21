@@ -693,6 +693,181 @@ export function routeSummary(answer) {
   return { distance: route.distance, duration: route.duration, coordinates };
 }
 
+// ── Sun, light and shadows ────────────────────────────────────────────────
+
+/**
+ * Where the sun is in the sky, as { azimuth, altitude } in degrees. Azimuth is
+ * the compass direction to the sun (0 north, 90 east); altitude is its height
+ * above the horizon, negative at night. Good to a fraction of a degree, which
+ * is plenty for lighting a map.
+ */
+export function sunPosition(date, lat, lng) {
+  const days = date.getTime() / 86400000 - 0.5 + 2440588 - 2451545; // days since 1 Jan 2000, noon
+  const anomaly = toRadians(357.5291 + 0.98560028 * days);
+  const centre = toRadians(
+    1.9148 * Math.sin(anomaly) + 0.02 * Math.sin(2 * anomaly) + 0.0003 * Math.sin(3 * anomaly),
+  );
+  const longitude = anomaly + centre + toRadians(102.9372) + Math.PI; // along the ecliptic
+  const tilt = toRadians(23.4397);
+  const declination = Math.asin(Math.sin(longitude) * Math.sin(tilt));
+  const rightAscension = Math.atan2(Math.sin(longitude) * Math.cos(tilt), Math.cos(longitude));
+  const hourAngle = toRadians(280.16 + 360.9856235 * days) + toRadians(lng) - rightAscension;
+  const phi = toRadians(lat);
+  const altitude = Math.asin(
+    Math.sin(phi) * Math.sin(declination) + Math.cos(phi) * Math.cos(declination) * Math.cos(hourAngle),
+  );
+  // This angle is measured from south, turning west; shift it onto the compass.
+  const fromSouth = Math.atan2(
+    Math.sin(hourAngle),
+    Math.cos(hourAngle) * Math.sin(phi) - Math.tan(declination) * Math.cos(phi),
+  );
+  return { azimuth: (toDegrees(fromSouth) + 540) % 360, altitude: toDegrees(altitude) };
+}
+
+// Below this the sun is on the horizon or gone: no shadows, and an even light.
+const SUN_UP_DEGREES = 3;
+// A low sun would stretch shadows across the whole district; stop at this many metres per metre of height.
+const LONGEST_SHADOW = 3.5;
+
+/**
+ * How shadows fall for a sun position: { bearing, factor }, the compass
+ * direction they point in and their length for each metre of height. Null
+ * when the sun is too low to cast any.
+ */
+export function shadowReach(sun) {
+  if (!sun || !(sun.altitude > SUN_UP_DEGREES)) return null;
+  return {
+    bearing: (sun.azimuth + 180) % 360,
+    factor: Math.min(1 / Math.tan(toRadians(sun.altitude)), LONGEST_SHADOW),
+  };
+}
+
+const hexMix = (from, to, amount) => {
+  const part = (hex, at) => parseInt(hex.slice(at, at + 2), 16);
+  const blend = (at) => Math.round(part(from, at) + (part(to, at) - part(from, at)) * amount);
+  return `#${[1, 3, 5].map((at) => blend(at).toString(16).padStart(2, '0')).join('')}`;
+};
+
+/**
+ * The map's light for a sun position, in MapLibre's terms. By day the light
+ * comes from where the sun really is, white at midday and warmer towards
+ * sunrise and sunset. At night there is a soft even light from the viewer's side.
+ */
+export function sunLight(sun) {
+  if (!sun || !(sun.altitude > SUN_UP_DEGREES)) {
+    return { anchor: 'viewport', position: [1.5, 215, 35], color: '#dfe6f5', intensity: 0.2 };
+  }
+  const lowness = clamp((25 - sun.altitude) / 25, 0, 1);
+  return {
+    anchor: 'map',
+    // [distance, compass direction to the light, angle down from straight overhead].
+    // The direction is the sun's own. The height is kept above 35°: under a real
+    // sky flat roofs stay bright even when the sun is low.
+    position: [1.5, Math.round(sun.azimuth * 10) / 10, Math.round(clamp(90 - sun.altitude, 10, 55) * 10) / 10],
+    color: hexMix('#ffffff', '#fff6ea', lowness),
+    intensity: 0.35,
+  };
+}
+
+/**
+ * Building footprints from map-tile features, for the buildings that reach
+ * into a box { west, south, east, north }: [{ height, base, polygons }], with
+ * heights in metres and each polygon a list of rings, the outline first and
+ * then any courtyards. The tiles group many buildings of one height into a
+ * single feature; a group stays together here, minus the ones outside the box.
+ */
+export function footprintsIn(features, box) {
+  const buildings = [];
+  for (const feature of features) {
+    const properties = feature?.properties ?? {};
+    const height = Number(properties.render_height);
+    const base = Math.max(Number(properties.render_min_height) || 0, 0);
+    // "hide_3d" marks an outline whose separate parts are drawn instead.
+    if (!(height > base) || 'hide_3d' in properties) continue;
+    const geometry = feature.geometry; // read last: unpacking the shape is the costly part
+    let all = [];
+    if (geometry?.type === 'Polygon') all = [geometry.coordinates];
+    else if (geometry?.type === 'MultiPolygon') all = geometry.coordinates;
+    const polygons = all.filter((polygon) => {
+      const outline = polygon[0];
+      return (
+        Array.isArray(outline) &&
+        outline.length >= 4 &&
+        outline.some(([lng, lat]) => lng >= box.west && lng <= box.east && lat >= box.south && lat <= box.north)
+      );
+    });
+    if (polygons.length > 0) buildings.push({ height, base, polygons });
+  }
+  return buildings;
+}
+
+/**
+ * The shadows that flat-roofed buildings cast on level ground, as GeoJSON.
+ *
+ * buildings: what footprintsIn() gives; reach: what shadowReach() gives;
+ * shortest: leave out shadows shorter than this many metres (too small to see).
+ *
+ * A block's shadow is its footprint slid along the ground, away from the sun.
+ * The ground it covers on the way is exactly the strips swept by the walls
+ * that face away from the sun, so those strips are all that is drawn: the
+ * building itself hides its own footprint. A part that starts above the
+ * ground (a bridge between towers) has its shadow start further out, and
+ * that one is drawn whole. Drawn in one translucent layer, the pieces merge
+ * into a single even shade.
+ */
+export function buildingShadows(buildings, reach, shortest = 0) {
+  const features = [];
+  if (!reach) return { type: 'FeatureCollection', features };
+  const direction = toRadians(reach.bearing);
+  const north = Math.cos(direction);
+  const east = Math.sin(direction);
+
+  for (const building of buildings) {
+    const base = building.base > 0 ? building.base : 0;
+    const near = base * reach.factor; // where the shadow starts, metres from the wall
+    const length = (building.height - base) * reach.factor;
+    if (!(length > 0) || near + length < shortest) continue;
+    const pieces = [];
+
+    for (const polygon of building.polygons) {
+      const squeeze = Math.max(Math.cos(toRadians(polygon[0][0][1])), 0.01); // a degree of longitude is shorter than one of latitude
+      const slide = (meters) => {
+        const dLng = (meters * east) / (METERS_PER_DEGREE * squeeze);
+        const dLat = (meters * north) / METERS_PER_DEGREE;
+        return ([lng, lat]) => [lng + dLng, lat + dLat];
+      };
+      const toNear = slide(near);
+      const toFar = slide(length);
+      const rings = near > 0 ? polygon.map((ring) => ring.map(toNear)) : polygon;
+      if (near > 0) pieces.push(rings);
+
+      rings.forEach((ring, index) => {
+        if (ring.length < 4) return;
+        // Which way round the ring runs tells which side of each wall is outdoors.
+        let turning = 0;
+        for (let i = 1; i < ring.length; i += 1) {
+          turning += ring[i - 1][0] * ring[i][1] - ring[i][0] * ring[i - 1][1];
+        }
+        const outdoors = (turning > 0 ? 1 : -1) * (index === 0 ? 1 : -1); // a courtyard's ring is the other way round
+        for (let i = 1; i < ring.length; i += 1) {
+          const a = ring[i - 1];
+          const b = ring[i];
+          const alongEast = (b[0] - a[0]) * squeeze;
+          const alongNorth = b[1] - a[1];
+          // Only a wall whose outdoor side faces away from the sun throws a shadow outwards.
+          if ((alongNorth * east - alongEast * north) * outdoors > 0) {
+            pieces.push([[a, b, toFar(b), toFar(a), a]]);
+          }
+        }
+      });
+    }
+    if (pieces.length > 0) {
+      features.push({ type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: pieces } });
+    }
+  }
+  return { type: 'FeatureCollection', features };
+}
+
 // ── Map styles ────────────────────────────────────────────────────────────
 // Every style is built on OpenFreeMap's vector data ("openmaptiles"), so the
 // place markers and the road-name lookup work in all of them.
@@ -812,8 +987,7 @@ export function cityModelStyle(base) {
     name: '3D City',
     glyphs: base.glyphs,
     sprite: base.sprite,
-    // Lit from over the viewer's left shoulder whichever way the map is turned, so
-    // the walls facing you are always bright, the way a white model is photographed.
+    // The app replaces this with the real sun for the time and place (see sunLight).
     light: { anchor: 'viewport', position: [1.5, 215, 35], color: '#ffffff', intensity: 0.28 },
     sky: {
       'sky-color': '#dfe6ec',
@@ -833,15 +1007,17 @@ export function cityModelStyle(base) {
         maxzoom: 18,
         attribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
       },
+      // The shadows the buildings cast; the app fills this in as the sun and the view move.
+      'city-shade': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
     },
     layers: [
-      { id: 'background', type: 'background', paint: { 'background-color': '#b5a58e' } },
-      // Real ground, washed out so it reads as bare earth under the model.
+      { id: 'background', type: 'background', paint: { 'background-color': '#d9d2c5' } },
+      // Real ground, paled so it reads as sunlit earth under the model and shadows show on it.
       {
         id: 'city-ground',
         type: 'raster',
         source: 'imagery',
-        paint: { 'raster-opacity': 0.55, 'raster-saturation': -0.6, 'raster-contrast': -0.15, 'raster-brightness-min': 0.12 },
+        paint: { 'raster-opacity': 0.6, 'raster-saturation': -0.45, 'raster-contrast': -0.05, 'raster-brightness-min': 0.32 },
       },
       {
         id: 'city-green',
@@ -873,18 +1049,33 @@ export function cityModelStyle(base) {
           'line-dasharray': [6, 9],
         },
       },
-      // A short shadow on the ground at the foot of each building, towards the viewer.
+      // A soft dark rim on the ground where each building stands, the way corners
+      // gather shade even on the sunny side.
       {
-        id: 'city-shadows',
-        type: 'fill',
+        id: 'city-contact',
+        type: 'line',
         source: VECTOR_SOURCE,
         'source-layer': 'building',
-        minzoom: 14,
+        minzoom: 15,
         paint: {
-          'fill-color': 'rgba(30, 33, 42, 0.38)',
-          'fill-antialias': false,
-          'fill-translate': ['interpolate', ['exponential', 2], ['zoom'], 14, ['literal', [2, 2]], 18, ['literal', [32, 32]]],
-          'fill-translate-anchor': 'viewport',
+          'line-color': '#1a2030',
+          'line-opacity': 0.2,
+          'line-width': widthOf(7),
+          'line-blur': widthOf(4.5),
+        },
+      },
+      // Cast shadows, lying flat on the ground. As a 3D layer its overlapping
+      // pieces are blended as one, so the shade is even where shadows cross.
+      {
+        id: 'city-shadows',
+        type: 'fill-extrusion',
+        source: 'city-shade',
+        minzoom: 15,
+        paint: {
+          'fill-extrusion-color': '#141a28',
+          'fill-extrusion-height': 0.1,
+          'fill-extrusion-opacity': 0.42,
+          'fill-extrusion-vertical-gradient': false,
         },
       },
       {
@@ -895,11 +1086,19 @@ export function cityModelStyle(base) {
         minzoom: 13,
         filter: ['!', ['has', 'hide_3d']],
         paint: {
-          'fill-extrusion-color': '#f4f4f1',
+          // The colour mappers recorded for the building, where they did. Otherwise
+          // the white of the model: a touch warm for low stone and plaster, a touch
+          // cool for glass towers.
+          'fill-extrusion-color': [
+            'case',
+            ['has', 'colour'],
+            ['to-color', ['get', 'colour'], '#f2f2f0'],
+            ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 5], 0, '#f4f1eb', 40, '#f2f2f0', 120, '#e7ecf1', 300, '#dce5ee'],
+          ],
           'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
           'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 5],
-          // Plain white walls from top to bottom, like the model.
-          'fill-extrusion-vertical-gradient': false,
+          // Walls a shade darker than roofs, and darker still towards the foot of a tower.
+          'fill-extrusion-vertical-gradient': true,
         },
       },
       // The names and icons of the street map, without the route-number badges

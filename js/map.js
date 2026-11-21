@@ -4,18 +4,23 @@
 import {
   PLACE_CATEGORIES,
   VECTOR_SOURCE,
+  buildingShadows,
   categoryFilter,
   circleRing,
   cityModelStyle,
   cleanCategories,
   detailedStyle,
   displayName,
+  footprintsIn,
   linesFromGeometry,
   nearestRoad,
   osmRefFromTileId,
   placeKind,
   placeLayerIds,
   satelliteStyle,
+  shadowReach,
+  sunLight,
+  sunPosition,
   withOverlays,
 } from './lib.js';
 import { loadStyle } from './services.js';
@@ -25,11 +30,45 @@ export const MAP_TYPES = ['city', 'streets', 'night', 'satellite', 'detailed'];
 // Styles drawn on a dark ground need light text on the app's own markers.
 const DARK_TYPES = new Set(['night', 'satellite']);
 
-// How far the camera leans over while it follows you, in degrees from straight
-// down. The city model is always seen from an angle; that is what makes it a model.
-const FLAT = { north: 0, heading: 55 };
-const TILT = { city: { north: 60, heading: 62 } };
-const tiltOf = (type) => TILT[type] ?? FLAT;
+// How the camera sits while it follows you: how far it leans over (degrees from
+// straight down) and, in the view that does not turn, which way it looks.
+const FLAT_CAMERA = { north: { pitch: 0, bearing: 0 }, heading: { pitch: 55 } };
+
+// The 3D city is drawn isometric, the way an architect draws a model: looking
+// down at the angle where the three edges of a cube all measure the same on
+// screen, corner-on to the streets, and through a lens so long that parallel
+// lines stay parallel instead of running off to a vanishing point.
+const ISO_PITCH = 54.7;
+const ISO_BEARING = 45; // looking north-east
+const ISO_LENS = 6; // degrees of view, top to bottom
+const NORMAL_LENS = 36.87; // the map library's own
+const CITY_CAMERA = { north: { pitch: ISO_PITCH, bearing: ISO_BEARING }, heading: { pitch: ISO_PITCH } };
+const cameraOf = (type) => (type === 'city' ? CITY_CAMERA : FLAT_CAMERA);
+
+// Shadows are worked out for what is on screen and a margin around it, and
+// again once the view leaves that area, new map tiles arrive or the sun moves on.
+const SHADE_SOURCE = 'city-shade';
+const SHADE_MIN_ZOOM = 15;
+const SHADE_MARGIN_METERS = 250;
+const SHADE_REACH_METERS = 1500; // never further than this from the middle of the view
+const SHADE_SMALLEST_PX = 1.5;
+const SHADE_PAUSE_MS = 500;
+const SHADE_LONGEST_WAIT_MS = 2500;
+const SUN_CHECK_MS = 60000;
+const EARTH_AROUND_METERS = 40075016.686;
+const METERS_PER_DEGREE = 111320;
+
+/** Where the shadow of a 1 m pole ends, in metres east and north of its foot. */
+const shadowTip = (reach) => {
+  const direction = (reach.bearing * Math.PI) / 180;
+  return [reach.factor * Math.sin(direction), reach.factor * Math.cos(direction)];
+};
+/** True while shadows made for one sun still fit another: their ends within 2% of their length. */
+const sameShade = (made, now) => {
+  const [east, north] = shadowTip(made);
+  const [eastNow, northNow] = shadowTip(now);
+  return Math.hypot(east - eastNow, north - northNow) <= 0.02 * Math.max(now.factor, 0.3);
+};
 
 const BLANK_STYLE = {
   version: 8,
@@ -117,6 +156,11 @@ export class MapView {
     this.ignoreTapsUntil = 0;
     this.marker = null;
     this.images = new Map();
+    this.sun = null;
+    this.shade = null; // what the shadows on screen were made for
+    this.shadeTimer = null;
+    this.shadeWaitingSince = 0;
+    this.tilesLoaded = 0;
 
     this.map = new maplibregl.Map({
       container,
@@ -150,12 +194,26 @@ export class MapView {
     }, CREDITS_SHOWN_MS);
 
     map.on('styleimagemissing', (event) => this.provideImage(event.id));
-    map.on('style.load', () => this.applyOverlays());
+    map.on('style.load', () => {
+      this.applyOverlays();
+      this.sun = null;
+      this.shade = null;
+      this.followSun();
+    });
     map.on('dragstart', () => {
       this.cameraTarget = null;
       this.handlers.onUserPan?.();
     });
-    map.on('moveend', () => this.handlers.onViewChange?.(this.view()));
+    map.on('moveend', () => {
+      this.handlers.onViewChange?.(this.view());
+      this.followSun();
+    });
+    map.on('sourcedata', (event) => {
+      if (event.sourceId !== VECTOR_SOURCE || !event.tile) return;
+      this.tilesLoaded += 1;
+      this.queueShade(true);
+    });
+    setInterval(() => this.followSun(), SUN_CHECK_MS);
     map.on('click', (event) => this.handleTap(event));
     this.watchLongPress();
   }
@@ -192,7 +250,8 @@ export class MapView {
     });
     this.placeLayers = placeLayerIds(style);
     this.map.setStyle(style, { diff: false });
-    // Each map type has its own camera angle.
+    // Each map type has its own lens and camera angle.
+    this.map.setVerticalFieldOfView(type === 'city' ? ISO_LENS : NORMAL_LENS);
     this.cameraTarget = null;
     this.moveCamera(false);
     return true;
@@ -249,6 +308,101 @@ export class MapView {
     this.syncPlaces();
   }
 
+  // ── Sun and shadows (3D city) ───────────────────────────────────────────
+
+  /** Light the city from where the sun is right now, for the place in the middle of the map. */
+  followSun() {
+    if (this.type !== 'city') return;
+    const centre = this.map.getCenter();
+    const sun = sunPosition(new Date(), centre.lat, centre.lng);
+    const moved =
+      !this.sun ||
+      Math.abs(sun.altitude - this.sun.altitude) > 0.2 ||
+      Math.abs(((sun.azimuth - this.sun.azimuth + 540) % 360) - 180) > 0.2;
+    if (moved) {
+      let lit = false;
+      this.whenStyled((map) => {
+        map.setLight(sunLight(sun));
+        lit = true;
+      });
+      if (lit) this.sun = sun;
+    }
+    this.queueShade(false);
+  }
+
+  /**
+   * Lay the shadows again soon. Map tiles arrive in bursts, so each arrival
+   * (restart = true) pushes the work back a little, but never for long.
+   */
+  queueShade(restart) {
+    if (this.type !== 'city') return;
+    const now = Date.now();
+    if (this.shadeTimer !== null) {
+      if (!restart || now - this.shadeWaitingSince > SHADE_LONGEST_WAIT_MS) return;
+      clearTimeout(this.shadeTimer);
+    } else {
+      this.shadeWaitingSince = now;
+    }
+    this.shadeTimer = setTimeout(() => {
+      this.shadeTimer = null;
+      this.layShade();
+    }, SHADE_PAUSE_MS);
+  }
+
+  /** Work out the shadows of the buildings on screen, unless the ones already there still fit. */
+  layShade() {
+    const map = this.map;
+    let source = null;
+    this.whenStyled(() => {
+      source = map.getSource(SHADE_SOURCE);
+    });
+    if (this.type !== 'city' || !source) return;
+
+    const zoom = map.getZoom();
+    const reach = zoom >= SHADE_MIN_ZOOM ? shadowReach(this.sun) : null;
+    if (!reach) {
+      if (this.shade?.reach !== null) source.setData(EMPTY);
+      this.shade = { reach: null };
+      return;
+    }
+
+    const bounds = map.getBounds();
+    const view = { west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() };
+    const made = this.shade;
+    if (
+      made?.reach &&
+      made.tiles === this.tilesLoaded &&
+      Math.abs(made.zoom - zoom) < 0.6 &&
+      sameShade(made.reach, reach) &&
+      made.box.west <= view.west &&
+      made.box.east >= view.east &&
+      made.box.south <= view.south &&
+      made.box.north >= view.north
+    ) {
+      return;
+    }
+
+    const centre = map.getCenter();
+    const latDegrees = (meters) => meters / METERS_PER_DEGREE;
+    const lngDegrees = (meters) => meters / (METERS_PER_DEGREE * Math.max(Math.cos((centre.lat * Math.PI) / 180), 0.01));
+    const box = {
+      west: Math.max(view.west - lngDegrees(SHADE_MARGIN_METERS), centre.lng - lngDegrees(SHADE_REACH_METERS)),
+      east: Math.min(view.east + lngDegrees(SHADE_MARGIN_METERS), centre.lng + lngDegrees(SHADE_REACH_METERS)),
+      south: Math.max(view.south - latDegrees(SHADE_MARGIN_METERS), centre.lat - latDegrees(SHADE_REACH_METERS)),
+      north: Math.min(view.north + latDegrees(SHADE_MARGIN_METERS), centre.lat + latDegrees(SHADE_REACH_METERS)),
+    };
+
+    let features;
+    try {
+      features = map.querySourceFeatures(VECTOR_SOURCE, { sourceLayer: 'building' });
+    } catch {
+      return;
+    }
+    const metersPerPixel = (EARTH_AROUND_METERS * Math.cos((centre.lat * Math.PI) / 180)) / (512 * 2 ** zoom);
+    source.setData(buildingShadows(footprintsIn(features, box), reach, SHADE_SMALLEST_PX * metersPerPixel));
+    this.shade = { reach, box, zoom, tiles: this.tilesLoaded };
+  }
+
   // ── "You are here" ──────────────────────────────────────────────────────
 
   accuracyData() {
@@ -290,7 +444,10 @@ export class MapView {
     this.moveCamera(first);
   }
 
-  /** 'off', 'north' (you in the middle, north up) or 'heading' (tilted, the way you travel is up). */
+  /**
+   * 'off', 'north' (you in the middle and the map does not turn: north up, or
+   * the isometric angle in the 3D city) or 'heading' (tilted, the way you travel is up).
+   */
   setFollowMode(mode) {
     this.followMode = mode;
     this.cameraTarget = null; // always move, even to the place the camera was last sent
@@ -305,8 +462,9 @@ export class MapView {
     if (this.followMode === 'off' || !this.position) return;
     const map = this.map;
     const center = [this.position.lng, this.position.lat];
-    const bearing = this.followMode === 'heading' ? (this.heading ?? map.getBearing()) : 0;
-    const pitch = tiltOf(this.type)[this.followMode];
+    const camera = cameraOf(this.type)[this.followMode];
+    const bearing = this.followMode === 'heading' ? (this.heading ?? map.getBearing()) : camera.bearing;
+    const pitch = camera.pitch;
 
     // Standing still sends the same position again and again: leave the map at rest.
     const target = `${this.followMode}|${pitch}|${center[0].toFixed(6)}|${center[1].toFixed(6)}|${bearing.toFixed(1)}`;
@@ -318,8 +476,8 @@ export class MapView {
       bearing,
       pitch,
       zoom: first ? Math.max(map.getZoom(), pitch > 0 ? 16.5 : 16) : map.getZoom(),
-      // Seen at an angle, you sit below the middle, so more of what lies ahead is on screen.
-      offset: [0, pitch > 0 ? Math.round(map.getContainer().clientHeight * 0.2) : 0],
+      // Turned the way you travel, you sit below the middle, so more of what lies ahead is on screen.
+      offset: [0, this.followMode === 'heading' ? Math.round(map.getContainer().clientHeight * 0.2) : 0],
       duration: first ? 0 : 900,
       easing: (t) => t, // steady, so one position flows into the next
     });
@@ -367,11 +525,12 @@ export class MapView {
   }
 
   flyTo(position) {
+    const camera = cameraOf(this.type).north;
     this.map.flyTo({
       center: [position.lng, position.lat],
       zoom: Math.max(this.map.getZoom(), 16),
-      bearing: 0,
-      pitch: tiltOf(this.type).north,
+      bearing: camera.bearing,
+      pitch: camera.pitch,
       duration: 1200,
     });
   }
