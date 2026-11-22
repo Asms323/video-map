@@ -140,6 +140,30 @@ the app, but it holds nothing personal: your position, settings and recent
 links stay on your own phone. Your position is sent only as part of the
 questions above (the weather, speed limits and addresses near you).
 
+## Or put it online with Firebase
+
+Firebase Hosting works as well, and can be done from a phone with Google Cloud
+Shell, a command line in the browser that is already signed in to your Google
+account.
+
+1. In the [Firebase console](https://console.firebase.google.com), create a
+   **new project** for this app and note its Project ID. Do not use a project
+   that already serves a website: publishing would replace that website.
+2. Open [Cloud Shell](https://shell.cloud.google.com/?show=terminal) with the
+   same Google account, and allow it to use your account if it asks.
+3. Paste this line, put your Project ID in place of `YOUR-PROJECT-ID`, and
+   press Enter:
+
+   ```bash
+   rm -rf video-map && git clone --depth 1 -b claude/peaceful-tesla-y76kia https://github.com/Asms323/video-map.git && bash video-map/tools/firebase-deploy.sh YOUR-PROJECT-ID
+   ```
+
+4. When it says "Done", open `https://YOUR-PROJECT-ID.web.app` in Safari.
+
+To bring a newer version online later, paste the same line again. The script
+checks the address first: it publishes to an empty project or updates Video
+Map, and stops and asks before replacing any other website.
+
 ## Put it on the iPhone Home Screen
 
 1. Open the address in **Safari**.
@@ -193,6 +217,8 @@ js/lib.js               everything that needs no browser: parsing, distances,
 sw.js                   offline start
 manifest.webmanifest    Home Screen name and icons
 icons/                  made by tools/make_icons.py
+firebase.json           what Firebase Hosting publishes, and how it is cached
+tools/firebase-deploy.sh  publishes to Firebase, refusing to replace another site
 vendor/maplibre/        MapLibre GL JS 5.24.1 and the right-to-left text add-on
 tests/                  unit tests, browser test, small local server
 ```
