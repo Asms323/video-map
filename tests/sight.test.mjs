@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { sunPosition } from '../js/lib.js';
-import { footprintGrid, groundLevels, heightsFromShadows, passSuns, photoGrid, shadowEvidence, shadowOf, tilesFor, treesInPhoto, worldPixel } from '../js/sight.js';
+import { footprintGrid, groundLevels, heightsFromShadows, passSuns, pavedGrid, photoGrid, shadowEvidence, shadowOf, tilesFor, treesInPhoto, worldPixel } from '../js/sight.js';
 
 const ORIGIN = { lng: 46.67, lat: 24.7 };
 const ZOOM = 17;
@@ -244,4 +244,54 @@ test('treesInPhoto finds dark green crowns on open ground', () => {
   // Bright lawns, shadows and roofs are not trees; and the list can be cut short.
   assert.ok(found.every((tree) => !(tree.x > 100 && tree.x < 180 && tree.y < -140)));
   assert.equal(treesInPhoto(grid, owner, 2).length, 2);
+});
+
+test('pavedGrid marks the ground that roads and tracks take up', () => {
+  // A street running east 10 m north of the middle, kept clear 5 m either side, and a short track on a slant.
+  const paved = pavedGrid([{ points: [[-300, 10], [0, 10], [300, 10]], half: 5 }, { points: [[100, 100], [130, 140]], half: 2 }, { points: [[0, -100], [50, -100]], half: 0 }, { points: null, half: 3 }], HALF);
+  const size = HALF * 2;
+  assert.equal(paved.length, size * size);
+  const at = (x, y) => paved[Math.floor(y + HALF) * size + Math.floor(x + HALF)];
+  // On the street and within 5 m of its middle line: paved. Further off: open ground.
+  for (const x of [-239, -100, 0, 150, 239]) {
+    assert.equal(at(x, 10), 1, `on the street at ${x}`);
+    assert.equal(at(x, 13.9), 1);
+    assert.equal(at(x, 6.2), 1);
+    assert.equal(at(x, 16.5), 0, `beside the street at ${x}`);
+    assert.equal(at(x, 3.5), 0);
+  }
+  // The track: along it, not off its ends, not far to its side.
+  assert.equal(at(115, 120), 1);
+  assert.equal(at(116.5, 119), 1);
+  assert.equal(at(96, 96), 0);
+  assert.equal(at(121, 116), 0);
+  // A line with no width takes up no ground.
+  assert.equal(at(20, -100), 0);
+  let squares = 0;
+  for (const value of paved) squares += value;
+  assert.ok(near(squares, 480 * 10 + 50 * 4 + Math.PI * 4, 60), `${squares} squares`);
+  assert.equal(pavedGrid([], HALF).some((value) => value !== 0), false);
+});
+
+test('no tree is found on a road, whatever is green there', () => {
+  // A street with a green bus parked on it, trees along its kerb, and two crowns that meet over the middle of a side street.
+  const street = { x: -240, y: -6, width: 480, depth: 12 };
+  const side = { x: -4, y: 6, width: 8, depth: 200 };
+  const trees = [{ x: -120, y: 0, r: 3 }, { x: 60, y: 11, r: 2.5 }, { x: -60, y: -11, r: 2.5 }, { x: -6.5, y: 120, r: 2.6 }, { x: 6.5, y: 120, r: 2.6 }, { x: 150, y: 150, r: 3 }];
+  const grid = paint({ trees, roads: [street, side], shadows: false });
+  const owner = footprintGrid([], HALF);
+  const paved = pavedGrid([{ points: [[-300, 0], [300, 0]], half: 8 }, { points: [[0, 0], [0, 300]], half: 4 }], HALF);
+  const found = treesInPhoto(grid, owner, 2500, paved);
+  const near2 = (tree) => found.find((other) => Math.hypot(other.x - tree.x, other.y - tree.y) < 3);
+  assert.equal(near2(trees[0]), undefined, 'the green thing in the middle of the street is not a tree');
+  assert.ok(near2(trees[1]) && near2(trees[2]), 'the trees along the kerb stay');
+  assert.ok(near2(trees[5]), 'and so does the tree away from any road');
+  // Every tree that is found stands off the paved ground.
+  const size = HALF * 2;
+  for (const tree of found) assert.equal(paved[Math.floor(tree.y + HALF) * size + Math.floor(tree.x + HALF)], 0, JSON.stringify(tree));
+  assert.ok(found.every((tree) => Math.abs(tree.y) > 8 && !(Math.abs(tree.x) < 4 && tree.y > 0)));
+  // The two crowns over the side street count as the two trees they are, one on each side.
+  assert.ok(found.some((tree) => tree.x < -4 && near(tree.y, 120, 3)) && found.some((tree) => tree.x > 4 && near(tree.y, 120, 3)), JSON.stringify(found));
+  // Without the road mask the same photo gives a tree in the street.
+  assert.ok(treesInPhoto(grid, owner).some((tree) => Math.hypot(tree.x + 120, tree.y) < 3));
 });

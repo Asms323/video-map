@@ -868,52 +868,272 @@ export function buildingShadows(buildings, reach, shortest = 0) {
   return { type: 'FeatureCollection', features };
 }
 
-/** A name for one building's polygon that stays the same each time the map hands it over: where its middle is. */
-export function buildingKey(polygon) {
-  const outline = polygon[0];
-  let lng = 0;
-  let lat = 0;
-  const count = outline.length - 1;
-  for (let i = 0; i < count; i += 1) {
-    lng += outline[i][0];
-    lat += outline[i][1];
-  }
-  return `${(lng / count).toFixed(5)},${(lat / count).toFixed(5)}`;
+// ── Map tiles ─────────────────────────────────────────────────────────────
+
+/** The edges of a map tile, in degrees: { west, south, east, north }. */
+export function tileBox(z, x, y) {
+  const across = 2 ** z;
+  const latitude = (row) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * row) / across))) * 180) / Math.PI;
+  return { west: (x / across) * 360 - 180, east: ((x + 1) / across) * 360 - 180, north: latitude(y), south: latitude(y + 1) };
 }
 
 /**
- * Apply height estimates to building footprints.
+ * The parts of a line that lie inside a box { west, south, east, north }, cut
+ * at its edges: a list of lines, each [[lng, lat], …].
  *
- * buildings: what footprintsIn() gives. heightOf(polygon): the estimated
- * height of one building in metres, or null. Only a building the map gives
- * the stand-in height (5 m, meaning "not recorded") is changed, and only
- * upwards: an estimate from a shadow can fall short, a record should not be
- * overruled.
- *
- * Returns { buildings, raised }: the same list with the estimates in, for
- * casting shadows, and the raised buildings alone as GeoJSON, for drawing.
+ * A map tile holds its roads a little way past its own edge, so the same
+ * stretch of road comes with two neighbouring tiles. Cut to their own tiles,
+ * the pieces meet end to end and nothing is there twice.
  */
-export function raisedBuildings(buildings, heightOf, standIn = 5) {
-  const out = [];
-  const features = [];
-  for (const building of buildings) {
-    if (building.height !== standIn || building.base > 0) {
-      out.push(building);
-      continue;
-    }
-    const unchanged = [];
-    for (const polygon of building.polygons) {
-      const estimate = heightOf(polygon);
-      if (estimate > standIn + 1) {
-        out.push({ height: estimate, base: 0, polygons: [polygon] });
-        features.push({ type: 'Feature', properties: { h: estimate }, geometry: { type: 'Polygon', coordinates: polygon } });
+export function clipLine(coordinates, box) {
+  const pieces = [];
+  let piece = null;
+  for (let i = 1; i < coordinates.length; i += 1) {
+    const [x0, y0] = coordinates[i - 1];
+    const dx = coordinates[i][0] - x0;
+    const dy = coordinates[i][1] - y0;
+    // How much of this stretch is inside: from t0 to t1 of the way along it.
+    let t0 = 0;
+    let t1 = 1;
+    for (const [step, room] of [[-dx, x0 - box.west], [dx, box.east - x0], [-dy, y0 - box.south], [dy, box.north - y0]]) {
+      if (step === 0) {
+        if (room < 0) t1 = -1; // runs along the outside of this edge
+      } else if (step < 0) {
+        t0 = Math.max(t0, room / step);
       } else {
-        unchanged.push(polygon);
+        t1 = Math.min(t1, room / step);
       }
     }
-    if (unchanged.length > 0) out.push({ ...building, polygons: unchanged });
+    if (t0 > t1) {
+      piece = null;
+      continue;
+    }
+    if (!piece || t0 > 0) {
+      piece = [[x0 + dx * t0, y0 + dy * t0]];
+      pieces.push(piece);
+    }
+    piece.push([x0 + dx * t1, y0 + dy * t1]);
+    if (t1 < 1) piece = null; // it left the box here
   }
-  return { buildings: out, raised: { type: 'FeatureCollection', features } };
+  // A line that only touches a corner leaves a piece with no length.
+  return pieces.filter((points) => points.some(([lng, lat]) => lng !== points[0][0] || lat !== points[0][1]));
+}
+
+// ── Buildings ─────────────────────────────────────────────────────────────
+
+/**
+ * The map source with one outline for every building: Overture Maps, which
+ * joins OpenStreetMap with outlines traced from satellite photos. The street
+ * map's own tiles weld neighbouring buildings into whole blocks.
+ */
+export const BUILDING_SOURCE = 'overture';
+
+/** Where Overture keeps its map tiles: one folder for each monthly release, the older ones cleared away in time. */
+export const BUILDING_STORE = 'https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/';
+
+/**
+ * The addresses of the buildings archives on offer, newest release first,
+ * from the store's own list of its release folders (XML). A release is named
+ * by its date and a counter, e.g. "2026-11-18.0".
+ */
+export function buildingArchives(listing) {
+  const releases = [];
+  for (const match of String(listing ?? '').matchAll(/<Prefix>tiles\/(\d{4}-\d{2}-\d{2})\.(\d+)\/<\/Prefix>/g)) {
+    releases.push({ day: match[1], counter: Number(match[2]) });
+  }
+  releases.sort((a, b) => (a.day === b.day ? b.counter - a.counter : a.day < b.day ? 1 : -1));
+  return releases.map((release) => `${BUILDING_STORE}tiles/${release.day}.${release.counter}/buildings.pmtiles`);
+}
+
+// How tall a building is drawn when nobody recorded its height, by what it is
+// used for, in metres. A guess that suits a low-rise city; a recorded height or
+// a number of floors always wins, and so does a height read from a shadow.
+export const USUAL_HEIGHTS = {
+  residential: 7.5,
+  commercial: 9,
+  industrial: 7,
+  religious: 8,
+  education: 8,
+  medical: 9,
+  civic: 9,
+  entertainment: 9,
+  service: 5,
+  transportation: 6,
+  military: 6,
+  agricultural: 4,
+  outbuilding: 3,
+};
+export const USUAL_HEIGHT = 6;
+const FLOOR_METERS = 3.3;
+// No street is built to one height. The usual height is varied a little from
+// building to building by the building's number in the map data, so a row of
+// houses does not come out as one slab: by this much for a number that leaves
+// 0, 1, 2, 3 or 4 when divided by five.
+export const HEIGHT_SPREAD = [0.86, 1, 1, 1.14, 1.42];
+
+/**
+ * How tall a building is from its record: { height, base, known }. known is
+ * false when the height is the usual one for its kind. id: the building's
+ * number in the map data, if it has one.
+ */
+export function buildingHeight(properties, id) {
+  const base = Math.max(Number(properties?.min_height) || 0, 0);
+  const recorded = Number(properties?.height);
+  if (recorded > base) return { height: recorded, base, known: true };
+  const floors = Number(properties?.num_floors);
+  if (floors > 0) return { height: base + floors * FLOOR_METERS, base, known: true };
+  const usual = Object.hasOwn(USUAL_HEIGHTS, properties?.subtype) ? USUAL_HEIGHTS[properties.subtype] : USUAL_HEIGHT;
+  const spread = typeof id === 'number' && Number.isFinite(id) ? HEIGHT_SPREAD[Math.abs(id) % HEIGHT_SPREAD.length] : 1;
+  return { height: base + usual * spread, base, known: false };
+}
+
+/**
+ * Building footprints from Overture map-tile features, for the buildings that
+ * reach into a box { west, south, east, north }:
+ * [{ id, height, base, known, polygons }], each polygon a list of rings.
+ *
+ * Left out: what is underground (a metro station under a street is recorded
+ * as a building too), and a building whose separate parts are given, which
+ * come as features of their own. estimates: Map of feature id → metres read
+ * from the satellite photo, used where no height is on record and the
+ * estimate is the taller. skip: a Set of feature ids to leave out as well
+ * (see buildingsOnStreets).
+ */
+export function buildingFootprints(features, box, estimates, skip) {
+  const buildings = [];
+  for (const feature of features) {
+    const properties = feature?.properties ?? {};
+    if (properties.is_underground === true || properties.has_parts === true || skip?.has(feature.id)) continue;
+    const size = buildingHeight(properties, feature.id);
+    const estimate = size.known ? undefined : estimates?.get(feature.id);
+    if (estimate > size.height + 1) size.height = estimate;
+    const geometry = feature.geometry; // read last: unpacking the shape is the costly part
+    let all = [];
+    if (geometry?.type === 'Polygon') all = [geometry.coordinates];
+    else if (geometry?.type === 'MultiPolygon') all = geometry.coordinates;
+    const polygons = all.filter((polygon) => {
+      const outline = polygon[0];
+      return (
+        Array.isArray(outline) &&
+        outline.length >= 4 &&
+        outline.some(([lng, lat]) => lng >= box.west && lng <= box.east && lat >= box.south && lat <= box.north)
+      );
+    });
+    if (polygons.length > 0) buildings.push({ id: feature.id, ...size, polygons });
+  }
+  return buildings;
+}
+
+// ── Roads ─────────────────────────────────────────────────────────────────
+
+// How wide each kind of road is drawn in the 3D city, in metres. Widest last,
+// so main roads are drawn over the side streets that meet them.
+const CITY_ROADS = [
+  { id: 'service', classes: ['service', 'track'], meters: 4, minzoom: 14 },
+  { id: 'minor', classes: ['minor', 'busway'], meters: 7, minzoom: 12 },
+  { id: 'mid', classes: ['secondary', 'tertiary'], meters: 9.5, minzoom: 9 },
+  { id: 'main', classes: ['primary'], meters: 12, minzoom: 7 },
+  { id: 'big', classes: ['motorway', 'trunk'], meters: 14, minzoom: 5 },
+];
+const TRACK_METERS = 5; // a railway line with its bed
+const PATH_METERS = 2.2;
+
+/**
+ * How wide a line of the street map is on the ground in the 3D city, in
+ * metres: a road as it is drawn, a railway, a footpath. 0 for anything that
+ * takes up no ground (a ferry line, a line with no kind).
+ */
+export function groundWidth(className) {
+  const road = CITY_ROADS.find((kind) => kind.classes.includes(className));
+  if (road) return road.meters;
+  if (className === 'rail' || className === 'transit') return TRACK_METERS;
+  if (className === 'path') return PATH_METERS;
+  return 0;
+}
+
+/**
+ * The buildings a street runs straight through: the ids of those with at
+ * least `least` metres of a street's middle line inside their outline.
+ *
+ * A station under a street is often on record as an ordinary building, and
+ * drawn as one it would stand in the middle of the road. A street that really
+ * passes through a building is recorded as a tunnel, and tunnels are not
+ * among the streets given here.
+ *
+ * buildings: what buildingFootprints() gives. streets: [[[lng, lat], …], …],
+ * the middle lines of the streets on the ground.
+ */
+export function buildingsOnStreets(buildings, streets, least = 15) {
+  const found = new Set();
+  if (buildings.length === 0 || streets.length === 0) return found;
+  const first = buildings[0].polygons[0][0][0];
+  const squeeze = Math.max(Math.cos(toRadians(first[1])), 0.01) * METERS_PER_DEGREE;
+  const x = (lng) => (lng - first[0]) * squeeze;
+  const y = (lat) => (lat - first[1]) * METERS_PER_DEGREE;
+
+  // Each outline in metres, filed under the squares of ground its bounding box covers.
+  const CELL = 60;
+  const outlines = [];
+  const grid = new Map();
+  for (const building of buildings) {
+    if (building.id === undefined || building.id === null || building.base > 0) continue; // a part held up above the street is no obstacle
+    for (const polygon of building.polygons) {
+      const rings = polygon.map((ring) => ring.map(([lng, lat]) => [x(lng), y(lat)]));
+      let west = Infinity;
+      let east = -Infinity;
+      let south = Infinity;
+      let north = -Infinity;
+      for (const [px, py] of rings[0]) {
+        west = Math.min(west, px);
+        east = Math.max(east, px);
+        south = Math.min(south, py);
+        north = Math.max(north, py);
+      }
+      const index = outlines.push({ id: building.id, rings, box: [west, south, east, north], inside: 0 }) - 1;
+      for (let cellX = Math.floor(west / CELL); cellX <= Math.floor(east / CELL); cellX += 1) {
+        for (let cellY = Math.floor(south / CELL); cellY <= Math.floor(north / CELL); cellY += 1) {
+          const key = `${cellX},${cellY}`;
+          if (!grid.has(key)) grid.set(key, []);
+          grid.get(key).push(index);
+        }
+      }
+    }
+  }
+  const within = (ring, px, py) => {
+    let inside = false;
+    for (let i = 1; i < ring.length; i += 1) {
+      const [x0, y0] = ring[i - 1];
+      const [x1, y1] = ring[i];
+      if (y0 > py !== y1 > py && px < x0 + ((py - y0) * (x1 - x0)) / (y1 - y0)) inside = !inside;
+    }
+    return inside;
+  };
+
+  // Walk each street in steps and count the steps that fall inside an outline.
+  const STEP = 3;
+  for (const street of streets) {
+    for (let i = 1; i < street.length; i += 1) {
+      const x0 = x(street[i - 1][0]);
+      const y0 = y(street[i - 1][1]);
+      const x1 = x(street[i][0]);
+      const y1 = y(street[i][1]);
+      const steps = Math.max(Math.ceil(Math.hypot(x1 - x0, y1 - y0) / STEP), 1);
+      const stride = Math.hypot(x1 - x0, y1 - y0) / steps;
+      for (let step = 0; step < steps; step += 1) {
+        const px = x0 + ((x1 - x0) * (step + 0.5)) / steps;
+        const py = y0 + ((y1 - y0) * (step + 0.5)) / steps;
+        for (const index of grid.get(`${Math.floor(px / CELL)},${Math.floor(py / CELL)}`) ?? []) {
+          const outline = outlines[index];
+          if (px < outline.box[0] || px > outline.box[2] || py < outline.box[1] || py > outline.box[3]) continue;
+          // Inside the outline and not in one of its courtyards.
+          if (within(outline.rings[0], px, py) && !outline.rings.slice(1).some((ring) => within(ring, px, py))) outline.inside += stride;
+        }
+      }
+    }
+  }
+  // A building in several pieces (one for each map tile it lies in) is judged by its worst piece.
+  for (const outline of outlines) if (outline.inside >= least) found.add(outline.id);
+  return found;
 }
 
 // ── Building walls ────────────────────────────────────────────────────────
@@ -1027,7 +1247,7 @@ export function detailedStyle(base) {
  * earth-coloured ground, with grey roads drawn at their real widths. Meant to
  * be looked at tilted, from above.
  */
-export function cityModelStyle(base) {
+export function cityModelStyle(base, { buildings = null } = {}) {
   const isLine = ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false];
   const isArea = ['match', ['geometry-type'], ['MultiPolygon', 'Polygon'], true, false];
   // Roads in tunnels and on bridges are drawn apart from the ones on the ground.
@@ -1052,14 +1272,7 @@ export function cityModelStyle(base) {
     ];
   };
   const round = { 'line-cap': 'round', 'line-join': 'round' };
-  // Widest last, so main roads are drawn over the side streets that meet them.
-  const roads = [
-    { id: 'service', classes: ['service', 'track'], meters: 4, minzoom: 14 },
-    { id: 'minor', classes: ['minor', 'busway'], meters: 7, minzoom: 12 },
-    { id: 'mid', classes: ['secondary', 'tertiary'], meters: 9.5, minzoom: 9 },
-    { id: 'main', classes: ['primary'], meters: 12, minzoom: 7 },
-    { id: 'big', classes: ['motorway', 'trunk'], meters: 14, minzoom: 5 },
-  ];
+  const roads = CITY_ROADS;
   const roadLayer = (road, suffix, paint) => ({
     id: `city-road-${road.id}${suffix}`,
     type: 'line',
@@ -1100,31 +1313,113 @@ export function cityModelStyle(base) {
 
   // Buildings: the white model with windows, plain below zoom 16 and finer with
   // each zoom step in. The app draws each wall picture when the map first asks for it.
-  const height = ['coalesce', ['get', 'render_height'], 5];
-  const standing = ['!', ['has', 'hide_3d']]; // "hide_3d" marks an outline whose separate parts are drawn instead
-  const unpainted = ['!', ['has', 'colour']];
   const wallPicture = (kind) => [
     'step',
     ['zoom'],
     `vm-wall:0:${kind}`,
     ...WALL_DETAILS.flatMap((detail, index) => (detail ? [detail.zoom, `vm-wall:${index}:${kind}`] : [])),
   ];
-  const blocks = (id, kind, filter) => ({
+  const ROOF = '#e9e6de';
+  /** Walls with windows for the features of one map layer that pass a filter. */
+  const walls = (id, kind, source, layer, filter, height, floor) => ({
     id,
     type: 'fill-extrusion',
-    source: VECTOR_SOURCE,
-    'source-layer': 'building',
+    source,
+    'source-layer': layer,
     minzoom: 13,
-    filter: ['all', standing, unpainted, filter],
+    filter,
     paint: {
       'fill-extrusion-color': WALL_KINDS[kind].colour,
       'fill-extrusion-pattern': wallPicture(kind),
-      'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+      'fill-extrusion-base': floor,
       'fill-extrusion-height': height,
       // Walls a shade darker than roofs, and darker still towards the foot of a tower.
       'fill-extrusion-vertical-gradient': true,
     },
   });
+  /** A building in its recorded colour, plain. */
+  const painted = (id, source, layer, filter, colour, height, floor) => ({
+    id,
+    type: 'fill-extrusion',
+    source,
+    'source-layer': layer,
+    minzoom: 13,
+    filter,
+    paint: {
+      'fill-extrusion-color': ['to-color', colour, WALL_KINDS.low.colour],
+      'fill-extrusion-base': floor,
+      'fill-extrusion-height': height,
+      'fill-extrusion-vertical-gradient': true,
+    },
+  });
+  /**
+   * The windows would run across the roofs too. A plain slab on top of each
+   * building covers them, and stands a little proud like a roof's parapet.
+   */
+  const roofs = (id, source, layer, filter, height, colour = ROOF) => ({
+    id,
+    type: 'fill-extrusion',
+    source,
+    'source-layer': layer,
+    minzoom: 16,
+    filter,
+    paint: {
+      'fill-extrusion-color': colour,
+      'fill-extrusion-base': height,
+      'fill-extrusion-height': ['+', height, 1.2],
+      'fill-extrusion-vertical-gradient': false,
+    },
+  });
+
+  let buildingLayers;
+  if (buildings) {
+    // One outline per building, from Overture. Height: read from its shadow by
+    // the app (kept as the feature's state), else recorded, else by floors, else
+    // the usual for its kind, varied a little from one building to the next.
+    const spread = [
+      'case',
+      ['==', ['typeof', ['id']], 'number'],
+      ['match', ['%', ['abs', ['id']], HEIGHT_SPREAD.length], ...HEIGHT_SPREAD.flatMap((factor, left) => (left > 0 ? [left, factor] : [])), HEIGHT_SPREAD[0]],
+      1,
+    ];
+    const usual = ['*', ['match', ['get', 'subtype'], ...Object.entries(USUAL_HEIGHTS).flat(), USUAL_HEIGHT], spread];
+    const floor = ['to-number', ['get', 'min_height'], 0];
+    const recorded = [
+      'case',
+      ['>', ['to-number', ['get', 'height'], 0], floor],
+      ['to-number', ['get', 'height'], 0],
+      ['>', ['to-number', ['get', 'num_floors'], 0], 0],
+      ['+', floor, ['*', ['to-number', ['get', 'num_floors'], 0], FLOOR_METERS]],
+      ['+', floor, usual],
+    ];
+    const height = ['case', ['!=', ['feature-state', 'h'], null], ['to-number', ['feature-state', 'h'], 0], recorded];
+    // A metro station under a street is on record as a building too: leave what is underground out.
+    const aboveGround = ['!=', ['get', 'is_underground'], true];
+    const whole = ['all', aboveGround, ['!=', ['get', 'has_parts'], true]]; // one with parts is drawn as its parts
+    const plain = ['!', ['has', 'facade_color']];
+    const roofColour = ['case', ['has', 'roof_color'], ['to-color', ['get', 'roof_color'], ROOF], ROOF];
+    buildingLayers = [
+      walls('city-buildings', 'low', BUILDING_SOURCE, 'building', ['all', whole, plain, ['<', recorded, TOWER_METERS]], height, floor),
+      walls('city-towers', 'tall', BUILDING_SOURCE, 'building', ['all', whole, plain, ['>=', recorded, TOWER_METERS]], height, floor),
+      painted('city-painted', BUILDING_SOURCE, 'building', ['all', whole, ['has', 'facade_color']], ['get', 'facade_color'], height, floor),
+      walls('city-parts', 'tall', BUILDING_SOURCE, 'building_part', ['all', aboveGround, plain], height, floor),
+      painted('city-parts-painted', BUILDING_SOURCE, 'building_part', ['all', aboveGround, ['has', 'facade_color']], ['get', 'facade_color'], height, floor),
+      roofs('city-roofs', BUILDING_SOURCE, 'building', ['all', whole, plain], height, roofColour),
+      roofs('city-parts-roofs', BUILDING_SOURCE, 'building_part', ['all', aboveGround, plain], height, roofColour),
+    ];
+  } else {
+    // Without Overture: the street map's own buildings, neighbours welded into blocks.
+    const height = ['coalesce', ['get', 'render_height'], 5];
+    const floor = ['coalesce', ['get', 'render_min_height'], 0];
+    const standing = ['!', ['has', 'hide_3d']]; // "hide_3d" marks an outline whose separate parts are drawn instead
+    const unpainted = ['!', ['has', 'colour']];
+    buildingLayers = [
+      walls('city-buildings', 'low', VECTOR_SOURCE, 'building', ['all', standing, unpainted, ['<', height, TOWER_METERS]], height, floor),
+      walls('city-towers', 'tall', VECTOR_SOURCE, 'building', ['all', standing, unpainted, ['>=', height, TOWER_METERS]], height, floor),
+      painted('city-painted', VECTOR_SOURCE, 'building', ['all', standing, ['has', 'colour']], ['get', 'colour'], height, floor),
+      roofs('city-roofs', VECTOR_SOURCE, 'building', ['all', standing, unpainted], height),
+    ];
+  }
 
   return {
     version: 8,
@@ -1153,17 +1448,26 @@ export function cityModelStyle(base) {
       },
       // The shadows the buildings cast; the app fills this in as the sun and the view move.
       'city-shade': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-      // Buildings whose height was read from the satellite photo, at that height.
-      'city-raised': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+      // One outline per building, read straight out of Overture's archive in the cloud.
+      ...(buildings
+        ? { [BUILDING_SOURCE]: { type: 'vector', url: `pmtiles://${buildings}`, attribution: 'Buildings © <a href="https://overturemaps.org">Overture Maps Foundation</a>' } }
+        : {}),
     },
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': '#d9d2c5' } },
       // Real ground, paled so it reads as sunlit earth under the model and shadows show on it.
+      // Seen from close by it is left stronger: that is where its detail is, the
+      // yards, the parking bays and the paving.
       {
         id: 'city-ground',
         type: 'raster',
         source: 'imagery',
-        paint: { 'raster-opacity': 0.6, 'raster-saturation': -0.45, 'raster-contrast': -0.05, 'raster-brightness-min': 0.32 },
+        paint: {
+          'raster-opacity': ['interpolate', ['linear'], ['zoom'], 15.5, 0.6, 17.5, 0.82],
+          'raster-saturation': ['interpolate', ['linear'], ['zoom'], 15.5, -0.45, 17.5, -0.28],
+          'raster-contrast': ['interpolate', ['linear'], ['zoom'], 15.5, -0.05, 17.5, 0.04],
+          'raster-brightness-min': ['interpolate', ['linear'], ['zoom'], 15.5, 0.32, 17.5, 0.22],
+        },
       },
       {
         id: 'city-green',
@@ -1223,8 +1527,20 @@ export function cityModelStyle(base) {
       lineLayer(
         'city-paths',
         [['!', inTunnel], ['==', ['get', 'class'], 'path']],
-        { 'line-color': '#efebe3', 'line-width': widthOf(2.2), 'line-opacity': 0.9 },
+        { 'line-color': '#efebe3', 'line-width': widthOf(PATH_METERS), 'line-opacity': 0.9 },
         { minzoom: 15, layout: round },
+      ),
+      // The metro under ground: a broken trace over the streets it runs beneath, for its trains to be followed along.
+      lineLayer(
+        'city-rail-under',
+        [inTunnel, isRail, ['!', ['has', 'service']]],
+        {
+          'line-color': '#1f2a44',
+          'line-opacity': 0.34,
+          'line-width': ['interpolate', ['exponential', 2], ['zoom'], 12, 0.8, 16, 2.2, 20, 11],
+          'line-dasharray': [2.2, 1.8],
+        },
+        { minzoom: 13 },
       ),
       // Railway and metro above ground: a dark line with pale sleepers across it.
       lineLayer(
@@ -1267,9 +1583,10 @@ export function cityModelStyle(base) {
       {
         id: 'city-contact',
         type: 'line',
-        source: VECTOR_SOURCE,
+        source: buildings ? BUILDING_SOURCE : VECTOR_SOURCE,
         'source-layer': 'building',
         minzoom: 15,
+        ...(buildings ? { filter: ['!=', ['get', 'is_underground'], true] } : {}),
         paint: {
           'line-color': '#1a2030',
           'line-opacity': 0.2,
@@ -1291,64 +1608,7 @@ export function cityModelStyle(base) {
           'fill-extrusion-vertical-gradient': false,
         },
       },
-      blocks('city-buildings', 'low', ['<', height, TOWER_METERS]),
-      blocks('city-towers', 'tall', ['>=', height, TOWER_METERS]),
-      // A building whose colour mappers recorded is drawn in that colour, plain.
-      {
-        id: 'city-painted',
-        type: 'fill-extrusion',
-        source: VECTOR_SOURCE,
-        'source-layer': 'building',
-        minzoom: 13,
-        filter: ['all', standing, ['has', 'colour']],
-        paint: {
-          'fill-extrusion-color': ['to-color', ['get', 'colour'], WALL_KINDS.low.colour],
-          'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-          'fill-extrusion-height': height,
-          'fill-extrusion-vertical-gradient': true,
-        },
-      },
-      // The same building again, taller, where the photo shows it to be: it swallows the low block from the map.
-      {
-        id: 'city-raised',
-        type: 'fill-extrusion',
-        source: 'city-raised',
-        minzoom: 15,
-        paint: {
-          'fill-extrusion-color': WALL_KINDS.low.colour,
-          'fill-extrusion-pattern': wallPicture('low'),
-          'fill-extrusion-height': ['get', 'h'],
-          'fill-extrusion-vertical-gradient': true,
-        },
-      },
-      {
-        id: 'city-raised-roofs',
-        type: 'fill-extrusion',
-        source: 'city-raised',
-        minzoom: 16,
-        paint: {
-          'fill-extrusion-color': '#e9e6de',
-          'fill-extrusion-base': ['get', 'h'],
-          'fill-extrusion-height': ['+', ['get', 'h'], 1.2],
-          'fill-extrusion-vertical-gradient': false,
-        },
-      },
-      // The windows would run across the roofs too. A plain slab on top of each
-      // building covers them, and stands a little proud like a roof's parapet.
-      {
-        id: 'city-roofs',
-        type: 'fill-extrusion',
-        source: VECTOR_SOURCE,
-        'source-layer': 'building',
-        minzoom: 16,
-        filter: ['all', standing, unpainted],
-        paint: {
-          'fill-extrusion-color': '#e9e6de',
-          'fill-extrusion-base': height,
-          'fill-extrusion-height': ['+', height, 1.2],
-          'fill-extrusion-vertical-gradient': false,
-        },
-      },
+      ...buildingLayers,
       // The names and icons of the street map, without the route-number badges
       // that repeat along every main road.
       ...base.layers.filter((layer) => layer.type === 'symbol' && !layer.id.includes('shield')),

@@ -878,51 +878,198 @@ test('wallImage reads the name of a wall picture', () => {
   }
 });
 
-// ── Heights read from the photo ──────────────────────────────────────────
+// ── Map tiles ────────────────────────────────────────────────────────────
 
-import { buildingKey, raisedBuildings } from '../js/lib.js';
+import { clipLine, groundWidth, tileBox } from '../js/lib.js';
 
-test('raisedBuildings stands up the buildings the photo showed to be taller', () => {
-  const a = [[[46.67, 24.7], [46.6702, 24.7], [46.6702, 24.7002], [46.67, 24.7002], [46.67, 24.7]]];
-  const b = a.map((ring) => ring.map(([lng, lat]) => [lng + 0.001, lat]));
-  const c = a.map((ring) => ring.map(([lng, lat]) => [lng + 0.002, lat]));
-  assert.equal(buildingKey(a), '46.67010,24.70010');
-  assert.notEqual(buildingKey(a), buildingKey(b));
-
-  const estimates = new Map([[buildingKey(a), 14.5], [buildingKey(b), 5.5], [buildingKey(c), 30]]);
-  const heightOf = (polygon) => estimates.get(buildingKey(polygon)) ?? null;
-  const { buildings, raised } = raisedBuildings(
-    [
-      { height: 5, base: 0, polygons: [a, b] }, // nobody recorded their height
-      { height: 22, base: 0, polygons: [c] }, // on record: left alone
-      { height: 5, base: 3, polygons: [c] }, // a part that starts above the ground: left alone
-    ],
-    heightOf,
-  );
-  // The first building is raised to its estimate; the second, estimated barely above 5 m, stays as it was.
-  assert.deepEqual(raised.features.map((feature) => feature.properties), [{ h: 14.5 }]);
-  assert.equal(raised.features[0].geometry.coordinates, a);
-  assert.deepEqual(buildings, [
-    { height: 14.5, base: 0, polygons: [a] },
-    { height: 5, base: 0, polygons: [b] },
-    { height: 22, base: 0, polygons: [c] },
-    { height: 5, base: 3, polygons: [c] },
-  ]);
-  // Without estimates nothing changes.
-  const plain = raisedBuildings([{ height: 5, base: 0, polygons: [a] }], () => null);
-  assert.deepEqual(plain.raised.features, []);
-  assert.deepEqual(plain.buildings, [{ height: 5, base: 0, polygons: [a] }]);
+test('tileBox gives the edges of a map tile', () => {
+  assert.deepEqual(tileBox(0, 0, 0), { west: -180, east: 180, north: 85.05112877980659, south: -85.05112877980659 });
+  // The tile that holds Al Olaya Street in Riyadh, and the one east of it: they share an edge exactly.
+  const tile = tileBox(14, 10316, 7031);
+  assert.ok(tile.west < 46.67693 && tile.east > 46.67693 && tile.south < 24.7 && tile.north > 24.7);
+  assert.equal(tileBox(14, 10317, 7031).west, tile.east);
+  assert.equal(tileBox(14, 10316, 7032).north, tile.south);
+  assert.ok(Math.abs((tile.east - tile.west) * 111320 * Math.cos((24.7 * Math.PI) / 180) - 2222) < 5, 'about 2.2 km wide');
 });
 
-test('cityModelStyle has a place for the buildings raised from the photo', () => {
+test('clipLine keeps the parts of a line inside a box, cut at its edges', () => {
+  const box = { west: 0, south: 0, east: 10, north: 10 };
+  // A road that runs through: cut where it enters and where it leaves.
+  assert.deepEqual(clipLine([[-5, 5], [5, 5], [15, 5]], box), [[[0, 5], [5, 5], [10, 5]]]);
+  assert.deepEqual(clipLine([[-5, 5], [15, 5]], box), [[[0, 5], [10, 5]]]);
+  // All inside: as it was. All outside: nothing.
+  assert.deepEqual(clipLine([[2, 2], [4, 4], [6, 2]], box), [[[2, 2], [4, 4], [6, 2]]]);
+  assert.deepEqual(clipLine([[-5, -5], [-1, 20]], box), []);
+  assert.deepEqual(clipLine([[11, -5], [11, 15]], box), []);
+  // Out and back in again: two pieces.
+  assert.deepEqual(clipLine([[5, 5], [5, 15], [7, 15], [7, 5]], box), [[[5, 5], [5, 10]], [[7, 10], [7, 5]]]);
+  // Across a corner, and only touching one.
+  assert.deepEqual(clipLine([[-2, 12], [12, -2]], box), [[[0, 10], [10, 0]]]);
+  assert.deepEqual(clipLine([[-3, 13], [3, 7]], { west: 0, south: 10, east: 10, north: 20 }), []);
+  // The two halves of a road cut at the edge between two tiles meet at the same point.
+  const west = clipLine([[8, 3], [12, 5]], box);
+  const east = clipLine([[8, 3], [12, 5]], { west: 10, south: 0, east: 20, north: 10 });
+  assert.deepEqual(west[0].at(-1), east[0][0]);
+  assert.deepEqual(west[0].at(-1), [10, 4]);
+});
+
+test('groundWidth is how much ground a line of the street map takes up', () => {
+  assert.deepEqual(['service', 'minor', 'busway', 'tertiary', 'secondary', 'primary', 'trunk', 'motorway'].map(groundWidth), [4, 7, 7, 9.5, 9.5, 12, 14, 14]);
+  assert.deepEqual(['rail', 'transit', 'path'].map(groundWidth), [5, 5, 2.2]);
+  assert.deepEqual(['ferry', 'aerialway', undefined].map(groundWidth), [0, 0, 0]);
+  // The roads are drawn to the same widths.
+  const style = cityModelStyle(BASE_STYLE);
+  const width = style.layers.find((layer) => layer.id === 'city-road-main').paint['line-width'];
+  assert.ok(Math.abs(width[width.indexOf(16) + 1] - groundWidth('primary') / 1.1) < 1e-9);
+});
+
+// ── Buildings ────────────────────────────────────────────────────────────
+
+import { BUILDING_SOURCE, BUILDING_STORE, HEIGHT_SPREAD, USUAL_HEIGHT, USUAL_HEIGHTS, buildingArchives, buildingFootprints, buildingHeight, buildingsOnStreets } from '../js/lib.js';
+
+/** A square outline, `size` metres wide, with its south-west corner `east` and `north` metres from 46.67°E 24.7°N. */
+const SQUEEZE = 111195 * Math.cos((24.7 * Math.PI) / 180);
+const at = (east, north) => [46.67 + east / SQUEEZE, 24.7 + north / 111195];
+const square = (east, north, size) => [[at(east, north), at(east + size, north), at(east + size, north + size), at(east, north + size), at(east, north)]];
+const feature = (id, properties, polygon) => ({ id, properties, geometry: { type: 'Polygon', coordinates: polygon } });
+const EVERYWHERE = { west: -180, south: -90, east: 180, north: 90 };
+
+test('buildingArchives lists the releases on offer, newest first', () => {
+  const listing =
+    '<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Prefix>tiles/</Prefix><CommonPrefixes><Prefix>tiles/2026-09-23.0/</Prefix></CommonPrefixes>' +
+    '<CommonPrefixes><Prefix>tiles/2026-11-18.0/</Prefix></CommonPrefixes><CommonPrefixes><Prefix>tiles/2026-09-23.1/</Prefix></CommonPrefixes>' +
+    '<CommonPrefixes><Prefix>tiles/2026-10-21.0/</Prefix></CommonPrefixes><CommonPrefixes><Prefix>tiles/2026-09-23.10/</Prefix></CommonPrefixes>' +
+    '<CommonPrefixes><Prefix>tiles/latest-notes/</Prefix></CommonPrefixes></ListBucketResult>';
+  assert.deepEqual(
+    buildingArchives(listing).map((url) => url.slice(BUILDING_STORE.length)),
+    ['tiles/2026-11-18.0/buildings.pmtiles', 'tiles/2026-10-21.0/buildings.pmtiles', 'tiles/2026-09-23.10/buildings.pmtiles', 'tiles/2026-09-23.1/buildings.pmtiles', 'tiles/2026-09-23.0/buildings.pmtiles'],
+  );
+  assert.ok(BUILDING_STORE.startsWith('https://') && BUILDING_STORE.endsWith('/'));
+  assert.deepEqual(buildingArchives('<Error><Code>AccessDenied</Code></Error>'), []);
+  assert.deepEqual(buildingArchives(undefined), []);
+});
+
+test('buildingHeight reads a height from the record, or falls back on the usual for its kind', () => {
+  assert.deepEqual(buildingHeight({ height: 41.5, num_floors: 3 }), { height: 41.5, base: 0, known: true });
+  assert.deepEqual(buildingHeight({ num_floors: 4 }), { height: 13.2, base: 0, known: true });
+  // A part that starts above the ground: a bridge between two towers.
+  assert.deepEqual(buildingHeight({ height: 180, min_height: 150 }), { height: 180, base: 150, known: true });
+  assert.deepEqual(buildingHeight({ num_floors: 2, min_height: 10 }), { height: 16.6, base: 10, known: true });
+  // Nobody recorded it: the usual for what it is used for, or for a building of no stated use.
+  assert.deepEqual(buildingHeight({ subtype: 'residential' }), { height: USUAL_HEIGHTS.residential, base: 0, known: false });
+  assert.deepEqual(buildingHeight({ subtype: 'spaceport' }), { height: USUAL_HEIGHT, base: 0, known: false });
+  assert.deepEqual(buildingHeight({}), { height: USUAL_HEIGHT, base: 0, known: false });
+  assert.deepEqual(buildingHeight(undefined), { height: USUAL_HEIGHT, base: 0, known: false });
+  assert.deepEqual(buildingHeight({ height: 0, num_floors: 0 }), { height: USUAL_HEIGHT, base: 0, known: false });
+  // The usual height varies a little from one building to the next, always the same for the same building.
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 12].map((id) => buildingHeight({ subtype: 'residential' }, id).height), [...HEIGHT_SPREAD, HEIGHT_SPREAD[0], HEIGHT_SPREAD[2]].map((factor) => USUAL_HEIGHTS.residential * factor));
+  assert.ok(Math.min(...HEIGHT_SPREAD) > 0.8 && Math.max(...HEIGHT_SPREAD) < 1.5 && HEIGHT_SPREAD.includes(1));
+  assert.equal(buildingHeight({ height: 20 }, 4).height, 20, 'a recorded height is left as it is');
+  assert.equal(buildingHeight({ subtype: 'residential' }, 9007199254740991).known, false, 'a very large number is a number too');
+});
+
+test('buildingFootprints takes the buildings above ground, with the heights read from the photo', () => {
+  const features = [
+    feature(10, { subtype: 'residential' }, square(0, 0, 20)),
+    feature(11, { height: 30 }, square(100, 0, 20)),
+    feature(12, { subtype: 'transportation', is_underground: true }, square(200, 0, 60)), // a station under the street
+    feature(13, { height: 90, has_parts: true }, square(300, 0, 40)), // drawn as its parts instead
+    feature(14, { subtype: 'commercial' }, square(5000, 0, 20)), // far away
+    { id: 15, properties: { subtype: 'religious' }, geometry: { type: 'MultiPolygon', coordinates: [square(400, 0, 20), square(6000, 0, 20)] } },
+    { id: 16, properties: {}, geometry: { type: 'Point', coordinates: at(0, 0) } },
+    feature(17, { subtype: 'residential' }, square(500, 0, 20)),
+  ];
+  const box = { west: at(-10, 0)[0], east: at(1000, 0)[0], south: at(0, -10)[1], north: at(0, 100)[1] };
+  const estimates = new Map([[10, 14.5], [11, 55], [17, USUAL_HEIGHTS.residential * HEIGHT_SPREAD[2] + 0.5]]);
+  const found = buildingFootprints(features, box, estimates);
+  assert.deepEqual(
+    found.map((building) => [building.id, Math.round(building.height * 100) / 100, building.base, building.known, building.polygons.length]),
+    [
+      [10, 14.5, 0, false, 1], // read from its shadow: taller than the usual 7.5 × 0.86
+      [11, 30, 0, true, 1], // on record: the estimate is not needed
+      [15, USUAL_HEIGHTS.religious * HEIGHT_SPREAD[0], 0, false, 1], // only the piece inside the box
+      [17, USUAL_HEIGHTS.residential * HEIGHT_SPREAD[2], 0, false, 1], // estimated barely above the usual: left as it is
+    ],
+  );
+  assert.equal(found[0].polygons[0], features[0].geometry.coordinates);
+  // Without estimates, and with a list of buildings to leave out.
+  assert.deepEqual(buildingFootprints(features, box, null, new Set([10, 15])).map((building) => [building.id, building.known]), [[11, true], [17, false]]);
+  assert.deepEqual(buildingFootprints([], box), []);
+});
+
+test('buildingsOnStreets finds the buildings a street runs straight through', () => {
+  const buildings = buildingFootprints(
+    [
+      feature(1, {}, square(0, 0, 60)), // a station box under the main street
+      feature(2, {}, square(100, 10, 30)), // beside the street
+      feature(3, {}, [[at(200, -3), at(221, 18), at(200, 39), at(179, 18), at(200, -3)]]), // only its corner reaches over the street's middle line, for 6 m
+      feature(4, { min_height: 6, height: 12 }, square(300, -20, 40)), // a bridge between two buildings, over the street
+      { id: 5, properties: {}, geometry: { type: 'Polygon', coordinates: [square(400, -40, 80)[0], square(410, -30, 60)[0]] } }, // the street crosses its courtyard
+      { id: 6, properties: {}, geometry: { type: 'MultiPolygon', coordinates: [square(600, 30, 20), square(640, -30, 60)] } }, // one of its two pieces is on the street
+      feature(undefined, {}, square(800, -30, 60)), // a building with no number cannot be left out
+    ],
+    EVERYWHERE,
+  );
+  const street = [at(-100, 0), at(250, 0), at(1000, 0)];
+  // 15 m of street inside is enough. (5: the street is inside it for 20 m, 10 m of building on either side of the courtyard.)
+  assert.deepEqual([...buildingsOnStreets(buildings, [street])].sort(), [1, 5, 6]);
+  assert.deepEqual([...buildingsOnStreets(buildings, [street], 30)].sort(), [1, 6]);
+  assert.deepEqual([...buildingsOnStreets(buildings, [street], 5)].sort(), [1, 3, 5, 6]);
+  // Two short streets add up; no streets, no buildings: nothing found.
+  assert.deepEqual([...buildingsOnStreets(buildings, [[at(-100, 50), at(10, 50)], [at(50, 50), at(200, 50)]])], [1]);
+  assert.equal(buildingsOnStreets(buildings, []).size, 0);
+  assert.equal(buildingsOnStreets([], [street]).size, 0);
+});
+
+test('cityModelStyle draws one building per outline when it is given the buildings archive', () => {
+  const archive = `${BUILDING_STORE}tiles/2026-11-18.0/buildings.pmtiles`;
+  const style = cityModelStyle(BASE_STYLE, { buildings: archive });
+  const ids = style.layers.map((layer) => layer.id);
+  const layer = (id) => style.layers[ids.indexOf(id)];
+  assert.equal(style.sources[BUILDING_SOURCE].type, 'vector');
+  assert.equal(style.sources[BUILDING_SOURCE].url, `pmtiles://${archive}`);
+  assert.match(style.sources[BUILDING_SOURCE].attribution, /Overture Maps Foundation/);
+  const drawn = style.layers.filter((item) => item.source === BUILDING_SOURCE).map((item) => `${item.id}:${item['source-layer']}`);
+  assert.deepEqual(drawn, ['city-contact:building', 'city-buildings:building', 'city-towers:building', 'city-painted:building', 'city-parts:building_part', 'city-parts-painted:building_part', 'city-roofs:building', 'city-parts-roofs:building_part']);
+  assert.ok(ids.indexOf('city-shadows') < ids.indexOf('city-buildings') && ids.indexOf('city-parts-roofs') < ids.indexOf('poi_r1'));
+
+  // What is underground is left out everywhere, and a building with parts is drawn as its parts.
+  for (const id of ['city-contact', 'city-buildings', 'city-towers', 'city-painted', 'city-parts', 'city-parts-painted', 'city-roofs', 'city-parts-roofs']) {
+    assert.ok(JSON.stringify(layer(id).filter).includes('["!=",["get","is_underground"],true]'), id);
+  }
+  for (const id of ['city-buildings', 'city-towers', 'city-painted', 'city-roofs']) assert.ok(JSON.stringify(layer(id).filter).includes('["!=",["get","has_parts"],true]'), id);
+
+  // Height: the one the app read from the photo if there is one, else the record, else the usual, varied by the building's number.
+  const height = layer('city-buildings').paint['fill-extrusion-height'];
+  assert.deepEqual(height.slice(0, 3), ['case', ['!=', ['feature-state', 'h'], null], ['to-number', ['feature-state', 'h'], 0]]);
+  const recorded = JSON.stringify(height[3]);
+  assert.ok(recorded.includes('["get","height"]') && recorded.includes('["get","num_floors"]') && recorded.includes('"residential",7.5') && recorded.includes('["%",["abs",["id"]],5]'), recorded);
+  assert.deepEqual(layer('city-buildings').paint['fill-extrusion-base'], ['to-number', ['get', 'min_height'], 0]);
+  assert.deepEqual(layer('city-roofs').paint['fill-extrusion-base'], height);
+  assert.deepEqual(layer('city-roofs').paint['fill-extrusion-height'], ['+', height, 1.2]);
+  // Which buildings are towers is settled by the record, so it can be a filter.
+  assert.ok(!JSON.stringify(layer('city-towers').filter).includes('feature-state'));
+  assert.deepEqual(layer('city-towers').filter.at(-1).slice(0, 1), ['>=']);
+  assert.deepEqual(layer('city-buildings').paint['fill-extrusion-pattern'].slice(0, 3), ['step', ['zoom'], 'vm-wall:0:low']);
+  assert.deepEqual(layer('city-painted').paint['fill-extrusion-color'], ['to-color', ['get', 'facade_color'], '#f3f1ec']);
+
+  // Without the archive the street map's own buildings are drawn, and nothing asks for the archive.
+  const plain = cityModelStyle(BASE_STYLE);
+  assert.equal(plain.sources[BUILDING_SOURCE], undefined);
+  assert.ok(plain.layers.every((item) => item.source !== BUILDING_SOURCE));
+  assert.equal(plain.layers.find((item) => item.id === 'city-parts'), undefined);
+});
+
+test('cityModelStyle traces the metro under ground and shows more of the photo close up', () => {
   const style = cityModelStyle(BASE_STYLE);
   const ids = style.layers.map((layer) => layer.id);
-  assert.deepEqual(style.sources['city-raised'], { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-  const raised = style.layers[ids.indexOf('city-raised')];
-  assert.deepEqual([raised.type, raised.source], ['fill-extrusion', 'city-raised']);
-  assert.deepEqual(raised.paint['fill-extrusion-height'], ['get', 'h']);
-  assert.deepEqual(raised.paint['fill-extrusion-pattern'].slice(0, 3), ['step', ['zoom'], 'vm-wall:0:low']);
-  const roofs = style.layers[ids.indexOf('city-raised-roofs')];
-  assert.deepEqual(roofs.paint['fill-extrusion-base'], ['get', 'h']);
-  assert.ok(ids.indexOf('city-painted') < ids.indexOf('city-raised') && ids.indexOf('city-raised') < ids.indexOf('city-raised-roofs'));
+  const under = style.layers[ids.indexOf('city-rail-under')];
+  // Over the streets it runs beneath, under the buildings; broken, and faint.
+  assert.ok(ids.indexOf('city-road-big') < ids.indexOf('city-rail-under') && ids.indexOf('city-rail-under') < ids.indexOf('city-contact'));
+  assert.ok(JSON.stringify(under.filter).includes('["==",["get","brunnel"],"tunnel"]') && JSON.stringify(under.filter).includes('["!",["has","service"]]'));
+  assert.ok(under.paint['line-opacity'] < 0.5 && Array.isArray(under.paint['line-dasharray']));
+  assert.ok(JSON.stringify(style.layers[ids.indexOf('city-rail')].filter).includes('["!",["==",["get","brunnel"],"tunnel"]]'));
+  const ground = style.layers[ids.indexOf('city-ground')].paint;
+  assert.deepEqual(ground['raster-opacity'], ['interpolate', ['linear'], ['zoom'], 15.5, 0.6, 17.5, 0.82]);
+  assert.ok(ground['raster-saturation'].at(-1) > ground['raster-saturation'].at(-3));
 });

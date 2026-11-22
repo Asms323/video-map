@@ -6,10 +6,12 @@
 //
 // Needs Playwright with Chromium. The run is self-contained: the street map is
 // replayed from a recording of the real OpenFreeMap service
-// (tests/fixtures/map.har), and the other services (place details, search,
-// weather, routes, satellite photos, YouTube) are answered by stand-ins below.
+// (tests/fixtures/map.har), the buildings from a recording of the parts of
+// Overture's archive the map reads (tests/fixtures/buildings.json), and the
+// other services (place details, search, weather, routes, satellite photos,
+// YouTube) are answered by stand-ins below.
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -26,6 +28,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, 'fixtures');
 const CLIP = path.join(FIXTURES, 'clip.webm');
 const MAP_RECORDING = path.join(FIXTURES, 'map.har');
+const BUILDINGS_RECORDING = path.join(FIXTURES, 'buildings.json');
+const BUILDINGS_HAR = path.join(FIXTURES, 'buildings.har'); // only while recording
+const BUILDINGS_STORE = /^https:\/\/overturemaps-extras-us-west-2\.s3\.us-west-2\.amazonaws\.com\//;
 const SHOTS = process.env.SHOTS ? path.resolve(process.env.SHOTS) : null;
 const RECORD = process.env.RECORD === '1';
 
@@ -42,8 +47,8 @@ const PLACE_TAGS = {
   wheelchair: 'yes',
 };
 
-if (!RECORD && !existsSync(MAP_RECORDING)) {
-  console.error('tests/fixtures/map.har is missing. Create it with: RECORD=1 node tests/e2e.mjs');
+if (!RECORD && (!existsSync(MAP_RECORDING) || !existsSync(BUILDINGS_RECORDING))) {
+  console.error('tests/fixtures/map.har or buildings.json is missing. Create them with: RECORD=1 node tests/e2e.mjs');
   process.exit(1);
 }
 
@@ -100,7 +105,7 @@ const YOUTUBE_STUB =
 
 // ── Stand-ins for the data services ───────────────────────────────────────
 
-const asked = { overpass: [], weather: 0, route: 0, photoDay: 0 };
+const asked = { overpass: [], weather: 0, route: 0, photoDay: 0, archive: 0 };
 
 const json = (route, body) =>
   route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(body) });
@@ -137,7 +142,77 @@ function answerPhoton(route) {
   return json(route, SEARCH_ANSWER);
 }
 
-async function standIns(context, { recordMap = false, noMap = false } = {}) {
+// The buildings archive is one file of 180 GB, read a piece at a time. The
+// recording holds the pieces the map asks for along the test route:
+// { release, size, pieces: [[where it starts, its bytes in base64], …] }.
+let archive = null;
+function buildingsArchive() {
+  if (!archive) {
+    const saved = JSON.parse(readFileSync(BUILDINGS_RECORDING, 'utf8'));
+    archive = { ...saved, pieces: saved.pieces.map(([start, bytes]) => ({ start, bytes: Buffer.from(bytes, 'base64') })) };
+  }
+  return archive;
+}
+
+/** Answer for Overture's store: 'recorded' as recorded, 'gone' with a list but no archive behind it. */
+function answerBuildings(route, how) {
+  const request = route.request();
+  const url = new URL(request.url());
+  const { release, size, pieces } = buildingsArchive();
+  if (url.searchParams.has('list-type')) {
+    const listing = `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Prefix>tiles/</Prefix><CommonPrefixes><Prefix>tiles/${release}/</Prefix></CommonPrefixes></ListBucketResult>`;
+    return route.fulfill({ status: 200, headers: CORS, contentType: 'application/xml', body: listing });
+  }
+  const range = /^bytes=(\d+)-(\d+)$/.exec(request.headers().range ?? '');
+  if (!range || url.pathname !== `/tiles/${release}/buildings.pmtiles`) return route.fulfill({ status: 404, headers: CORS });
+  const start = Number(range[1]);
+  const end = Number(range[2]);
+  const headers = { ...CORS, 'access-control-expose-headers': 'ETag, Content-Length, Content-Range, Accept-Ranges', 'content-range': `bytes ${start}-${end}/${size}`, etag: '"recorded"' };
+  // The first few bytes say what kind of file it is; the app looks at them before it trusts the release.
+  if (how === 'gone' && end > 6) return route.fulfill({ status: 206, headers, contentType: 'application/octet-stream', body: Buffer.alloc(end - start + 1) });
+  asked.archive += 1;
+  const piece = pieces.find((one) => one.start <= start && one.start + one.bytes.length > end);
+  // A piece that was not recorded (a tile beyond the test route) comes back blank: to the map, a tile that cannot be read.
+  const body = piece ? piece.bytes.subarray(start - piece.start, end - piece.start + 1) : Buffer.alloc(end - start + 1);
+  return route.fulfill({ status: 206, headers, contentType: 'application/octet-stream', body });
+}
+
+/**
+ * Turn a fresh recording of the store (a HAR file, as the browser test tool
+ * writes it) into the compact one the replay reads.
+ */
+function tidyBuildings() {
+  const har = JSON.parse(readFileSync(BUILDINGS_HAR, 'utf8'));
+  const pieces = new Map();
+  let release = null;
+  let size = 0;
+  for (const entry of har.log.entries) {
+    const header = (list, name) => list.find((one) => one.name.toLowerCase() === name)?.value ?? '';
+    const range = /^bytes=(\d+)-(\d+)$/.exec(header(entry.request.headers, 'range'));
+    const whole = /\/(\d+)$/.exec(header(entry.response.headers, 'content-range'));
+    const name = /\/tiles\/([^/]+)\/buildings\.pmtiles$/.exec(new URL(entry.request.url).pathname);
+    const content = entry.response.content;
+    if (entry.response.status !== 206 || !range || !whole || !name || !content?.text || content.encoding !== 'base64') continue;
+    const bytes = Buffer.from(content.text, 'base64');
+    if (bytes.length !== Number(range[2]) - Number(range[1]) + 1) continue; // cut short: the map had moved on
+    release = name[1];
+    size = Number(whole[1]);
+    pieces.set(`${range[1]}-${range[2]}`, [Number(range[1]), content.text]);
+  }
+  if (!release) throw new Error('The recording holds nothing of the buildings archive');
+  const sorted = [...pieces.values()].sort((a, b) => a[0] - b[0]);
+  writeFileSync(BUILDINGS_RECORDING, JSON.stringify({ release, size, pieces: sorted }));
+  rmSync(BUILDINGS_HAR);
+  archive = null;
+  console.log(`  recorded ${sorted.length} pieces of the buildings archive (${release}), ${Math.round(sorted.reduce((sum, piece) => sum + piece[1].length, 0) / 1024)} kB`);
+}
+
+/** buildings: 'recorded' (the default), 'record', 'none' (the store cannot be reached) or 'gone' (it lists a release whose archive is not there). */
+async function standIns(context, { recordMap = false, noMap = false, buildings = 'recorded' } = {}) {
+  if (noMap || buildings === 'none') await context.route(BUILDINGS_STORE, (route) => route.abort());
+  else if (buildings === 'record') await context.routeFromHAR(BUILDINGS_HAR, { url: BUILDINGS_STORE, update: true, updateContent: 'embed' });
+  else await context.route(BUILDINGS_STORE, (route) => answerBuildings(route, buildings));
+
   await context.route(/^https:\/\/(server\.arcgisonline\.com|tile\.openstreetmap\.org)\//, (route) => {
     // The photo service is also asked which day a photo was taken.
     if (route.request().url().includes('/identify')) {
@@ -400,6 +475,11 @@ const trafficNow = (page) =>
     return { corners: mesh.count, where: Array.from(mesh.positions.subarray(0, Math.min(mesh.count * 3, 600))).map((value) => value.toFixed(1)).join(',') };
   });
 
+/** What the 3D scene holds: { life, photo, buildings }, as the app counts them. */
+const sceneCounts = (page) => page.evaluate(() => window.__map.getLayer('city-life')?.implementation.counts() ?? null);
+/** How many triangle corners a named part of the 3D scene has. */
+const sceneCorners = (page, part) => page.evaluate((name) => window.__map.getLayer('city-life')?.implementation.parts.get(name)?.mesh?.count ?? 0, part);
+
 /** Wait until the map shows a given layer: the sign that a map type has arrived. */
 const styleHas = (page, id) =>
   page.waitForFunction((layer) => (window.__map?.getStyle()?.layers ?? []).some((l) => l.id === layer), id, { timeout: 45000 });
@@ -439,7 +519,7 @@ function clockFrom(iso) {
   };
 }
 
-async function newPhone({ width = 390, height = 844, dark = false, location = true, recordMap = false, noMap = false, workers = 'block', time = MORNING } = {}) {
+async function newPhone({ width = 390, height = 844, dark = false, location = true, recordMap = false, noMap = false, buildings = 'recorded', workers = 'block', time = MORNING } = {}) {
   const context = await browser.newContext({
     viewport: { width, height },
     deviceScaleFactor: 2,
@@ -449,7 +529,7 @@ async function newPhone({ width = 390, height = 844, dark = false, location = tr
     permissions: location ? ['geolocation'] : [],
     serviceWorkers: workers,
   });
-  await standIns(context, { recordMap, noMap });
+  await standIns(context, { recordMap, noMap, buildings });
   await context.addInitScript(clockFrom, time);
   await context.addInitScript(keepMapHandle);
   if (location) await context.addInitScript(gpsOnRoute, ROUTE_LINE);
@@ -470,7 +550,7 @@ async function newPhone({ width = 390, height = 844, dark = false, location = tr
 try {
   // ── 1. The map while driving ────────────────────────────────────────────
   console.log(`\nMap, driving through Riyadh${RECORD ? ' (recording the live map)' : ''}`);
-  const { context, page, errors } = await newPhone({ recordMap: RECORD });
+  const { context, page, errors } = await newPhone({ recordMap: RECORD, buildings: RECORD ? 'record' : 'recorded' });
   await page.goto(`${base}/`);
   await page.waitForSelector('.me');
   await styleHas(page, 'city-buildings');
@@ -555,10 +635,54 @@ try {
       ground: live.getLayer('city-ground').type,
     };
   });
-  check('3D City: every building is a block of its real height', model.kind === 'fill-extrusion' && model.height.includes('render_height') && model.blocks > 0, JSON.stringify(model));
+  check('3D City: every building is a block of its own height', model.kind === 'fill-extrusion' && model.height.includes('"num_floors"') && model.height.includes('feature-state') && model.blocks > 0, JSON.stringify(model));
   check('3D City: walls have rows of windows, and roofs are plain', model.walls.includes('vm-wall:1:low') && model.wallDrawn && model.roofs > 0, JSON.stringify(model));
-  check('3D City: a building with a recorded colour keeps it', model.painted.includes('"colour"'), model.painted);
+  check('3D City: a building with a recorded colour keeps it', model.painted.includes('"facade_color"'), model.painted);
   check('3D City: grey roads on the real ground', model.roads > 20 && model.ground === 'raster');
+
+  // One outline for every building, read out of Overture's archive a piece at a time.
+  const houses = await page.evaluate(() => {
+    const live = window.__map;
+    const all = live.querySourceFeatures('overture', { sourceLayer: 'building' });
+    return { source: live.getLayer('city-buildings').source, address: live.getSource('overture')?.url ?? '', outlines: new Set(all.map((feature) => feature.id)).size, numbered: all.every((feature) => typeof feature.id === 'number') };
+  });
+  check('3D City: one outline for every building, from the archive', houses.source === 'overture' && /^pmtiles:\/\/https:\/\/.+\/buildings\.pmtiles$/.test(houses.address) && houses.outlines > 500 && houses.numbered && (RECORD || asked.archive > 2), JSON.stringify({ ...houses, asked: asked.archive }));
+  // No building stands in the street: the ones a street runs straight through (stations under it) are left out.
+  const clear = await page.evaluate(async () => {
+    const lib = await import(new URL('js/lib.js', document.baseURI).href);
+    const live = window.__map;
+    const filter = JSON.stringify(live.getFilter('city-buildings'));
+    const left = /\["in",\["id"\],\["literal",\[([\d,]*)\]\]\]/.exec(filter);
+    const out = new Set(left ? left[1].split(',').filter(Boolean).map(Number) : []);
+    const everywhere = { west: -180, south: -90, east: 180, north: 90 };
+    const streets = [];
+    for (const feature of live.querySourceFeatures('openmaptiles', { sourceLayer: 'transportation' })) {
+      const { class: kind, brunnel } = feature.properties;
+      if (!['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor'].includes(kind) || brunnel === 'tunnel' || brunnel === 'bridge') continue;
+      if (feature.geometry.type === 'LineString') streets.push(feature.geometry.coordinates);
+      else if (feature.geometry.type === 'MultiLineString') streets.push(...feature.geometry.coordinates);
+    }
+    const features = live.querySourceFeatures('overture', { sourceLayer: 'building' });
+    return {
+      leftOut: out.size,
+      found: lib.buildingsOnStreets(lib.buildingFootprints(features, everywhere), streets).size,
+      stillThere: lib.buildingsOnStreets(lib.buildingFootprints(features, everywhere, null, out), streets).size,
+      sameOnEveryLayer: ['city-towers', 'city-painted', 'city-roofs', 'city-contact'].every((id) => JSON.stringify(live.getFilter(id)).includes(left ? left[0] : '"is_underground"')),
+    };
+  });
+  check('3D City: no building is left standing across a street', clear.stillThere === 0 && clear.leftOut === clear.found && clear.sameOnEveryLayer, JSON.stringify(clear));
+
+  // What stands still: the furniture of the roofs, the parked cars, a shelter at every bus stop.
+  await page.waitForFunction(() => {
+    const parts = window.__map.getLayer('city-life')?.implementation.parts;
+    return (parts?.get('roofs')?.mesh?.count ?? 0) > 0 && (parts?.get('street')?.mesh?.count ?? 0) > 0;
+  }, null, { timeout: 15000 });
+  const scene = await sceneCounts(page);
+  check('3D City: roofs have their furniture', scene.buildings.roofs.furnished > 50 && scene.buildings.roofs.furnished <= scene.buildings.roofs.of && (await sceneCorners(page, 'roofs')) >= scene.buildings.roofs.furnished * 30, JSON.stringify(scene.buildings.roofs));
+  check('3D City: cars are parked along the side streets', scene.life.parked > 20 && (await sceneCorners(page, 'street')) >= scene.life.parked * 90, `${scene.life.parked} parked`);
+  // Buses: only as many as the streets with stops call for, one every ten minutes each way; none without a stop on the map.
+  check('3D City: the bus stops on the map have shelters', scene.life.busStops > 0 && scene.life.shelters > 0 && scene.life.shelters <= scene.life.busStops, JSON.stringify(scene.life));
+  check('3D City: buses are few, and only where there are stops', scene.life.busKm > 0 && scene.life.buses <= Math.ceil(scene.life.busKm / 4.2) + 1 && scene.life.buses < scene.life.vehicles / 20, JSON.stringify(scene.life));
 
   await page.waitForSelector('#weather:not([hidden])');
   check('shows the weather', (await text(page, '#weather')) === '23° Clear', await text(page, '#weather'));
@@ -782,7 +906,7 @@ try {
   check('Streets: the coloured street map, seen from straight above', (await overlaysKept()) && inTheMiddle(spot) && near(view.bearing, 0, 0.5), JSON.stringify(spot));
   check('Streets: back to the ordinary lens, with no sun or shadows of its own', near(view.lens, 36.87, 0.01) && !(await layerIds(page)).includes('city-shadows'), `lens ${view.lens}`);
   check('Streets: the button says north is up', /north up/.test(await page.getAttribute('#followBtn', 'aria-label')), await page.getAttribute('#followBtn', 'aria-label'));
-  check('Streets: no simulated traffic outside the 3D city', !(await layerIds(page)).includes('city-life'));
+  check('Streets: no simulated traffic outside the 3D city', !(await page.evaluate(() => window.__map.getLayersOrder())).includes('city-life'));
   await shot(page, 'map-streets.png');
 
   await pickType('night');
@@ -839,14 +963,15 @@ try {
   await page.waitForSelector('#weather:not([hidden])');
   check('the traffic switch says it is a simulation', /simulation, not live traffic/i.test(await text(page, '.setting:has(#optTraffic) .setting-note')), await text(page, '.setting:has(#optTraffic) .setting-note'));
   await page.locator('#optTraffic').uncheck();
-  check('moving traffic can be turned off', !(await layerIds(page)).includes('city-life') && (await saved(page, 'settings')).traffic === false);
+  await page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.parts.get('traffic')?.mesh.count ?? 0) === 0, null, { timeout: 15000 });
+  check('moving traffic can be turned off, and the parked cars go with it', (await sceneCorners(page, 'street')) === 0 && (await sceneCorners(page, 'roofs')) > 0 && (await saved(page, 'settings')).traffic === false);
   await page.locator('#optTraffic').check();
   await page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.parts.get('traffic')?.mesh.count ?? 0) > 0, null, { timeout: 15000 });
   check('and on again', (await saved(page, 'settings')).traffic === true);
   // Reading the satellite photo: the stand-in photo is featureless, so it yields nothing, quietly.
   check('the photo switch says its results are an estimate', /an estimate/i.test(await text(page, '.setting:has(#optPhoto) .setting-note')), await text(page, '.setting:has(#optPhoto) .setting-note'));
   check('the photo was asked for its date once', asked.photoDay === 1, `asked ${asked.photoDay} times`);
-  check('a photo that shows nothing raises no buildings', (await drawn(page, 'city-raised')) === 0 && (await layerIds(page)).includes('city-raised'));
+  check('a photo that shows nothing raises no buildings and plants no trees', (await sceneCounts(page)).photo.heights === 0 && (await sceneCorners(page, 'trees')) === 0);
   await page.locator('#optPhoto').uncheck();
   check('reading the photo can be turned off', (await saved(page, 'settings')).photo === false);
   await page.locator('#optPhoto').check();
@@ -1010,8 +1135,11 @@ try {
   check('the chosen places are still shown', (await chips()).join() === 'fuel,parking,food');
 
   check('no errors in the page', errors.length === 0, errors.join(' | '));
-  await context.close(); // in a recording run, this writes tests/fixtures/map.har
-  if (RECORD) tidyRecording();
+  await context.close(); // in a recording run, this writes tests/fixtures/map.har and buildings.har
+  if (RECORD) {
+    tidyRecording();
+    tidyBuildings();
+  }
 
   // ── 2. Phone sideways ───────────────────────────────────────────────────
   console.log('\nPhone sideways');
@@ -1083,8 +1211,43 @@ try {
     shadows: window.__map.getSource('city-shade').serialize().data.features.length,
   }));
   check('with the sun down the city has an even light and no shadows', dark.light.anchor === 'viewport' && dark.shadows === 0, JSON.stringify(dark));
+  // Midnight in Riyadh: the last bus and the last train have gone, the cars have not.
+  await late.page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.parts.get('traffic')?.mesh.count ?? 0) > 0, null, { timeout: 15000 });
+  const night = (await sceneCounts(late.page)).life;
+  check('after midnight no bus and no train is running', night.buses === 0 && night.trains === 0 && night.vehicles > 10 && night.busStops > 0, JSON.stringify(night));
   check('no errors in the page', late.errors.length === 0, late.errors.join(' | '));
   await late.context.close();
+
+  // ── The buildings archive out of reach ──────────────────────────────────
+  console.log('\n3D city without the buildings archive');
+  const bare = await newPhone({ buildings: 'none' });
+  await bare.page.goto(`${base}/`);
+  await bare.page.waitForSelector('.me');
+  await styleHas(bare.page, 'city-buildings');
+  await mapAtRest(bare.page);
+  await bare.page.waitForFunction(() => window.__map.querySourceFeatures('city-shade').length > 0, null, { timeout: 15000 });
+  const blocks = await bare.page.evaluate(() => {
+    const live = window.__map;
+    return {
+      source: live.getLayer('city-buildings').source,
+      archive: Boolean(live.getSource('overture')),
+      height: JSON.stringify(live.getPaintProperty('city-buildings', 'fill-extrusion-height')),
+      drawn: live.queryRenderedFeatures({ layers: ['city-buildings', 'city-towers', 'city-painted'] }).length,
+      parts: Boolean(live.getLayer('city-parts')),
+    };
+  });
+  check('the street map\'s own buildings are drawn instead', blocks.source === 'openmaptiles' && !blocks.archive && !blocks.parts && blocks.height.includes('render_height') && blocks.drawn > 0, JSON.stringify(blocks));
+  check('they cast shadows too, and the streets have their traffic', (await sceneCorners(bare.page, 'traffic')) > 0 && (await sceneCounts(bare.page)).buildings.source === 'streets');
+  await bare.context.close();
+
+  const gone = await newPhone({ buildings: 'gone' });
+  await gone.page.goto(`${base}/`);
+  await gone.page.waitForSelector('.me');
+  // The store lists a release, but its archive cannot be read: the city starts on it, then falls back.
+  await gone.page.waitForFunction(() => window.__map?.getStyle()?.layers?.some((layer) => layer.id === 'city-buildings' && layer.source === 'openmaptiles'), null, { timeout: 45000 });
+  await mapAtRest(gone.page);
+  check('an archive that cannot be read is given up for the street map\'s buildings', (await gone.page.evaluate(() => window.__map.queryRenderedFeatures({ layers: ['city-buildings', 'city-towers', 'city-painted'] }).length)) > 0 && !(await gone.page.evaluate(() => Boolean(window.__map.getSource('overture')))));
+  await gone.context.close();
 
   console.log('\nSmall phone, dark mode');
   const small = await newPhone({ width: 320, height: 568, dark: true });

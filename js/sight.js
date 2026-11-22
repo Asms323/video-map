@@ -368,10 +368,56 @@ function settled(buildings, raw) {
 }
 
 /**
- * Find trees in the photo: dark green patches on open ground.
+ * Which squares of the ground are road, track or path: 1 where no tree can
+ * stand. The same squares as footprintGrid() and the photo's.
+ *
+ * roads: [{ points: [[x, y], …], half }] in metres east and north of the
+ * middle, half being how far to either side of the line is kept clear.
+ */
+export function pavedGrid(roads, half) {
+  const size = half * 2;
+  const paved = new Uint8Array(size * size);
+  for (const road of roads) {
+    const clear = road.half;
+    const points = road.points;
+    if (!(clear > 0) || !Array.isArray(points)) continue;
+    for (let i = 1; i < points.length; i += 1) {
+      const [x0, y0] = points[i - 1];
+      const [x1, y1] = points[i];
+      if (Math.max(x0, x1) < -half - clear || Math.min(x0, x1) > half + clear || Math.max(y0, y1) < -half - clear || Math.min(y0, y1) > half + clear) continue;
+      // A long stretch is done in parts, so only the squares near the line are looked at.
+      const parts = Math.max(Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 16), 1);
+      for (let part = 0; part < parts; part += 1) {
+        const ax = x0 + ((x1 - x0) * part) / parts;
+        const ay = y0 + ((y1 - y0) * part) / parts;
+        const dx = (x1 - x0) / parts;
+        const dy = (y1 - y0) / parts;
+        const span = dx * dx + dy * dy || 1;
+        const firstRow = Math.max(Math.floor(Math.min(ay, ay + dy) - clear + half), 0);
+        const lastRow = Math.min(Math.floor(Math.max(ay, ay + dy) + clear + half), size - 1);
+        const firstColumn = Math.max(Math.floor(Math.min(ax, ax + dx) - clear + half), 0);
+        const lastColumn = Math.min(Math.floor(Math.max(ax, ax + dx) + clear + half), size - 1);
+        for (let row = firstRow; row <= lastRow; row += 1) {
+          const py = row - half + 0.5;
+          for (let column = firstColumn; column <= lastColumn; column += 1) {
+            const px = column - half + 0.5;
+            const t = Math.min(Math.max(((px - ax) * dx + (py - ay) * dy) / span, 0), 1);
+            if (Math.hypot(px - (ax + dx * t), py - (ay + dy * t)) <= clear) paved[row * size + column] = 1;
+          }
+        }
+      }
+    }
+  }
+  return paved;
+}
+
+/**
+ * Find trees in the photo: dark green patches on open ground, which is ground
+ * that is neither under a building (owner, from footprintGrid) nor road
+ * (paved, from pavedGrid; leave out to allow trees anywhere off the buildings).
  * Returns [{ x, y, radius }] in metres, the greenest first, at most `most`.
  */
-export function treesInPhoto(grid, owner, most = 2500) {
+export function treesInPhoto(grid, owner, most = 2500, paved = null) {
   const { size, half, light, green, seen } = grid;
   const reach = 3; // crowns are told apart when their middles are more than 3 m apart
   // How tree-like each square is, and the running totals that make any block of squares quick to add up.
@@ -385,7 +431,7 @@ export function treesInPhoto(grid, owner, most = 2500) {
       // as a shadow (shadows in these photos often carry a faint green cast).
       const greener = green[index];
       const bright = light[index];
-      if (seen[index] && owner[index] === 0 && greener > 22 && bright > 28 && bright < 125 && greener > bright * 0.3) {
+      if (seen[index] && owner[index] === 0 && !(paved && paved[index]) && greener > 22 && bright > 28 && bright < 125 && greener > bright * 0.3) {
         leafy[index] = Math.min(greener, 80);
       }
       along += leafy[index];
@@ -439,6 +485,9 @@ export function treesInPhoto(grid, owner, most = 2500) {
           sumY += r;
         }
       }
+      // Leaves on both sides of a street have their middle on the street: no tree stands there.
+      const middle = Math.round(sumY / squares) * size + Math.round(sumX / squares);
+      if (owner[middle] !== 0 || (paved && paved[middle])) continue;
       trees.push({
         x: sumX / squares - half + 0.5,
         y: sumY / squares - half + 0.5,

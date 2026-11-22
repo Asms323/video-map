@@ -228,7 +228,7 @@
       <div class="setting">
         <label class="setting-text" for="optTraffic">
           <span class="setting-name">Moving traffic</span>
-          <span class="setting-note">Cars, buses and trains on the 3D city's streets. A simulation, not live traffic.</span>
+          <span class="setting-note">Cars on the 3D city's streets, buses along the streets with bus stops, and metro trains at the hours and as often as they really run. A simulation, not live traffic or a timetable.</span>
         </label>
         <input id="optTraffic" class="switch" type="checkbox" role="switch">
       </div>
@@ -288,6 +288,8 @@
           served by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>
           (© <a href="https://www.openmaptiles.org" target="_blank" rel="noopener">OpenMapTiles</a>).
           Satellite photos © Esri, Maxar, Earthstar Geographics.
+          Building outlines by <a href="https://overturemaps.org" target="_blank" rel="noopener">Overture Maps</a>
+          (OpenStreetMap, Esri Community Maps, Google Open Buildings and Microsoft data).
           Search by <a href="https://photon.komoot.io" target="_blank" rel="noopener">Photon</a>,
           place details by <a href="https://overpass-api.de" target="_blank" rel="noopener">Overpass</a>,
           routes by <a href="https://project-osrm.org" target="_blank" rel="noopener">OSRM</a>,
@@ -300,6 +302,7 @@
   </dialog>
 
   <script src="vendor/maplibre/maplibre-gl.js"></script>
+  <script src="vendor/pmtiles/pmtiles.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

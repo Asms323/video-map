@@ -16,28 +16,43 @@ the phone: no App Store, no Apple developer account, no Mac.
   script and in Latin letters.
 - **3D City**, the look it opens with: the city as an **isometric** scale
   model. It is seen corner-on from the classic isometric angle, through a lens
-  so long that parallel streets stay parallel. Every building is a block of
-  its recorded height with rows of windows on its walls and a plain roof:
-  white with a window in each bay for ordinary buildings, bands of glass for
-  towers, and the recorded colour where mappers noted one. They stand on the
-  real ground, with grey roads at their real widths.
-- **Moving traffic.** Cars, vans, lorries and buses drive the streets, and
-  trains run on the tracks above ground. They keep to the real lanes, drive on
-  the right, obey one-way streets, queue behind each other, disappear into
-  tunnels, and are busier in the rush hours than at night. This is a
-  simulation to bring the model to life, **not live traffic**: where each
-  vehicle is, is made up. It can be switched off under the map options.
+  so long that parallel streets stay parallel. **Every building stands on its
+  own outline**, a house at a time, with rows of windows on its walls: white
+  with a window in each bay for ordinary buildings, bands of glass for towers,
+  and the recorded colour where one is noted. They stand on the real ground,
+  with grey roads at their real widths.
+- **Traffic on the real streets.** Cars, vans and lorries drive the streets:
+  they keep to the lanes, drive on the right, obey one-way streets, queue
+  behind each other, turn at junctions, disappear into tunnels, and are busier
+  in the rush hours than at night. Cars stand parked along the kerbs of
+  residential streets. This is a simulation to bring the model to life, **not
+  live traffic**: where each vehicle is, is made up. It can be switched off
+  under the map options.
+- **Buses where buses run.** A bus only drives along a street that has a bus
+  stop on the map (and on along the same street between stops), in the lane by
+  the kerb, and pulls in at every stop on its side of the street, where a
+  shelter stands. About one bus every ten minutes each way, from 05:00 to
+  midnight, and none at night.
+- **The metro on its lines, by its timetable's rhythm.** Trains run on the
+  metro tracks the map shows: every four minutes in the rush hours and every
+  seven and a half otherwise, from 05:30 to midnight (in Riyadh from 10:00 on
+  Fridays), keeping to the right-hand track and standing at each station.
+  Under ground a train is a faint blue mark that moves along the tunnel's
+  trace. See the limits below for what this is and is not.
 - **Trees where they really stand.** The app reads the satellite photo under
   the city for dark green crowns and stands a tree at each one, sized to its
-  crown, with its shade on the ground.
-- **Heights from shadows.** Most ordinary buildings have no height on record
-  and would all be drawn 5 m tall. The app looks up the day the satellite
-  photo was taken, works out where the sun stood, measures each building's
-  shadow in the photo and stands the building up to match. An estimate; see
-  the limits below. Both readings can be switched off under the map options.
-- **The ground in detail**, all from the map data: bridges and flyovers lying
-  over the roads beneath them, tunnels as a faint trace, metro and railway
-  lines, footpaths, lawns and playing fields.
+  crown, with its shade on the ground. Never on a road, a track or a building.
+- **Heights from shadows.** Few ordinary buildings have a height on record.
+  The app looks up the day the satellite photo was taken, works out where the
+  sun stood, measures each building's shadow in the photo and stands the
+  building up to match. An estimate; see the limits below. Both readings can
+  be switched off under the map options.
+- **Roofs with something on them.** A stair head and a water tank on a house,
+  rows of cooling plant on a large roof. Made up, like the windows; see below.
+- **The ground in detail**: the satellite photo itself, shown stronger the
+  closer you look, and from the map data bridges and flyovers lying over the
+  roads beneath them, tunnels as a faint trace, metro and railway lines,
+  footpaths, lawns and playing fields.
 - **Real sunlight.** The model is lit from where the sun actually is at that
   place and time, and every building casts the shadow it casts right now:
   long in the morning and evening, short at noon, none after sunset.
@@ -77,6 +92,7 @@ Everything is free and needs no account or key.
 | --- | --- | --- |
 | Street map, names, places, road names | [OpenFreeMap](https://openfreemap.org), built from [OpenStreetMap](https://www.openstreetmap.org/copyright) | Drawn on the phone by [MapLibre](https://maplibre.org) |
 | Satellite photos, and the ground under the 3D city | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. Also read on the phone for trees and shadows, and asked once per area for the day the photo was taken |
+| One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
 | Detailed map picture | OpenStreetMap tile servers | [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
 | Place details, speed limits | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits |
 | Search, nearest address | [Photon](https://photon.komoot.io) (OpenStreetMap data) | |
@@ -91,32 +107,70 @@ Not included, because no open source for it exists: live traffic. The moving
 vehicles in the 3D city are a simulation on the real street network and say
 nothing about the real traffic on a road.
 
-The map is only as complete as OpenStreetMap is where you are. Speed limits in
-particular are missing on many roads. Building heights are recorded for
-landmark towers but for few ordinary buildings; those without one are drawn as
-low blocks, and a tower's special shape is not known, only its outline and
-height.
+**Buses and metro: the real hours and rhythm, not the real minute.** Riyadh
+publishes when its buses and metro run and how often, but no timetable or
+live positions as open data (the city's open data site that might have held
+one is no longer online). So the app keeps to what is published:
 
-The windows are drawn, not recorded: one row for every 3 m of height, because
-the map data does not say how many floors or windows a building really has.
+- Metro: 05:30 to midnight, from 10:00 on Fridays; a train every four minutes
+  in the rush hours (06:30 to 09:30 and 16:00 to 20:00) and every seven and a
+  half minutes otherwise. Every line is given the same rhythm.
+- Buses: 05:00 to midnight, about one every ten minutes each way along a
+  street. Bus routes are not in the map data, only the stops, so a bus follows
+  the streets that have stops and is taken off the road when it strays from
+  them.
+- A given end of a line sends its trains at the same minutes past the hour
+  every time you look, so the picture is steady, but those are not the minutes
+  of the real trains. Do not catch a train by it.
+- Other cities get the same hours, without the late Friday start.
+
+The map is only as complete as its sources are where you are. Speed limits in
+particular are missing on many roads. Bus stops are shown where OpenStreetMap
+has them, which in Riyadh is many but not all.
+
+Buildings. Their outlines are real: recorded by mappers, or traced from
+satellite photos by machine, which is why a few are a little off. What the
+outlines do not say is made up to look right:
+
+- Height. Landmark towers have theirs on record. Other buildings get the usual
+  height for their kind (a house about 7.5 m), varied a little from one to the
+  next, unless their shadow in the photo shows them to be taller.
+- Windows: one row for every 3 m of height.
+- Roofs: all flat, with a stair head, a tank or cooling plant placed by chance,
+  the same every time for the same building.
+- A tower's special shape is not known, only its outline and height. A
+  building recorded in parts is drawn as its parts, and where the parts do not
+  cover all of it the rest shows as the photo on the ground.
+
+Two kinds of outline are left out on purpose: what the data marks as
+underground, and any building a street runs straight through. The second rule
+is for metro stations under a street, which are often on record as ordinary
+buildings and would otherwise stand in the middle of the road.
+
+If Overture's archive cannot be reached, the city is drawn with the street
+map's own buildings instead. Those weld neighbouring houses into whole blocks,
+have no roof furniture and are not measured by their shadows.
 
 Heights read from shadows are rough, and mostly on the low side:
 
 - A shadow can only be measured where it ends on open ground. In a dense
   street it lands on the building next door, and all that can be said is "at
   least this tall". A building that cannot be measured is taken to be about
-  as tall as the measured ones around it, or left at 5 m if there are none.
+  as tall as the measured ones around it.
 - The time of day of the photo is not published, only the day. The app
   assumes the usual pass of a photo satellite, an hour and a half before or
   after midday, and picks whichever fits the shadows.
-- Where the map draws a whole block as one building, as in many residential
-  districts of Riyadh, there is no single building to measure.
-- A height someone recorded in OpenStreetMap is never overruled, and no
-  building is made lower than the map has it.
+- A recorded height is never overruled, and no building is made lower than
+  the usual for its kind.
 
 Trees are found by colour, so a dark green roof or awning can be mistaken for
-one and a tree in deep shade can be missed. Every tree is drawn as the same
-simple shape; palms and other kinds are not told apart.
+one and a tree in deep shade can be missed. Anything green on a road is taken
+to be something else, so a real tree on a narrow traffic island can be missed
+too. Every tree is drawn as the same simple shape; palms and other kinds are
+not told apart.
+
+Parked cars are set out by chance along residential streets, the same way
+every time for the same street. They are not the cars really parked there.
 
 The sunlight is worked out on the phone from the date, the time and the place;
 nothing is downloaded for it. Shadows are those of flat-roofed blocks on level

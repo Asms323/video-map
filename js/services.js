@@ -6,8 +6,12 @@
 //   Photon        finding places by name, and the address of a point
 //   Open-Meteo    the weather where you are
 //   OSRM          a driving route between two points
+//   Esri          the satellite photo, and the day it was taken
+//   Overture Maps one outline for every building
 
 import {
+  BUILDING_STORE,
+  buildingArchives,
   detailsQuery,
   distanceMeters,
   photonPlace,
@@ -41,6 +45,71 @@ export async function fetchJson(url, { timeout = 12000, signal, ...options } = {
     clearTimeout(timer);
     if (signal) signal.removeEventListener('abort', forward);
   }
+}
+
+/** Fetch with a time limit. Resolves with the answer whatever its status. */
+async function fetchSoon(url, timeout, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ── Buildings ─────────────────────────────────────────────────────────────
+
+const ARCHIVE_KEY = 'vm.buildings';
+const ARCHIVE_MAX_AGE_MS = 24 * 3600 * 1000;
+let archive = null;
+
+function savedArchive() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ARCHIVE_KEY));
+    if (saved && typeof saved.url === 'string' && saved.url.startsWith(BUILDING_STORE) && Number.isFinite(saved.at)) return saved;
+  } catch {
+    // No storage, or something else is kept under the name.
+  }
+  return null;
+}
+
+async function findArchive() {
+  const saved = savedArchive();
+  if (saved && Date.now() - saved.at < ARCHIVE_MAX_AGE_MS && Date.now() >= saved.at) return saved.url;
+  try {
+    const listing = await fetchSoon(`${BUILDING_STORE}?list-type=2&prefix=tiles/&delimiter=/`, 7000);
+    if (!listing.ok) throw new Error(`The buildings store answered ${listing.status}`);
+    // The newest release whose archive is really there: a release is put up file by file.
+    for (const url of buildingArchives(await listing.text()).slice(0, 3)) {
+      const start = await fetchSoon(url, 7000, { headers: { Range: 'bytes=0-6' } }).catch(() => null);
+      if (!start || !start.ok || new TextDecoder().decode(await start.arrayBuffer()) !== 'PMTiles') continue;
+      try {
+        localStorage.setItem(ARCHIVE_KEY, JSON.stringify({ url, at: Date.now() }));
+      } catch {
+        // Looked up again next time.
+      }
+      return url;
+    }
+  } catch {
+    // Offline, or the store is not answering.
+  }
+  return saved ? saved.url : null; // the one found last time, while it lasts
+}
+
+/**
+ * The address of the archive that holds an outline for every building, or
+ * null when it cannot be found. Overture publishes a release every month
+ * and clears old ones away, so the address is looked up, at most once a day.
+ */
+export function buildingArchive() {
+  if (!archive) {
+    archive = findArchive();
+    archive.then((url) => {
+      if (!url) archive = null; // ask again next time
+    });
+  }
+  return archive;
 }
 
 // ── Map styles ────────────────────────────────────────────────────────────
