@@ -105,7 +105,9 @@ const YOUTUBE_STUB =
 
 // ── Stand-ins for the data services ───────────────────────────────────────
 
-const asked = { overpass: [], weather: 0, route: 0, photoDay: 0, archive: 0 };
+const asked = { overpass: [], weather: 0, route: 0, photoDay: 0, archive: 0, photoTiles: {}, photoMaps: {} };
+// The sharpest level the stand-in for the photo service has: as in a town, one short of what a big city gets.
+const PHOTO_SHARPEST = 18;
 
 const json = (route, body) =>
   route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(body) });
@@ -219,6 +221,16 @@ async function standIns(context, { recordMap = false, noMap = false, buildings =
       asked.photoDay += 1;
       return json(route, { results: [{ layerName: 'World Imagery', attributes: { 'DATE (YYYYMMDD)': '20251208', DESCRIPTION: 'GE01' } }] });
     }
+    const url = route.request().url();
+    // And, a square of tiles at a time, whether the photo comes at a level.
+    const square = /\/tilemap\/(\d+)\/(\d+)\/(\d+)\/(\d+)\/(\d+)/.exec(url);
+    if (square) {
+      const [z, top, left, width, height] = square.slice(1).map(Number);
+      asked.photoMaps[z] = (asked.photoMaps[z] ?? 0) + 1;
+      return json(route, { valid: true, location: { left, top, width, height }, data: new Array(width * height).fill(z <= PHOTO_SHARPEST ? 1 : 0) });
+    }
+    const tile = /\/World_Imagery\/MapServer\/tile\/(\d+)\/\d+\/\d+$/.exec(url);
+    if (tile) asked.photoTiles[tile[1]] = (asked.photoTiles[tile[1]] ?? 0) + 1;
     return route.fulfill({ status: 200, headers: CORS, contentType: 'image/png', body: TILE });
   });
 
@@ -684,29 +696,96 @@ try {
     return (parts?.get('roofs')?.mesh?.count ?? 0) > 0 && (parts?.get('street')?.mesh?.count ?? 0) > 0;
   }, null, { timeout: 15000 });
   const scene = await sceneCounts(page);
-  // Every low building carries its real roof, cut out of the satellite photo; only the tall ones are left to be furnished by guesswork.
-  await page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.photos.get('roofs')?.mesh?.count ?? 0) > 0 && window.__map.getLayer('city-life').implementation.photos.get('roofs').texture, null, { timeout: 20000 });
-  const roofPhoto = await page.evaluate(async () => {
+  // Every low building shows its real roof: the satellite photo of the ground it stands on, taken from a copy
+  // of the ground as it is on screen. Only the tall ones are left to be furnished by guesswork.
+  await page.waitForFunction(() => {
+    const sceneLayer = window.__map.getLayer('city-life')?.implementation;
+    return (sceneLayer?.roofs.mesh?.count ?? 0) > 0 && Boolean(sceneLayer.ground?.texture);
+  }, null, { timeout: 20000 });
+  const roofPhoto = await page.evaluate(() => {
     const live = window.__map;
-    const lib = await import(new URL('js/lib.js', document.baseURI).href);
     const sceneLayer = live.getLayer('city-life').implementation;
-    const part = sceneLayer.photos.get('roofs');
-    const counts = sceneLayer.counts().photo.roofs;
-    const mesh = part.mesh;
+    const gl = live.painter.context.gl;
+    const order = live.getLayersOrder();
+    const mesh = sceneLayer.roofs.mesh;
     let low = Infinity;
     let high = -Infinity;
-    let inPicture = true;
     for (let i = 0; i < mesh.count; i += 1) {
       low = Math.min(low, mesh.positions[i * 3 + 2]);
       high = Math.max(high, mesh.positions[i * 3 + 2]);
-      inPicture &&= mesh.places[i * 2] >= 0 && mesh.places[i * 2] <= 1 && mesh.places[i * 2 + 1] >= 0 && mesh.places[i * 2 + 1] <= 1;
     }
-    const look = lib.groundLook(live.getZoom());
-    return { ...counts, size: part.picture.size, kept: part.picture.data === null, low, high, inPicture, toned: JSON.stringify(sceneLayer.look) === JSON.stringify(look), strength: look.strength };
+    return {
+      ...sceneLayer.counts().photo.roofs,
+      low,
+      high,
+      copyAboveGround: order.indexOf('city-ground-copy') === order.indexOf('city-ground') + 1,
+      copy: [sceneLayer.ground.width, sceneLayer.ground.height],
+      screen: [gl.drawingBufferWidth, gl.drawingBufferHeight],
+      texture: gl.isTexture(sceneLayer.ground.texture),
+      copies: sceneLayer.ground.copies,
+    };
   });
-  check('3D City: every low building has its real roof, cut from the satellite photo', roofPhoto.cut > 300 && roofPhoto.corners >= roofPhoto.cut * 6 && roofPhoto.zoom === 17 && [1024, 2048].includes(roofPhoto.size) && roofPhoto.kept && roofPhoto.inPicture, JSON.stringify(roofPhoto));
+  check('3D City: every low building has a roof for the photo to show on', roofPhoto.cut > 300 && roofPhoto.corners >= roofPhoto.cut * 6, JSON.stringify(roofPhoto));
   check('3D City: a roof lies just above its building, and no building over 32 m has one', roofPhoto.low > 3 && roofPhoto.high <= 32 + 1.2 + 0.3 + 0.01, JSON.stringify({ low: roofPhoto.low, high: roofPhoto.high }));
-  check('3D City: the roofs are toned as the photo on the ground is', roofPhoto.toned && roofPhoto.strength > 0.69 && roofPhoto.strength < 0.93, JSON.stringify(roofPhoto));
+  check(
+    '3D City: the ground is copied as it is on screen, right above the photo, for the roofs to be filled from',
+    roofPhoto.copyAboveGround && roofPhoto.texture && roofPhoto.copies > 0 && roofPhoto.copy[0] === roofPhoto.screen[0] && roofPhoto.copy[1] === roofPhoto.screen[1],
+    JSON.stringify(roofPhoto),
+  );
+  // What is on screen where a roof is: the photo (a dull green-grey in this test), not the cream of a plain roof.
+  const shown = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const live = window.__map;
+        live.once('render', () => {
+          const sceneLayer = live.getLayer('city-life').implementation;
+          const gl = live.painter.context.gl;
+          const mesh = sceneLayer.roofs.mesh;
+          const m = sceneLayer.matrix;
+          const pixel = new Uint8Array(4);
+          const colours = [];
+          const step = Math.max(Math.floor(mesh.count / 3 / 400), 1) * 3;
+          for (let i = 0; i + 2 < mesh.count && colours.length < 80; i += step) {
+            // The middle of a triangle of roof, where it falls on screen.
+            let x = 0;
+            let y = 0;
+            let z = 0;
+            for (let k = 0; k < 3; k += 1) {
+              x += mesh.positions[(i + k) * 3] / 3;
+              y += mesh.positions[(i + k) * 3 + 1] / 3;
+              z += mesh.positions[(i + k) * 3 + 2] / 3;
+            }
+            const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+            const across = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
+            const up = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+            if (Math.abs(across) > 0.85 || Math.abs(up) > 0.85) continue;
+            gl.readPixels(Math.round((across * 0.5 + 0.5) * gl.drawingBufferWidth), Math.round((up * 0.5 + 0.5) * gl.drawingBufferHeight), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+            colours.push([pixel[0], pixel[1], pixel[2]]);
+          }
+          resolve(colours);
+        });
+        live.triggerRepaint();
+      }),
+  );
+  const ofTheGround = shown.filter(([red, green, blue]) => Math.max(red, green, blue) < 190 && green >= red - 6 && green > blue).length;
+  check('3D City: a roof shows the photo of the ground under it', shown.length >= 20 && ofTheGround >= shown.length * 0.6, `${ofTheGround} of ${shown.length} roofs looked at: ${JSON.stringify(shown.slice(0, 5))}`);
+  // The photo is fetched as sharp as the screen shows it. This phone has two real pixels to each of the map's:
+  // one level finer than a map asks for on its own, which at this zoom is level 18.
+  const sharp = await page.evaluate(() => ({ tileSize: window.__map.getSource('imagery').tileSize, most: window.__map.getSource('imagery').maxzoom, zoom: window.__map.getZoom(), ratio: window.devicePixelRatio, way: window.__map.getSource('imagery').tiles[0] }));
+  check(
+    'the satellite photo is fetched a level finer for a sharp screen',
+    sharp.ratio === 2 && sharp.tileSize === 128 && sharp.most === 19 && sharp.way === 'photo://{z}/{y}/{x}' && sharp.zoom >= 16 && sharp.zoom < 17 && asked.photoTiles[18] > 4 && asked.photoMaps[18] >= 1 && !asked.photoTiles[19],
+    JSON.stringify({ ...sharp, tiles: asked.photoTiles, asked: asked.photoMaps }),
+  );
+  // Under the sharp photo lies the coarse one, which is there at once: the ground is never bare while the sharp one comes in.
+  const under = await page.evaluate(() => {
+    const order = window.__map.getLayersOrder();
+    const base = window.__map.getSource('imagery-base');
+    return { rightUnder: order.indexOf('city-ground-base') === order.indexOf('city-ground') - 1, tileSize: base?.tileSize, most: base?.maxzoom };
+  });
+  check('under the sharp photo lies the coarse one, there at once', under.rightUnder && under.tileSize === 256 && under.most === 17 && asked.photoTiles[17] > 0, JSON.stringify({ ...under, tiles: asked.photoTiles }));
+  const pavements = await page.evaluate(() => ({ drawn: window.__map.queryRenderedFeatures({ layers: ['city-pavement'] }).length, edges: window.__map.queryRenderedFeatures({ layers: ['city-pavement-edge'] }).length }));
+  check('3D City: the streets have a pavement along them', pavements.drawn > 20 && pavements.edges > 20, JSON.stringify(pavements));
   check('3D City: the tall roofs have their furniture', scene.buildings.roofs.furnished > 0 && scene.buildings.roofs.furnished <= scene.buildings.roofs.of && scene.buildings.roofs.of < roofPhoto.cut && (await sceneCorners(page, 'roofs')) >= scene.buildings.roofs.furnished * 30, JSON.stringify(scene.buildings.roofs));
   check('3D City: cars are parked along the side streets', scene.life.parked > 20 && (await sceneCorners(page, 'street')) >= scene.life.parked * 90, `${scene.life.parked} parked`);
   // Buses: only as many as the streets with stops call for, one every ten minutes each way; none without a stop on the map.
@@ -1053,13 +1132,31 @@ try {
   // Without the photo the roofs are plain again, with something made up put on them.
   await page.waitForFunction(() => {
     const sceneLayer = window.__map.getLayer('city-life')?.implementation;
-    return sceneLayer && (sceneLayer.photos.get('roofs')?.mesh?.count ?? 0) === 0 && sceneLayer.counts().buildings.roofs?.furnished > 50;
+    return sceneLayer && (sceneLayer.roofs.mesh?.count ?? 0) === 0 && sceneLayer.counts().buildings.roofs?.furnished > 50;
   }, null, { timeout: 20000 });
   check('without the photo the roofs are plain, with their made-up furniture', (await sceneCounts(page)).photo.roofs === null && (await sceneCounts(page)).buildings.roofs.furnished > 50);
   await page.locator('#optPhoto').check();
   check('and on again', (await saved(page, 'settings')).photo === true);
-  await page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.photos.get('roofs')?.mesh?.count ?? 0) > 0, null, { timeout: 20000 });
+  await page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.roofs.mesh?.count ?? 0) > 0, null, { timeout: 20000 });
   check('and the real roofs come back', (await sceneCounts(page)).photo.roofs.cut > 300);
+  // Closer in the map asks for a level the photo does not come at here. It is told so without fetching a
+  // single tile of it, and shows the level it has.
+  await page.evaluate(() => window.__map.setZoom(17.3));
+  await page.waitForFunction(() => window.__map.getZoom() > 17.2 && window.__map.loaded());
+  await page.waitForFunction((maps) => maps > 0, asked.photoMaps[19] ?? 0).catch(() => {});
+  await page.waitForTimeout(1500);
+  check('where the photo does not come as sharp as asked, the level it has is shown, and nothing is fetched in vain', (asked.photoMaps[19] ?? 0) >= 1 && !asked.photoTiles[19] && asked.photoTiles[18] > 4 && errors.length === 0, JSON.stringify({ tiles: asked.photoTiles, asked: asked.photoMaps, errors }));
+  await page.evaluate(() => window.__map.setZoom(16));
+  await page.waitForFunction(() => window.__map.getZoom() < 16.1 && window.__map.loaded());
+  // The sharp photo takes more to download: it can be switched off.
+  check('the sharp photo switch says what it costs', /mobile data/i.test(await text(page, '.setting:has(#optSharp) .setting-note')), await text(page, '.setting:has(#optSharp) .setting-note'));
+  await page.locator('#optSharp').uncheck();
+  await page.waitForFunction(() => window.__map.getSource('imagery')?.tileSize === 256, null, { timeout: 45000 });
+  check('the sharp photo can be turned off', (await saved(page, 'settings')).sharp === false);
+  await page.locator('#optSharp').check();
+  await page.waitForFunction(() => window.__map.getSource('imagery')?.tileSize === 128 && Boolean(window.__map.getLayer('city-life')), null, { timeout: 45000 });
+  check('and on again', (await saved(page, 'settings')).sharp === true);
+  await mapAtRest(page);
   await page.click('#sheet-map [data-close]');
 
   // Units.
@@ -1313,8 +1410,8 @@ try {
     const sceneLayer = live.getLayer('city-life')?.implementation;
     const gl = live.painter.context.gl;
     if (!sceneLayer || gl.isContextLost()) return false;
-    const roofs = sceneLayer.photos.get('roofs');
-    return gl.isProgram(sceneLayer.program) && gl.isProgram(sceneLayer.photoProgram) && (roofs?.mesh?.count ?? 0) > 0 && Boolean(roofs.texture) && gl.isTexture(roofs.texture) && (sceneLayer.parts.get('traffic')?.mesh.count ?? 0) > 0;
+    const ground = sceneLayer.ground?.texture;
+    return gl.isProgram(sceneLayer.program) && gl.isProgram(sceneLayer.roofProgram) && (sceneLayer.roofs.mesh?.count ?? 0) > 0 && Boolean(ground) && gl.isTexture(ground) && (sceneLayer.parts.get('traffic')?.mesh.count ?? 0) > 0;
   };
   await back.page.waitForFunction(sceneReady, null, { timeout: 30000 });
   // A phone does this to a page that has been in the background for a while; here it is done by hand.

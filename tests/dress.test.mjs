@@ -306,3 +306,16 @@ test('a mosque gets a dome on its roof and a minaret at a corner; a large one a 
   assert.deepEqual(mosqueExtras([{ id: 3, ring: rect(0, 0, 30, 5), height: 8 }], 1.2), { features: [], shades: [] });
   assert.deepEqual(mosqueExtras([], 1.2), { features: [], shades: [] });
 });
+
+test('a shop\'s own building keeps its usual height, whatever a shadow in the photo suggested', () => {
+  // The photo's shadows said 31 m; the usual height for such a building is 6 m.
+  const raised = [{ ...building(1, 0, 0, 20, 15, 31), usual: 6 }];
+  const made = storeExtras([store("McDonald's", 'fast_food', 10, 7)], raised, () => [1, 0]);
+  assert.deepEqual([...made.dressed], [1]);
+  assert.deepEqual([...made.roofs], [[1, 6.5]]);
+  assert.ok(made.features.every((feature) => feature.properties.t <= 6.5));
+  // A building that is on record as 31 m tall is a tower with a branch at its foot: a front on its wall, no more.
+  const tower = storeExtras([store("McDonald's", 'fast_food', 10, 7)], [building(1, 0, 0, 20, 15, 31)], () => [1, 0]);
+  assert.equal(tower.dressed.size, 0);
+  assert.ok(tower.features.every((feature) => feature.properties.kind === 'front'));
+});

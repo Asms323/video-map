@@ -1,11 +1,20 @@
-// A layer the app draws for itself inside the map's 3D scene: coloured
-// triangles placed in metres around an origin. The traffic is drawn with it.
-// It shares the buildings' depth, so a car behind a tower is hidden by it.
-// Some of its triangles show a picture instead of a colour: the roofs, cut
-// out of the satellite photo.
+// Two layers the app draws for itself inside the map's 3D scene.
+//
+// SceneLayer: coloured triangles placed in metres around an origin. The
+// traffic is drawn with it, the trees, the bridges. It shares the buildings'
+// depth, so a car behind a tower is hidden by it. It also draws the roofs,
+// which show the satellite photo of the ground they stand on.
+//
+// GroundCopy: put right above the photo of the ground, it keeps a copy of the
+// picture as it is at that moment, with nothing but the ground in it. That
+// copy is what the roofs are filled from: each point of a roof shows the
+// ground straight beneath it, exactly as sharp and as toned as the ground
+// beside the building is on screen, at no cost in downloads.
 
 const EARTH_AROUND_METERS = 40075016.686;
 const FRAME_MS = 33; // about 30 pictures a second is smooth enough, and easier on the battery
+// After the ground has changed without the view moving (photo tiles coming in and fading in), it is copied afresh for this long.
+const GROUND_SETTLES_MS = 900;
 
 const VERTEX = `
 attribute vec3 a_pos;
@@ -25,33 +34,31 @@ void main() {
   gl_FragColor = v_color;
 }`;
 
-// Triangles that show a picture. The picture is toned the way the map tones
-// the photo on the ground, so a roof and the yard beside it belong together.
-const PHOTO_VERTEX = `
+// A roof: each of its points is drawn where it stands, and shows the ground under it, found where that
+// ground is on screen. (A roof at the bottom edge of the picture stands over ground that is off screen:
+// there the picture is turned back on itself, which gives it more of the same roofs and yards.)
+const ROOF_VERTEX = `
 attribute vec3 a_pos;
-attribute vec2 a_place;
 uniform mat4 u_matrix;
-varying vec2 v_place;
+varying vec4 v_ground;
 void main() {
-  v_place = a_place;
+  v_ground = u_matrix * vec4(a_pos.xy, 0.0, 1.0);
   gl_Position = u_matrix * vec4(a_pos, 1.0);
 }`;
 
-const PHOTO_FRAGMENT = `
+const ROOF_FRAGMENT = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
-uniform sampler2D u_photo;
+#endif
+uniform sampler2D u_ground;
 uniform float u_opacity;
-uniform vec4 u_look; // how strongly the photo shows, how far it is greyed, its contrast, its darkest tone
-uniform vec3 u_ground; // what shows through where it is not at full strength
-varying vec2 v_place;
+varying vec4 v_ground;
 void main() {
-  vec3 rgb = texture2D(u_photo, v_place).rgb;
-  float average = (rgb.r + rgb.g + rgb.b) / 3.0;
-  rgb += (average - rgb) * u_look.y;
-  rgb = (rgb - 0.5) * u_look.z + 0.5;
-  rgb = mix(vec3(u_look.w), vec3(1.0), rgb);
-  rgb = mix(u_ground, rgb, u_look.x);
-  gl_FragColor = vec4(rgb * u_opacity, u_opacity);
+  vec2 at = v_ground.xy / v_ground.w * 0.5 + 0.5;
+  at = 1.0 - abs(1.0 - abs(at));
+  gl_FragColor = vec4(texture2D(u_ground, at).rgb * u_opacity, u_opacity);
 }`;
 
 function compile(gl, type, source) {
@@ -62,28 +69,111 @@ function compile(gl, type, source) {
   return shader;
 }
 
+function link(gl, vertex, fragment) {
+  const program = gl.createProgram();
+  gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertex));
+  gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragment));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) || 'program did not link');
+  return program;
+}
+
+export class GroundCopy {
+  constructor(id) {
+    this.id = id;
+    this.type = 'custom';
+    this.renderingMode = '2d';
+    this.texture = null;
+    this.width = 0;
+    this.height = 0;
+    this.copies = 0; // how many times the picture has been copied, for anyone counting
+    this.view = new Float32Array(16); // the view the copy in hand was made of
+    this.freshUntil = 0;
+    this.wanted = true; // nobody needs the copy when no roof is filled from it
+    this.kept = false; // whether the copy in hand was made while it was wanted, and so has been kept up
+  }
+
+  onAdd() {
+    this.texture = null;
+    this.width = 0;
+    this.height = 0;
+  }
+
+  onRemove(_map, gl) {
+    if (this.texture) gl.deleteTexture(this.texture);
+    this.texture = null;
+  }
+
+  /** The ground is changing without the view moving: copy it afresh for a while. */
+  touch() {
+    this.freshUntil = performance.now() + GROUND_SETTLES_MS;
+  }
+
+  render(gl, args) {
+    if (!this.wanted || gl.isContextLost()) {
+      this.kept = false;
+      return;
+    }
+    const width = gl.drawingBufferWidth;
+    const height = gl.drawingBufferHeight;
+    if (!(width > 0 && height > 0)) return;
+    // The copy in hand still shows the ground as it is, unless the view has moved or the ground has changed.
+    const main = args?.defaultProjectionData?.mainMatrix ?? args?.modelViewProjectionMatrix ?? args;
+    let moved = !this.kept || !this.texture || !gl.isTexture(this.texture) || this.width !== width || this.height !== height || performance.now() < this.freshUntil;
+    this.kept = true;
+    if (main && main.length === 16) {
+      for (let i = 0; i < 16; i += 1) {
+        if (this.view[i] !== main[i]) {
+          moved = true;
+          this.view[i] = main[i];
+        }
+      }
+    } else {
+      moved = true;
+    }
+    if (!moved) return;
+
+    gl.activeTexture(gl.TEXTURE0);
+    if (!this.texture || !gl.isTexture(this.texture)) {
+      // (Gone with the graphics memory, if the phone took that away in the background.)
+      this.texture = gl.createTexture();
+      this.width = 0;
+    }
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    if (this.width !== width || this.height !== height) {
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGB, 0, 0, width, height, 0);
+      this.width = width;
+      this.height = height;
+    } else {
+      gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+    }
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    this.copies += 1;
+  }
+}
+
 export class SceneLayer {
   /**
    * onFrame(): called before each picture is drawn, to move things on. It
    * returns true while there is movement to show, which keeps the pictures coming.
-   * onLost(): called when the pictures handed over with setPhoto() are gone
-   * from the map and have to be handed over again (see render).
    */
-  constructor(id, { onFrame, onLost } = {}) {
+  constructor(id, { onFrame } = {}) {
     this.id = id;
     this.type = 'custom';
     this.renderingMode = '3d';
     this.onFrame = onFrame;
-    this.onLost = onLost;
     this.origin = null;
     this.opacity = 1;
     this.parts = new Map(); // name → { mesh, buffers, stale }
-    this.photos = new Map(); // name → { mesh, picture, buffers, texture, stale, fresh }
-    // How a picture is toned: { strength, grey, contrast, low, ground: [red, green, blue] }, each from 0 to 1.
-    this.look = { strength: 1, grey: 0, contrast: 1, low: 0, ground: [1, 1, 1] };
+    this.roofs = { mesh: null, buffer: null, stale: true }; // the roofs, filled from the copy of the ground
+    this.ground = null; // the GroundCopy they are filled from
     this.map = null;
     this.program = null;
-    this.photoProgram = null;
+    this.roofProgram = null;
     this.timer = null;
     this.matrix = new Float32Array(16);
   }
@@ -95,45 +185,27 @@ export class SceneLayer {
 
   /** Make what the scene keeps in the map's graphics memory: its two programs. Everything drawn so far is sent there again. */
   build(gl) {
-    const program = gl.createProgram();
-    gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERTEX));
-    gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FRAGMENT));
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) || 'program did not link');
-    this.program = program;
+    this.program = link(gl, VERTEX, FRAGMENT);
     this.at = {
-      pos: gl.getAttribLocation(program, 'a_pos'),
-      color: gl.getAttribLocation(program, 'a_color'),
-      matrix: gl.getUniformLocation(program, 'u_matrix'),
-      opacity: gl.getUniformLocation(program, 'u_opacity'),
+      pos: gl.getAttribLocation(this.program, 'a_pos'),
+      color: gl.getAttribLocation(this.program, 'a_color'),
+      matrix: gl.getUniformLocation(this.program, 'u_matrix'),
+      opacity: gl.getUniformLocation(this.program, 'u_opacity'),
     };
-    const photo = gl.createProgram();
-    gl.attachShader(photo, compile(gl, gl.VERTEX_SHADER, PHOTO_VERTEX));
-    gl.attachShader(photo, compile(gl, gl.FRAGMENT_SHADER, PHOTO_FRAGMENT));
-    gl.linkProgram(photo);
-    if (!gl.getProgramParameter(photo, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(photo) || 'program did not link');
-    this.photoProgram = photo;
-    this.photoAt = {
-      pos: gl.getAttribLocation(photo, 'a_pos'),
-      place: gl.getAttribLocation(photo, 'a_place'),
-      matrix: gl.getUniformLocation(photo, 'u_matrix'),
-      opacity: gl.getUniformLocation(photo, 'u_opacity'),
-      photo: gl.getUniformLocation(photo, 'u_photo'),
-      look: gl.getUniformLocation(photo, 'u_look'),
-      ground: gl.getUniformLocation(photo, 'u_ground'),
+    this.roofProgram = link(gl, ROOF_VERTEX, ROOF_FRAGMENT);
+    this.roofAt = {
+      pos: gl.getAttribLocation(this.roofProgram, 'a_pos'),
+      matrix: gl.getUniformLocation(this.roofProgram, 'u_matrix'),
+      opacity: gl.getUniformLocation(this.roofProgram, 'u_opacity'),
+      ground: gl.getUniformLocation(this.roofProgram, 'u_ground'),
     };
     // Whatever was drawn before the map changed its style is sent to the new one.
     for (const part of this.parts.values()) {
       part.buffers = null;
       part.stale = true;
     }
-    // (A picture is let go of once the map has it. Its owner hands it over again after a change of style.)
-    for (const part of this.photos.values()) {
-      part.buffers = null;
-      part.texture = null;
-      part.stale = true;
-      part.fresh = true;
-    }
+    this.roofs.buffer = null;
+    this.roofs.stale = true;
   }
 
   onRemove(_map, gl) {
@@ -146,19 +218,12 @@ export class SceneLayer {
       }
       part.buffers = null;
     }
-    for (const part of this.photos.values()) {
-      if (part.buffers) {
-        gl.deleteBuffer(part.buffers.positions);
-        gl.deleteBuffer(part.buffers.places);
-      }
-      if (part.texture) gl.deleteTexture(part.texture);
-      part.buffers = null;
-      part.texture = null;
-    }
+    if (this.roofs.buffer) gl.deleteBuffer(this.roofs.buffer);
+    this.roofs.buffer = null;
     if (this.program) gl.deleteProgram(this.program);
-    if (this.photoProgram) gl.deleteProgram(this.photoProgram);
+    if (this.roofProgram) gl.deleteProgram(this.roofProgram);
     this.program = null;
-    this.photoProgram = null;
+    this.roofProgram = null;
     this.map = null;
   }
 
@@ -175,31 +240,17 @@ export class SceneLayer {
     this.parts.set(name, part);
   }
 
-  /**
-   * Give a named part of the scene triangles that show a picture: a PhotoMesh
-   * (see roofs.js) and the picture it is cut from, { size, data } with its
-   * pixels as red, green, blue, alpha in a square `size` a side. Without a
-   * new picture the part keeps the one it has. The picture's pixels are let
-   * go of once the map has taken them.
-   */
-  setPhoto(name, mesh, picture) {
-    const part = this.photos.get(name) ?? { mesh: null, picture: null, buffers: null, texture: null, stale: true, fresh: false };
-    part.mesh = mesh;
-    part.stale = true;
-    if (picture) {
-      part.picture = picture;
-      part.fresh = true;
-    }
-    this.photos.set(name, part);
+  /** Give the scene its roofs: a RoofMesh (see roofs.js), or one that is empty for none. */
+  setRoofs(mesh) {
+    this.roofs.mesh = mesh;
+    this.roofs.stale = true;
+    if (this.ground) this.ground.wanted = Boolean(mesh && mesh.count > 0);
   }
 
   render(gl, args) {
     // A phone may take the graphics memory away while the app is in the background, and hand back an empty
-    // one. What the scene had built there is then gone: it is built again, and the pictures asked for anew.
-    if (this.program && !gl.isContextLost() && !gl.isProgram(this.program)) {
-      this.build(gl);
-      this.onLost?.();
-    }
+    // one. What the scene had built there is then gone: it is built again.
+    if (this.program && !gl.isContextLost() && !gl.isProgram(this.program)) this.build(gl);
     const moving = this.onFrame ? this.onFrame() : false;
     if (moving && this.timer === null && this.map) {
       this.timer = setTimeout(() => {
@@ -246,61 +297,31 @@ export class SceneLayer {
     gl.disableVertexAttribArray(this.at.pos);
     gl.disableVertexAttribArray(this.at.color);
 
-    // The parts that show a picture.
-    let photoReady = false;
-    for (const part of this.photos.values()) {
-      const mesh = part.mesh;
-      if (!mesh || mesh.count === 0) continue;
-      if (part.fresh && part.picture?.data) {
-        // The picture goes to the map once; smaller copies of it are made for when it is seen from afar.
-        if (!part.texture) part.texture = gl.createTexture();
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, part.texture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, part.picture.size, part.picture.size, 0, gl.RGBA, gl.UNSIGNED_BYTE, part.picture.data);
-        gl.generateMipmap(gl.TEXTURE_2D);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        part.picture = { size: part.picture.size, data: null };
-        part.fresh = false;
-      }
-      if (!part.texture) continue;
-      if (!photoReady) {
-        photoReady = true;
-        // A roof lies on the slab the map draws on top of its building: it is drawn a touch nearer, so that the two do not flicker.
-        gl.enable(gl.POLYGON_OFFSET_FILL);
-        gl.polygonOffset(-2, -6);
-        gl.useProgram(this.photoProgram);
-        gl.uniformMatrix4fv(this.photoAt.matrix, false, m);
-        gl.uniform1f(this.photoAt.opacity, this.opacity);
-        gl.uniform1i(this.photoAt.photo, 0);
-        gl.uniform4f(this.photoAt.look, this.look.strength, this.look.grey, this.look.contrast, this.look.low);
-        gl.uniform3f(this.photoAt.ground, this.look.ground[0], this.look.ground[1], this.look.ground[2]);
-        gl.enableVertexAttribArray(this.photoAt.pos);
-        gl.enableVertexAttribArray(this.photoAt.place);
-        gl.activeTexture(gl.TEXTURE0);
-      }
-      gl.bindTexture(gl.TEXTURE_2D, part.texture);
-      if (!part.buffers) part.buffers = { positions: gl.createBuffer(), places: gl.createBuffer() };
-      gl.bindBuffer(gl.ARRAY_BUFFER, part.buffers.positions);
-      if (part.stale) gl.bufferData(gl.ARRAY_BUFFER, mesh.positions.subarray(0, mesh.count * 3), gl.DYNAMIC_DRAW);
-      gl.vertexAttribPointer(this.photoAt.pos, 3, gl.FLOAT, false, 0, 0);
-      gl.bindBuffer(gl.ARRAY_BUFFER, part.buffers.places);
-      if (part.stale) gl.bufferData(gl.ARRAY_BUFFER, mesh.places.subarray(0, mesh.count * 2), gl.DYNAMIC_DRAW);
-      gl.vertexAttribPointer(this.photoAt.place, 2, gl.FLOAT, false, 0, 0);
-      part.stale = false;
-      gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
-    }
-    if (photoReady) {
+    // The roofs, filled from the copy of the ground. Until that copy is there they are left out, and the
+    // plain roofs the map draws show.
+    const roofs = this.roofs.mesh;
+    const ground = this.ground?.texture;
+    if (roofs && roofs.count > 0 && ground && gl.isTexture(ground)) {
+      // A roof lies on the slab the map draws on top of its building: it is drawn a touch nearer, so that the two do not flicker.
+      gl.enable(gl.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(-2, -6);
+      gl.useProgram(this.roofProgram);
+      gl.uniformMatrix4fv(this.roofAt.matrix, false, m);
+      gl.uniform1f(this.roofAt.opacity, this.opacity);
+      gl.uniform1i(this.roofAt.ground, 0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, ground);
+      gl.enableVertexAttribArray(this.roofAt.pos);
+      if (!this.roofs.buffer) this.roofs.buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.roofs.buffer);
+      if (this.roofs.stale) gl.bufferData(gl.ARRAY_BUFFER, roofs.positions.subarray(0, roofs.count * 3), gl.DYNAMIC_DRAW);
+      gl.vertexAttribPointer(this.roofAt.pos, 3, gl.FLOAT, false, 0, 0);
+      this.roofs.stale = false;
+      gl.drawArrays(gl.TRIANGLES, 0, roofs.count);
+      gl.disableVertexAttribArray(this.roofAt.pos);
+      gl.bindTexture(gl.TEXTURE_2D, null);
       gl.disable(gl.POLYGON_OFFSET_FILL);
       gl.polygonOffset(0, 0);
-      gl.disableVertexAttribArray(this.photoAt.pos);
-      gl.disableVertexAttribArray(this.photoAt.place);
-      gl.bindTexture(gl.TEXTURE_2D, null);
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }

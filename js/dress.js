@@ -600,7 +600,9 @@ export function storeExtras(stores, buildings, facing = () => null, others = [],
       if (!near) continue;
       const ring = corners.map(patch.to);
       // (A metro station is filed too, so that a kiosk inside it is known to be inside something: it keeps its own dress.)
-      const index = outlines.push({ id: building.id, height: building.height, ring, box: [west, south, east, north], area: areaOf(ring), pieces: building.polygons.length, station: building.kind === 'station' }) - 1;
+      // (A shop's own building is judged, and drawn, by the height on record or the usual one: a height read
+      // from a shadow in the photo is too rough a thing to turn a supermarket into a tower on.)
+      const index = outlines.push({ id: building.id, height: building.usual ?? building.height, ring, box: [west, south, east, north], area: areaOf(ring), pieces: building.polygons.length, station: building.kind === 'station' }) - 1;
       for (const key of cells) {
         if (!grid.has(key)) grid.set(key, []);
         grid.get(key).push(index);

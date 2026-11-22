@@ -21,10 +21,19 @@ the phone: no App Store, no Apple developer account, no Mac.
   in one of seven pale shades with a window in each bay for ordinary
   buildings, bands of glass for towers, and the recorded colour where one is
   noted. They stand on the real ground, with grey roads at their real widths.
-- **Real roofs.** Every building up to 32 m tall carries its own roof, cut out
-  of the satellite photo along the building's outline: its real colour, its
-  tanks, its cooling plant, its skylights. Seen from above, as a city mostly
-  is, that is most of what there is to see of a building.
+- **A sharp photo of the ground.** The satellite photo under the city is
+  fetched as sharp as the phone's screen can show it: in a city like Riyadh
+  down to about 30 cm to a pixel, where parked cars and the plant on a roof
+  can be made out. (A phone's screen has two or three real pixels to each one
+  a map counts in; a map that does not know that shows the photo stretched
+  and soft.) A coarse copy lies under it and is there at once, so the ground
+  is never bare while the sharp one comes in. The sharp photo takes several
+  times the download, and can be switched off under the map options.
+- **Real roofs.** Every building up to 32 m tall carries its own roof: the
+  satellite photo of the very ground it stands on, lifted onto the building,
+  as sharp as the ground beside it. Its real colour, its tanks, its cooling
+  plant, its skylights. Seen from above, as a city mostly is, that is most of
+  what there is to see of a building.
 - **Riyadh's landmarks, modelled by hand.** Kingdom Centre with its arch and
   sky bridge, Al Faisaliah with its golden globe, the PIF Tower, Burj Rafal,
   the twisting Al Majdoul Tower, the TV Tower, the striped water tower and
@@ -49,6 +58,9 @@ the phone: no App Store, no Apple developer account, no Mac.
   sign. Every other fuel station gets a plain canopy with pumps.
 - **Mosques with domes and minarets.** Each mosque on the map has a dome on
   its roof and a minaret at a corner, two on a large one.
+- **Pavements.** Along both sides of every street and main road runs a
+  pavement of pale paving, with a kerb at the road and rounded corners at the
+  junctions; a side street runs through the pavement of the road it meets.
 - **Painted roads.** Main roads have their lanes: a broken line between lanes,
   a line along each edge, a yellow line down the middle where traffic runs
   both ways. A side street has a zebra crossing where it meets a main road,
@@ -121,7 +133,7 @@ Everything is free and needs no account or key.
 | What | From | Notes |
 | --- | --- | --- |
 | Street map, names, places, road names | [OpenFreeMap](https://openfreemap.org), built from [OpenStreetMap](https://www.openstreetmap.org/copyright) | Drawn on the phone by [MapLibre](https://maplibre.org) |
-| Satellite photos, the ground under the 3D city, and the roofs of its buildings | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. The roofs are cut from the photo tiles the ground is showing, plus a margin round the screen, so they cost little extra download. Also read on the phone for trees and shadows, and asked once per area for the day the photo was taken |
+| Satellite photos, the ground under the 3D city, and the roofs of its buildings | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. How sharp the photo comes differs from place to place: the service is asked, a square of tiles at a time, and only what it has is fetched. The roofs are filled from the ground as it is on screen, and cost no download of their own. Also read on the phone for trees and shadows, and asked once per area for the day the photo was taken |
 | One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
 | Detailed map picture | OpenStreetMap tile servers | [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
 | Place details, speed limits | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits |
@@ -177,6 +189,9 @@ outlines do not say is made up to look right:
   stair head, a tank or cooling plant placed by chance. So are all roofs when
   the photo is switched off or cannot be had. The photo also carries the
   shadows of the hour it was taken at, which are not those of the hour it is.
+  A roof is filled from the ground as it is on screen. At the very bottom
+  edge of the picture a roof stands over ground that is off screen, and
+  shows a mirror image of the ground just above the edge instead.
 - A tower's special shape is not known, only its outline and height (the
   landmarks below are the exception). A building recorded in parts is drawn
   as its parts, and where the parts do not cover all of it the rest shows as
@@ -252,6 +267,18 @@ those with a Muslim place of prayer from the map inside them. Where a given
 mosque's dome and minaret stand, and how tall the minaret is, is not known:
 the dome is put in the middle of the roof, the minaret at a corner picked by
 chance, and both are sized to the building.
+
+The photo. How sharp it is depends on what the service has for a place: about
+30 cm to a pixel in Riyadh and other large cities, coarser in small towns and
+open country, where the map shows the sharpest level there is. By a rough
+count a sharp photo is some tens of megabytes of download for an hour's
+driving, where the coarser one is a few; the same streets driven again within
+a day come from the phone's own store.
+
+Pavements. Hardly any pavement is in the map data. They are laid by rule: the
+same width along every street of a kind (2.6 m beside a side street, up to
+4.5 m beside a main road), none along a motorway or a service lane. Where a
+street really has no pavement, or a wider one, the map does not say.
 
 Road markings. The lanes painted are the ones the simulated traffic keeps to,
 which go by the class of the road, not by a count of its real lanes. Whether
@@ -351,11 +378,12 @@ js/app.js               the app: layout, video, location, search, place details
 js/map.js               the map: styles, markers, following, taps
 js/life.js              the simulated traffic: street network, vehicles, trains,
                         and the bridges they cross
-js/scene.js             the layer that draws the traffic into the 3D scene
+js/scene.js             the layers that draw into the 3D scene: the traffic, the
+                        roofs, and the copy of the ground the roofs are filled from
 js/landmarks.js         the landmarks modelled by hand, as stacks of slabs
 js/dress.js             metro station footbridges and pavilions, chain stores,
                         shop fronts, mosques
-js/roofs.js             the real roofs, cut out of the satellite photo
+js/roofs.js             the real roofs, cut along the buildings' outlines
 js/sight.js             reading the satellite photo: shadows to heights, trees
 js/services.js          the open data services
 js/lib.js               everything that needs no browser: parsing, distances,

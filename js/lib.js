@@ -994,10 +994,11 @@ export function buildingHeight(properties, id) {
 /**
  * Building footprints from Overture map-tile features, for the buildings that
  * reach into a box { west, south, east, north }:
- * [{ id, height, base, known, kind, use, polygons }], each polygon a list of rings.
+ * [{ id, height, base, known, kind, use, usual, polygons }], each polygon a list of rings.
  * kind is 'station' for a metro or railway station building and 'mosque' for
  * a mosque; use is what the data says the building is for, where it says so
- * ('residential', 'commercial', 'religious', …).
+ * ('residential', 'commercial', 'religious', …); usual is the height the
+ * building would have had without the estimate, where one was used.
  *
  * Left out: what is underground (a metro station under a street is recorded
  * as a building too), and a building whose separate parts are given, which
@@ -1013,7 +1014,10 @@ export function buildingFootprints(features, box, estimates, skip) {
     if (properties.is_underground === true || properties.has_parts === true || skip?.has(feature.id)) continue;
     const size = buildingHeight(properties, feature.id);
     const estimate = size.known ? undefined : estimates?.get(feature.id);
-    if (estimate > size.height + 1) size.height = estimate;
+    if (estimate > size.height + 1) {
+      size.usual = size.height;
+      size.height = estimate;
+    }
     const geometry = feature.geometry; // read last: unpacking the shape is the costly part
     let all = [];
     if (geometry?.type === 'Polygon') all = [geometry.coordinates];
@@ -1047,6 +1051,16 @@ const CITY_ROADS = [
 ];
 const TRACK_METERS = 5; // a railway line with its bed
 const PATH_METERS = 2.2;
+/**
+ * A pavement runs along both sides of every street people walk beside: how
+ * wide, in metres, by kind of road (see CITY_ROADS). None along a motorway, a
+ * service lane or a track. The map data seldom has pavements of its own; these
+ * are laid by rule, the same along every street of a kind.
+ */
+export const PAVEMENT_METERS = { minor: 2.6, mid: 3.5, main: 4.5 };
+const PAVING = '#d5cfc2'; // paving stones
+const PAVING_EDGE = '#9f9a8e'; // where the pavement ends against the plots
+const KERB = '#f1eee8'; // the kerb stone between the pavement and the road
 
 /**
  * How wide a line of the street map is on the ground in the 3D city, in
@@ -1206,12 +1220,83 @@ export function wallImage(id) {
 // place markers and the road-name lookup work in all of them.
 
 export const VECTOR_SOURCE = 'openmaptiles';
-const IMAGERY_TILES =
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+// ── The satellite photo ───────────────────────────────────────────────────
+
+// The photo reaches the map by a way of the app's own ("photo://level/row/column"), which knows how
+// sharp the photo comes for each stretch of ground (see photoProtocol in services.js).
+const PHOTO_TILES = 'photo://{z}/{y}/{x}';
+// Everywhere there is a photo it comes at least this sharp; in cities it comes up to three levels sharper.
+export const PHOTO_SURE_ZOOM = 16;
+export const PHOTO_MOST_ZOOM = 19;
+// Whether a level is there is asked of the service for a square of this many tiles a side at a time.
+export const PHOTO_BLOCK_TILES = 32;
+
+/**
+ * The satellite photo as a source for the map.
+ *
+ * A map shows a photo tile at one photo pixel to one of its own pixels. A
+ * phone's screen has two or three real pixels to each of the map's, so shown
+ * like that the photo is stretched and looks soft. pixelRatio: how many real
+ * pixels the screen has to one of the map's; from it, how much smaller the
+ * tiles are to be shown, which makes the map fetch finer ones: one level finer
+ * at 2, two levels at 3. (A level finer is four times the pictures to fetch.)
+ */
+export function photoSource(pixelRatio = 1) {
+  const tileSize = pixelRatio >= 2.5 ? 64 : pixelRatio >= 1.5 ? 128 : 256;
+  return {
+    type: 'raster',
+    tiles: [PHOTO_TILES],
+    tileSize,
+    maxzoom: PHOTO_MOST_ZOOM,
+    attribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
+  };
+}
+
+/**
+ * The same photo as coarse as a map asks for it on its own: a few tiles, soon
+ * there. It lies under the sharp one while that comes in, tile by tile, so
+ * that the ground is never bare. Null where the sharp one is no sharper.
+ */
+export function photoUnderlay(pixelRatio = 1) {
+  if (photoSource(pixelRatio).tileSize === 256) return null;
+  return { ...photoSource(1), maxzoom: PHOTO_SURE_ZOOM + 1 };
+}
+
+/** What a photo tile's address stands for: "photo://19/224905/330117" → { z, x, y }, or null. */
+export function photoTileOf(url) {
+  const match = /^photo:\/\/(\d{1,2})\/(\d+)\/(\d+)$/.exec(String(url ?? ''));
+  if (!match) return null;
+  const tile = { z: Number(match[1]), y: Number(match[2]), x: Number(match[3]) };
+  return tile.x < 2 ** tile.z && tile.y < 2 ** tile.z ? tile : null;
+}
+
+/** The square of tiles a tile's level is asked about with: { z, left, top, size }. */
+export function photoBlockOf(z, x, y) {
+  const size = Math.min(PHOTO_BLOCK_TILES, 2 ** z);
+  return { z, left: x - (x % size), top: y - (y % size), size };
+}
+
+/**
+ * Read the service's answer about a square of tiles: whether the photo is
+ * there for one of them. answer: { valid, location: { left, top, width,
+ * height }, data: [1, 0, …] }, a row at a time from the top. True, false, or
+ * null when the answer does not say.
+ */
+export function photoInBlock(answer, x, y) {
+  const place = answer?.location;
+  if (!answer || answer.valid === false || !Array.isArray(answer.data) || !place) return null;
+  const column = x - place.left;
+  const row = y - place.top;
+  if (!(column >= 0 && column < place.width && row >= 0 && row < place.height)) return null;
+  const cell = answer.data[row * place.width + column];
+  return cell === 1 ? true : cell === 0 ? false : null;
+}
+
 const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
-/** Satellite photos with the street map's names and icons drawn on top. */
-export function satelliteStyle(base) {
+/** Satellite photos with the street map's names and icons drawn on top. pixelRatio: see photoSource. */
+export function satelliteStyle(base, { pixelRatio = 1 } = {}) {
   const labels = base.layers
     .filter((layer) => layer.type === 'symbol')
     .map((layer) => ({
@@ -1231,16 +1316,13 @@ export function satelliteStyle(base) {
     sprite: base.sprite,
     sources: {
       [VECTOR_SOURCE]: base.sources[VECTOR_SOURCE],
-      imagery: {
-        type: 'raster',
-        tiles: [IMAGERY_TILES],
-        tileSize: 256,
-        maxzoom: 18,
-        attribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
-      },
+      // (The coarse photo first: a map fetches for its sources in the order they are named.)
+      ...(photoUnderlay(pixelRatio) ? { 'imagery-base': photoUnderlay(pixelRatio) } : {}),
+      imagery: photoSource(pixelRatio),
     },
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': '#10141a' } },
+      ...(photoUnderlay(pixelRatio) ? [{ id: 'imagery-base', type: 'raster', source: 'imagery-base' }] : []),
       { id: 'imagery', type: 'raster', source: 'imagery' },
       ...labels,
     ],
@@ -1277,41 +1359,20 @@ export function detailedStyle(base) {
  * be looked at tilted, from above.
  */
 /**
- * How the satellite photo is toned in the 3D city: paled, so that it reads as
- * sunlit ground under the model and shadows show on it, and less so from
- * close by, where its detail is: the yards, the parking bays, what is on the
- * roofs. The numbers are the map's own raster settings at the two zooms
- * between which they change.
+ * How the satellite photo is toned in the 3D city: a little paled from afar,
+ * so that it reads as sunlit ground and shadows show on it, and all but as
+ * it is from close by, where its detail is: the yards, the parking bays, what
+ * is on the roofs. The numbers are the map's own raster settings at the two
+ * zooms between which they change. (The roofs show the ground as it is on
+ * screen, so they are toned with it.)
  */
 export const GROUND_LOOK = {
   background: '#d9d2c5',
-  far: { zoom: 15.5, opacity: 0.7, saturation: -0.36, contrast: -0.02, brightnessMin: 0.26 },
-  near: { zoom: 17.5, opacity: 0.92, saturation: -0.14, contrast: 0.06, brightnessMin: 0.14 },
+  far: { zoom: 15.5, opacity: 0.86, saturation: -0.22, contrast: 0, brightnessMin: 0.14 },
+  near: { zoom: 17.5, opacity: 1, saturation: -0.06, contrast: 0.06, brightnessMin: 0.04 },
 };
 
-/**
- * The same toning at one zoom, as the numbers a picture is toned with by
- * hand (the roofs are, see scene.js): { strength, grey, contrast, low, ground }.
- * A pixel is first drawn `grey` of the way towards its own grey, spread about
- * the middle by `contrast`, squeezed into `low`…1, and then shown at `strength`
- * over the ground colour [red, green, blue] (each 0 to 1).
- */
-export function groundLook(zoom) {
-  const { far, near, background } = GROUND_LOOK;
-  const t = Math.min(Math.max((zoom - far.zoom) / (near.zoom - far.zoom), 0), 1);
-  const between = (name) => far[name] + (near[name] - far[name]) * t;
-  const saturation = between('saturation');
-  const contrast = between('contrast');
-  return {
-    strength: between('opacity'),
-    grey: saturation > 0 ? 1 - 1 / (1.001 - saturation) : -saturation,
-    contrast: contrast > 0 ? 1 / (1 - contrast) : 1 + contrast,
-    low: between('brightnessMin'),
-    ground: [1, 3, 5].map((at) => parseInt(background.slice(at, at + 2), 16) / 255),
-  };
-}
-
-export function cityModelStyle(base, { buildings = null } = {}) {
+export function cityModelStyle(base, { buildings = null, pixelRatio = 1 } = {}) {
   const isLine = ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false];
   const isArea = ['match', ['geometry-type'], ['MultiPolygon', 'Polygon'], true, false];
   // Roads in tunnels and on bridges are drawn apart from the ones on the ground.
@@ -1350,17 +1411,22 @@ export function cityModelStyle(base, { buildings = null } = {}) {
   // The same widths for layers that hold roads of every size at once.
   const driven = roads.flatMap((road) => road.classes);
   const metersOf = ['match', ['get', 'class'], ...roads.flatMap((road) => [road.classes, road.meters]), 4];
-  const widthOfAny = (extra = 0) => [
+  const widthOfAny = (extra = 0, meters = metersOf) => [
     'interpolate',
     ['exponential', 2],
     ['zoom'],
     11,
-    ['+', ['max', ['/', metersOf, 1.1 * 32], 0.5], extra],
+    ['+', ['max', ['/', meters, 1.1 * 32], 0.5], extra],
     16,
-    ['+', ['/', metersOf, 1.1], extra],
+    ['+', ['/', meters, 1.1], extra],
     20,
-    ['+', ['*', ['/', metersOf, 1.1], 16], extra],
+    ['+', ['*', ['/', meters, 1.1], 16], extra],
   ];
+  // The streets with a pavement along them, and how wide each is with its two pavements.
+  const paved = roads.filter((road) => PAVEMENT_METERS[road.id] > 0);
+  const isPaved = ['match', ['get', 'class'], paved.flatMap((road) => road.classes), true, false];
+  const pavedMeters = ['match', ['get', 'class'], ...paved.flatMap((road) => [road.classes, road.meters + 2 * PAVEMENT_METERS[road.id]]), 0];
+  const fromClose = ['interpolate', ['linear'], ['zoom'], 15, 0, 15.5, 1];
   const lineLayer = (id, filter, paint, more = {}) => ({
     id,
     type: 'line',
@@ -1390,6 +1456,12 @@ export function cityModelStyle(base, { buildings = null } = {}) {
   ];
   const ROOF = '#e9e6de';
   const groundStops = (name) => ['interpolate', ['linear'], ['zoom'], GROUND_LOOK.far.zoom, GROUND_LOOK.far[name], GROUND_LOOK.near.zoom, GROUND_LOOK.near[name]];
+  const groundPaint = {
+    'raster-opacity': groundStops('opacity'),
+    'raster-saturation': groundStops('saturation'),
+    'raster-contrast': groundStops('contrast'),
+    'raster-brightness-min': groundStops('brightnessMin'),
+  };
   /** Walls with windows for the features of one map layer that pass a filter. */
   const walls = (id, kind, source, layer, filter, height, floor) => ({
     id,
@@ -1526,13 +1598,9 @@ export function cityModelStyle(base, { buildings = null } = {}) {
     },
     sources: {
       [VECTOR_SOURCE]: base.sources[VECTOR_SOURCE],
-      imagery: {
-        type: 'raster',
-        tiles: [IMAGERY_TILES],
-        tileSize: 256,
-        maxzoom: 18,
-        attribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
-      },
+      // (The coarse photo first: a map fetches for its sources in the order they are named.)
+      ...(photoUnderlay(pixelRatio) ? { 'imagery-base': photoUnderlay(pixelRatio) } : {}),
+      imagery: photoSource(pixelRatio),
       // The shadows the buildings cast; the app fills this in as the sun and the view move.
       'city-shade': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
       // The landmark towers, modelled by hand as stacks of slabs.
@@ -1546,20 +1614,11 @@ export function cityModelStyle(base, { buildings = null } = {}) {
     },
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': GROUND_LOOK.background } },
-      // Real ground, paled so it reads as sunlit earth under the model and shadows show on it.
-      // Seen from close by it is left stronger: that is where its detail is, the
-      // yards, the parking bays and the paving.
-      {
-        id: 'city-ground',
-        type: 'raster',
-        source: 'imagery',
-        paint: {
-          'raster-opacity': groundStops('opacity'),
-          'raster-saturation': groundStops('saturation'),
-          'raster-contrast': groundStops('contrast'),
-          'raster-brightness-min': groundStops('brightnessMin'),
-        },
-      },
+      // Real ground: the satellite photo, a little paled from afar so that shadows show on it, and all but
+      // as it is from close by, where its detail is: the yards, the parking bays and the paving.
+      // (Under the sharp photo lies the coarse one, which is there at once.)
+      ...(photoUnderlay(pixelRatio) ? [{ id: 'city-ground-base', type: 'raster', source: 'imagery-base', paint: groundPaint }] : []),
+      { id: 'city-ground', type: 'raster', source: 'imagery', paint: groundPaint },
       {
         id: 'city-green',
         type: 'fill',
@@ -1599,7 +1658,13 @@ export function cityModelStyle(base, { buildings = null } = {}) {
         { 'line-color': '#7d828c', 'line-opacity': 0.3, 'line-width': widthOfAny(), 'line-dasharray': [1.2, 1.2] },
         { minzoom: 13 },
       ),
-      ...roads.map((road) => roadLayer(road, '-edge', { 'line-color': '#e4e0d8', 'line-width': widthOf(road.meters, 2) })),
+      // Pavements: a band of paving under each street, wider than the street by a pavement either side, with a
+      // dark line where it ends. They lie under every road, so that a side street runs through the pavement of
+      // the road it meets.
+      lineLayer('city-pavement-edge', [onGround, isPaved], { 'line-color': PAVING_EDGE, 'line-width': widthOfAny(1.6, pavedMeters), 'line-opacity': fromClose }, { minzoom: 15, layout: round }),
+      lineLayer('city-pavement', [onGround, isPaved], { 'line-color': PAVING, 'line-width': widthOfAny(0, pavedMeters), 'line-opacity': fromClose }, { minzoom: 15, layout: round }),
+      // The kerb, a pale line along both edges of a road; then the road itself.
+      ...roads.map((road) => roadLayer(road, '-edge', { 'line-color': KERB, 'line-width': widthOf(road.meters, 2) })),
       ...roads.map((road) => roadLayer(road, '', { 'line-color': '#737882', 'line-width': widthOf(road.meters) })),
       // (The lines on the roads and the crossings are painted by the app, lane by lane: see drawMarks in life.js.)
       // Footpaths and squares for walking.

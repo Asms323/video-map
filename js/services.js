@@ -11,9 +11,13 @@
 
 import {
   BUILDING_STORE,
+  PHOTO_SURE_ZOOM,
   buildingArchives,
   detailsQuery,
   distanceMeters,
+  photoBlockOf,
+  photoInBlock,
+  photoTileOf,
   photonPlace,
   routeSummary,
   speedLimitQuery,
@@ -264,6 +268,54 @@ export async function drivingRoute(from, to, { signal } = {}) {
     timeout: 15000,
   });
   return routeSummary(answer);
+}
+
+// ── The satellite photo, as sharp as it comes ─────────────────────────────
+
+// Where the photo does not come as sharp as asked, the service sends a grey card saying so in place of a
+// picture, always the same one. It is known by its size.
+const PHOTO_CARD_BYTES = 2521;
+const PHOTO_BLOCKS_KEPT = 600;
+const photoBlocks = new Map(); // "level/left/top" → a promise of the service's answer about that square of tiles, or of null
+
+const notThere = () => Object.assign(new Error('The photo does not come this sharp here'), { status: 404 });
+
+/**
+ * Whether the photo is there for a tile at a level: true, false, or null when
+ * the service does not say. Asked for a square of tiles at a time, and each
+ * square only once.
+ */
+export async function photoThere(z, x, y) {
+  if (z <= PHOTO_SURE_ZOOM) return true;
+  const block = photoBlockOf(z, x, y);
+  const key = `${block.z}/${block.left}/${block.top}`;
+  if (!photoBlocks.has(key)) {
+    if (photoBlocks.size >= PHOTO_BLOCKS_KEPT) photoBlocks.delete(photoBlocks.keys().next().value);
+    photoBlocks.set(
+      key,
+      fetchJson(`${PHOTO_URL}/tilemap/${block.z}/${block.top}/${block.left}/${block.size}/${block.size}?f=json`).catch(() => {
+        photoBlocks.delete(key); // asked again another time
+        return null;
+      }),
+    );
+  }
+  return photoInBlock(await photoBlocks.get(key), x, y);
+}
+
+/**
+ * How the map fetches a photo tile ("photo://level/row/column"). Where the
+ * photo does not come that sharp the tile is reported as not found: the map
+ * then shows the coarser one it has, stretched, and says nothing.
+ */
+export async function photoProtocol(request, abortController) {
+  const tile = photoTileOf(request.url);
+  if (!tile) throw new Error(`Not a photo tile: ${request.url}`);
+  if ((await photoThere(tile.z, tile.x, tile.y)) === false) throw notThere();
+  const response = await fetch(`${PHOTO_URL}/tile/${tile.z}/${tile.y}/${tile.x}`, { signal: abortController?.signal });
+  if (!response.ok) throw Object.assign(new Error(`The photo service answered ${response.status}`), { status: response.status });
+  const data = await response.arrayBuffer();
+  if (tile.z > PHOTO_SURE_ZOOM && data.byteLength === PHOTO_CARD_BYTES) throw notThere(); // the card, where the service did not say beforehand
+  return { data, cacheControl: response.headers.get('Cache-Control'), expires: response.headers.get('Expires') };
 }
 
 // ── The satellite photo, to look at rather than to show ──────────────────────

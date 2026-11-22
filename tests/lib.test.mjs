@@ -7,11 +7,19 @@ import {
   defaultSplit,
   formatSpeed,
   GROUND_LOOK,
-  groundLook,
   linkLabel,
   MAX_RECENTS,
   parseStartSeconds,
   parseVideoLink,
+  PAVEMENT_METERS,
+  PHOTO_BLOCK_TILES,
+  PHOTO_MOST_ZOOM,
+  PHOTO_SURE_ZOOM,
+  photoBlockOf,
+  photoInBlock,
+  photoSource,
+  photoTileOf,
+  photoUnderlay,
   WALL_TINTS,
   youtubeEmbedUrl,
 } from '../js/lib.js';
@@ -591,6 +599,8 @@ test('satelliteStyle puts the map names on top of the photos', () => {
   assert.deepEqual(style.layers.map((layer) => layer.id), ['background', 'imagery', 'poi_r1', 'road-name']);
   assert.equal(style.sources.imagery.type, 'raster');
   assert.match(style.sources.imagery.attribution, /Esri/);
+  assert.deepEqual(style.sources.imagery, photoSource(1));
+  assert.deepEqual(satelliteStyle(BASE_STYLE, { pixelRatio: 3 }).sources.imagery, photoSource(3));
   assert.equal(style.sources[VECTOR_SOURCE], BASE_STYLE.sources[VECTOR_SOURCE]);
   assert.equal(style.layers[2].paint['text-color'], '#ffffff');
   assert.equal(style.glyphs, BASE_STYLE.glyphs);
@@ -1021,6 +1031,10 @@ test('buildingFootprints takes the buildings above ground, with the heights read
   const house = buildingFootprints([feature(32, { class: 'house', subtype: 'residential' }, square(0, 0, 20))], box)[0];
   assert.deepEqual([house.kind, house.use], [undefined, 'residential']);
   assert.ok(!('use' in buildingFootprints([feature(33, {}, square(0, 0, 20))], box)[0]));
+  // Where a height read from the photo is used, the height the building would have had is kept beside it.
+  const raised = buildingFootprints([feature(34, { subtype: 'commercial' }, square(0, 0, 20))], box, new Map([[34, 31]]))[0];
+  const plain = buildingFootprints([feature(34, { subtype: 'commercial' }, square(0, 0, 20))], box)[0];
+  assert.deepEqual([raised.height, raised.usual, plain.usual], [31, plain.height, undefined]);
   assert.deepEqual(
     found.map((building) => [building.id, Math.round(building.height * 100) / 100, building.base, building.known, building.polygons.length]),
     [
@@ -1116,26 +1130,106 @@ test('cityModelStyle traces the metro under ground and shows more of the photo c
   assert.ok(under.paint['line-opacity'] < 0.5 && Array.isArray(under.paint['line-dasharray']));
   assert.ok(JSON.stringify(style.layers[ids.indexOf('city-rail')].filter).includes('["!",["==",["get","brunnel"],"tunnel"]]'));
   const ground = style.layers[ids.indexOf('city-ground')].paint;
-  assert.deepEqual(ground['raster-opacity'], ['interpolate', ['linear'], ['zoom'], 15.5, 0.7, 17.5, 0.92]);
+  // A little paled from afar, all but as it is from close by.
+  assert.deepEqual(ground['raster-opacity'], ['interpolate', ['linear'], ['zoom'], 15.5, 0.86, 17.5, 1]);
   assert.ok(ground['raster-saturation'].at(-1) > ground['raster-saturation'].at(-3));
   assert.equal(style.layers[0].paint['background-color'], GROUND_LOOK.background);
 });
 
-test('groundLook gives the photo\'s toning at a zoom as plain numbers, for the roofs to be toned alike', () => {
-  const near = (a, b, by) => Math.abs(a - b) <= by;
-  const style = cityModelStyle(BASE_STYLE);
-  const paint = style.layers.find((layer) => layer.id === 'city-ground').paint;
-  // At and beyond the two ends: exactly what the map is told.
-  for (const [zoom, at] of [[12, 4], [15.5, 4], [17.5, 6], [20, 6]]) {
-    const look = groundLook(zoom);
-    assert.ok(near(look.strength, paint['raster-opacity'][at], 1e-9), `opacity at ${zoom}`);
-    assert.ok(near(look.grey, -paint['raster-saturation'][at], 1e-9), 'a negative saturation greys by that much');
-    assert.ok(near(look.low, paint['raster-brightness-min'][at], 1e-9));
-    const contrast = paint['raster-contrast'][at];
-    assert.ok(near(look.contrast, contrast > 0 ? 1 / (1 - contrast) : 1 + contrast, 1e-9));
+test('photoSource shows the photo at one photo pixel to one real pixel of the screen', () => {
+  // A map shows a tile 256 of its own pixels across. A screen with two real pixels to each of those gets it at
+  // half the size, which makes the map fetch a level finer; one with three, at a quarter, two levels finer.
+  assert.deepEqual([1, 1.25, 1.5, 2, 2.4, 2.5, 3, 4].map((ratio) => photoSource(ratio).tileSize), [256, 256, 128, 128, 128, 64, 64, 64]);
+  assert.equal(photoSource().tileSize, 256);
+  const source = photoSource(2);
+  assert.deepEqual([source.type, source.tiles, source.maxzoom], ['raster', ['photo://{z}/{y}/{x}'], 19]);
+  assert.equal(PHOTO_MOST_ZOOM, 19);
+  assert.match(source.attribution, /Esri/);
+  // Both the looks that show the photo take it this way.
+  assert.deepEqual(cityModelStyle(BASE_STYLE, { pixelRatio: 3 }).sources.imagery, photoSource(3));
+  assert.deepEqual(cityModelStyle(BASE_STYLE).sources.imagery, photoSource(1));
+});
+
+test('under a sharp photo lies the coarse one, which is there at once', () => {
+  // The photo as a map asks for it on its own, and no finer than the level it comes at everywhere, plus one.
+  assert.deepEqual(photoUnderlay(2), { ...photoSource(1), maxzoom: 17 });
+  assert.deepEqual(photoUnderlay(3), photoUnderlay(2));
+  assert.equal(photoUnderlay(1), null, 'none where the photo is no sharper than that');
+  assert.equal(photoUnderlay(), null);
+  for (const style of [cityModelStyle(BASE_STYLE, { pixelRatio: 2 }), satelliteStyle(BASE_STYLE, { pixelRatio: 3 })]) {
+    const ids = style.layers.map((layer) => layer.id);
+    const sharp = style.layers.find((layer) => layer.source === 'imagery');
+    const under = style.layers.find((layer) => layer.source === 'imagery-base');
+    assert.deepEqual(style.sources['imagery-base'], photoUnderlay(2));
+    assert.equal(ids.indexOf(under.id), ids.indexOf(sharp.id) - 1, 'right under it');
+    assert.deepEqual(under.paint, sharp.paint, 'toned alike');
+    assert.equal(under.type, 'raster');
   }
-  // Half way between them: half way.
-  assert.ok(near(groundLook(16.5).strength, (0.7 + 0.92) / 2, 1e-9));
-  // The ground colour that shows through: the map's own background, as parts of one.
-  assert.deepEqual(groundLook(16).ground.map((part) => Math.round(part * 255)), [0xd9, 0xd2, 0xc5]);
+  for (const style of [cityModelStyle(BASE_STYLE), satelliteStyle(BASE_STYLE)]) {
+    assert.ok(!('imagery-base' in style.sources) && !style.layers.some((layer) => layer.source === 'imagery-base'));
+  }
+});
+
+test('photoTileOf reads the address of a photo tile', () => {
+  assert.deepEqual(photoTileOf('photo://19/224905/330117'), { z: 19, y: 224905, x: 330117 });
+  assert.deepEqual(photoTileOf('photo://0/0/0'), { z: 0, y: 0, x: 0 });
+  for (const other of ['photo://19/224905', 'photo://19/224905/330117/1', 'https://example.org/19/1/1', 'photo://x/1/1', 'photo://3/8/1', 'photo://3/1/8', 'photo://123/1/1', '', null, undefined]) {
+    assert.equal(photoTileOf(other), null, String(other));
+  }
+});
+
+test('whether the photo comes at a level is asked for a square of tiles at a time', () => {
+  assert.equal(PHOTO_BLOCK_TILES, 32);
+  assert.equal(PHOTO_SURE_ZOOM, 16);
+  // The square a tile lies in: 32 tiles a side, starting on a multiple of 32.
+  assert.deepEqual(photoBlockOf(19, 330117, 224905), { z: 19, left: 330112, top: 224896, size: 32 });
+  assert.deepEqual(photoBlockOf(19, 330112, 224896), { z: 19, left: 330112, top: 224896, size: 32 });
+  assert.deepEqual(photoBlockOf(19, 330143, 224927), { z: 19, left: 330112, top: 224896, size: 32 });
+  assert.deepEqual(photoBlockOf(19, 330144, 224928), { z: 19, left: 330144, top: 224928, size: 32 });
+  assert.deepEqual(photoBlockOf(3, 5, 6), { z: 3, left: 0, top: 0, size: 8 }, 'a whole level, where it is smaller than a square');
+
+  // The answer: a row at a time from the top, 1 where the photo is there.
+  const data = new Array(32 * 32).fill(1);
+  data[9 * 32 + 5] = 0; // row 9, column 5
+  const answer = { valid: true, location: { left: 330112, top: 224896, width: 32, height: 32 }, data };
+  assert.equal(photoInBlock(answer, 330117, 224905), false);
+  assert.equal(photoInBlock(answer, 330121, 224901), true, 'not the cell with row and column swapped');
+  assert.equal(photoInBlock(answer, 330112, 224896), true);
+  assert.equal(photoInBlock(answer, 330143, 224927), true);
+  // What the answer does not cover, or does not say, is not known.
+  assert.equal(photoInBlock(answer, 330144, 224905), null);
+  assert.equal(photoInBlock(answer, 330117, 224895), null);
+  assert.equal(photoInBlock({ ...answer, valid: false }, 330117, 224905), null);
+  assert.equal(photoInBlock({ location: answer.location }, 330117, 224905), null);
+  assert.equal(photoInBlock({ ...answer, data: [] }, 330117, 224905), null);
+  assert.equal(photoInBlock(null, 330117, 224905), null);
+});
+
+test('cityModelStyle lays a pavement along both sides of every street people walk beside', () => {
+  const style = cityModelStyle(BASE_STYLE);
+  const ids = style.layers.map((layer) => layer.id);
+  const edge = style.layers[ids.indexOf('city-pavement-edge')];
+  const paving = style.layers[ids.indexOf('city-pavement')];
+  // Under every road and its kerb, so that a side street runs through the pavement of the road it meets.
+  const firstRoad = Math.min(...ids.map((id, at) => (id.startsWith('city-road-') ? at : Infinity)));
+  assert.ok(ids.indexOf('city-pavement-edge') < ids.indexOf('city-pavement') && ids.indexOf('city-pavement') < firstRoad, ids.join(' '));
+  assert.ok(ids.indexOf('city-ground') < ids.indexOf('city-pavement-edge'));
+  // Streets and main roads on the ground; no motorway, service lane, bridge or tunnel.
+  const filter = JSON.stringify(paving.filter);
+  assert.ok(filter.includes('["match",["get","class"],["minor","busway","secondary","tertiary","primary"],true,false]'), filter);
+  assert.ok(filter.includes('["match",["get","brunnel"],["bridge","tunnel"],false,true]'));
+  assert.deepEqual(paving.filter, edge.filter);
+  assert.deepEqual(Object.keys(PAVEMENT_METERS), ['minor', 'mid', 'main']);
+  assert.ok(Object.values(PAVEMENT_METERS).every((meters) => meters >= 2 && meters <= 5));
+  // As wide as the street and a pavement either side: a side street of 7 m with 2.6 m pavements is 12.2 m, which is 12.2 / 1.1 px at zoom 16.
+  const width = JSON.stringify(paving.paint['line-width']);
+  assert.ok(width.includes(`["match",["get","class"],["minor","busway"],${7 + 2 * PAVEMENT_METERS.minor},["secondary","tertiary"],${9.5 + 2 * PAVEMENT_METERS.mid},["primary"],${12 + 2 * PAVEMENT_METERS.main},0]`), width);
+  assert.deepEqual(paving.paint['line-width'].slice(0, 3), ['interpolate', ['exponential', 2], ['zoom']]);
+  assert.equal(paving.paint['line-width'][5], 16);
+  // Its edge is a little wider and darker: the line where the pavement ends.
+  assert.notEqual(edge.paint['line-color'], paving.paint['line-color']);
+  assert.ok(JSON.stringify(edge.paint['line-width']).includes('1.6'));
+  // Rounded at its ends and corners, and only from close by.
+  assert.deepEqual([paving.layout['line-cap'], paving.layout['line-join'], paving.minzoom], ['round', 'round', 15]);
+  assert.deepEqual(paving.paint['line-opacity'], ['interpolate', ['linear'], ['zoom'], 15, 0, 15.5, 1]);
 });

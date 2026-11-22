@@ -236,9 +236,17 @@
       <div class="setting">
         <label class="setting-text" for="optPhoto">
           <span class="setting-name">Roofs, trees and heights from the photo</span>
-          <span class="setting-note">Uses the satellite photo in the 3D city: every low building gets its real roof, trees stand where the photo shows them, and buildings are raised where their shadows show them to be taller. Trees and heights are an estimate.</span>
+          <span class="setting-note">Uses the satellite photo in the 3D city: every low building shows its real roof, trees stand where the photo shows them, and buildings are raised where their shadows show them to be taller. Trees and heights are an estimate.</span>
         </label>
         <input id="optPhoto" class="switch" type="checkbox" role="switch">
+      </div>
+
+      <div class="setting">
+        <label class="setting-text" for="optSharp">
+          <span class="setting-name">Sharp satellite photo</span>
+          <span class="setting-note">Fetches the photo as sharp as this screen can show it, for a clear ground and clear roofs. That is several times as much to download; switch it off to save mobile data.</span>
+        </label>
+        <input id="optSharp" class="switch" type="checkbox" role="switch">
       </div>
     </div>
   </dialog>
@@ -297,8 +305,8 @@
           Map drawn with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre</a>.
         </p>
         <p>
-          In the 3D city, roofs are the satellite photo itself. The landmarks, bridges, metro stations, mosques and shop fronts are simplified models made for this app, not surveys;
-          wall colours, windows, road markings and crossings are made up to look right. A chain's colours are its own; no logos are shown.
+          In the 3D city, the ground and the roofs are the satellite photo itself. The landmarks, bridges, metro stations, mosques and shop fronts are simplified models made for this app, not surveys;
+          wall colours, windows, pavements, road markings and crossings are made up to look right. A chain's colours are its own; no logos are shown.
         </p>
         <p class="version">Video Map <span id="version"></span></p>
       </footer>

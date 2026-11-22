@@ -22,7 +22,7 @@ import {
 import { MAP_TYPES, MapView } from './map.js';
 import { drivingRoute, placeAt, placeDetails, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
 
-const VERSION = '1.9.0';
+const VERSION = '1.10.0';
 const STORE_PREFIX = 'video-map:';
 
 const $ = (id) => document.getElementById(id);
@@ -57,7 +57,8 @@ const DEFAULT_SETTINGS = {
   roadInfo: true, // road name and speed limit
   weather: true,
   traffic: true, // simulated cars, buses and trains in the 3D city
-  photo: true, // trees and building heights read from the satellite photo
+  photo: true, // roofs, trees and building heights from the satellite photo
+  sharp: true, // the satellite photo as sharp as the screen can show it (more to download)
   follow: 'north', // how the map follows you: 'north' (the map does not turn) | 'heading'
   splitPortrait: null,
   splitLandscape: null,
@@ -916,6 +917,7 @@ const optRoad = $('optRoad');
 const optWeather = $('optWeather');
 const optTraffic = $('optTraffic');
 const optPhoto = $('optPhoto');
+const optSharp = $('optSharp');
 const placeToggles = $('placeToggles');
 
 for (const category of PLACE_CATEGORIES) {
@@ -972,6 +974,12 @@ optPhoto.addEventListener('change', () => {
   if (mapView) mapView.setPhoto(settings.photo);
 });
 
+optSharp.addEventListener('change', () => {
+  settings.sharp = optSharp.checked;
+  saveSettings();
+  if (mapView) mapView.setSharp(settings.sharp);
+});
+
 darkQuery.addEventListener('change', () => {
   if (settings.mapType === 'auto') applyMapType();
 });
@@ -1001,6 +1009,7 @@ function initMap() {
   mapView.setCategories(settings.places);
   mapView.setLife(settings.traffic);
   mapView.setPhoto(settings.photo);
+  mapView.setSharp(settings.sharp);
   applyMapType();
 
   followBtn.addEventListener('click', () => {
@@ -1089,6 +1098,7 @@ function syncForms() {
   optWeather.checked = settings.weather;
   optTraffic.checked = settings.traffic;
   optPhoto.checked = settings.photo;
+  optSharp.checked = settings.sharp;
   for (const radio of document.querySelectorAll('input[name="unit"]')) {
     radio.checked = radio.value === settings.unit;
   }
