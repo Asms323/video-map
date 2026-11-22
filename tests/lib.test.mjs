@@ -877,3 +877,52 @@ test('wallImage reads the name of a wall picture', () => {
     assert.equal(wallImage(other), null, String(other));
   }
 });
+
+// ── Heights read from the photo ──────────────────────────────────────────
+
+import { buildingKey, raisedBuildings } from '../js/lib.js';
+
+test('raisedBuildings stands up the buildings the photo showed to be taller', () => {
+  const a = [[[46.67, 24.7], [46.6702, 24.7], [46.6702, 24.7002], [46.67, 24.7002], [46.67, 24.7]]];
+  const b = a.map((ring) => ring.map(([lng, lat]) => [lng + 0.001, lat]));
+  const c = a.map((ring) => ring.map(([lng, lat]) => [lng + 0.002, lat]));
+  assert.equal(buildingKey(a), '46.67010,24.70010');
+  assert.notEqual(buildingKey(a), buildingKey(b));
+
+  const estimates = new Map([[buildingKey(a), 14.5], [buildingKey(b), 5.5], [buildingKey(c), 30]]);
+  const heightOf = (polygon) => estimates.get(buildingKey(polygon)) ?? null;
+  const { buildings, raised } = raisedBuildings(
+    [
+      { height: 5, base: 0, polygons: [a, b] }, // nobody recorded their height
+      { height: 22, base: 0, polygons: [c] }, // on record: left alone
+      { height: 5, base: 3, polygons: [c] }, // a part that starts above the ground: left alone
+    ],
+    heightOf,
+  );
+  // The first building is raised to its estimate; the second, estimated barely above 5 m, stays as it was.
+  assert.deepEqual(raised.features.map((feature) => feature.properties), [{ h: 14.5 }]);
+  assert.equal(raised.features[0].geometry.coordinates, a);
+  assert.deepEqual(buildings, [
+    { height: 14.5, base: 0, polygons: [a] },
+    { height: 5, base: 0, polygons: [b] },
+    { height: 22, base: 0, polygons: [c] },
+    { height: 5, base: 3, polygons: [c] },
+  ]);
+  // Without estimates nothing changes.
+  const plain = raisedBuildings([{ height: 5, base: 0, polygons: [a] }], () => null);
+  assert.deepEqual(plain.raised.features, []);
+  assert.deepEqual(plain.buildings, [{ height: 5, base: 0, polygons: [a] }]);
+});
+
+test('cityModelStyle has a place for the buildings raised from the photo', () => {
+  const style = cityModelStyle(BASE_STYLE);
+  const ids = style.layers.map((layer) => layer.id);
+  assert.deepEqual(style.sources['city-raised'], { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  const raised = style.layers[ids.indexOf('city-raised')];
+  assert.deepEqual([raised.type, raised.source], ['fill-extrusion', 'city-raised']);
+  assert.deepEqual(raised.paint['fill-extrusion-height'], ['get', 'h']);
+  assert.deepEqual(raised.paint['fill-extrusion-pattern'].slice(0, 3), ['step', ['zoom'], 'vm-wall:0:low']);
+  const roofs = style.layers[ids.indexOf('city-raised-roofs')];
+  assert.deepEqual(roofs.paint['fill-extrusion-base'], ['get', 'h']);
+  assert.ok(ids.indexOf('city-painted') < ids.indexOf('city-raised') && ids.indexOf('city-raised') < ids.indexOf('city-raised-roofs'));
+});

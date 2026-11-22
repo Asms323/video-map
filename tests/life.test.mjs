@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { GLASS, Mesh, Traffic, VEHICLES, buildNetwork, drawTraffic, drawVehicle, faceLight, lightFrom, pointAlong, seededRandom, trafficLevel } from '../js/life.js';
+import { GLASS, Mesh, Traffic, VEHICLES, buildNetwork, drawTraffic, drawTrees, drawVehicle, faceLight, lightFrom, pointAlong, seededRandom, trafficLevel } from '../js/life.js';
 
 const ORIGIN = { lng: 46.67, lat: 24.7 };
 const EAST = 1 / (111320 * Math.cos((24.7 * Math.PI) / 180)); // degrees of longitude in a metre
@@ -261,4 +261,36 @@ test('drawTraffic draws every vehicle that can be seen, and none in a tunnel', (
   // Drawing again starts from an empty mesh.
   assert.equal(drawTraffic(mesh, new Traffic(), null, null), 0);
   assert.equal(mesh.count, 0);
+});
+
+test('drawTrees stands a trunk and a crown at each place, with its shade', () => {
+  const mesh = new Mesh();
+  const light = lightFrom({ azimuth: 135, altitude: 45 });
+  const trees = [{ x: 10, y: 20, radius: 3 }, { x: -40, y: 5, radius: 1.5 }];
+  // Shade (3 faces), trunk (4) and crown (12): 19 faces of 6 corners.
+  assert.equal(drawTrees(mesh, trees, light, { bearing: 315, factor: 1 }), 2);
+  assert.equal(mesh.count, 2 * 19 * 6);
+  const first = { x: [], y: [], z: [] };
+  for (let i = 18; i < 19 * 6; i += 1) {
+    first.x.push(mesh.positions[i * 3]);
+    first.y.push(mesh.positions[i * 3 + 1]);
+    first.z.push(mesh.positions[i * 3 + 2]);
+  }
+  assert.ok(near(Math.max(...first.x) - Math.min(...first.x), 6, 0.9), 'the crown is as wide as it was seen to be');
+  assert.ok(Math.min(...first.z) === 0 && Math.max(...first.z) > 5 && Math.max(...first.z) < 10, `top at ${Math.max(...first.z)}`);
+  // The shade lies on the ground, north-west of the tree, away from the sun.
+  assert.ok(near(mesh.positions[2], 0.06, 1e-6) && mesh.positions[0] < 10 && mesh.positions[1] > 20);
+  assert.ok(mesh.colours[3] < 100, 'and is see-through');
+  // Leaves are green: more green than red or blue.
+  const leaf = (18 + 24) * 4;
+  assert.ok(mesh.colours[leaf + 1] > mesh.colours[leaf] && mesh.colours[leaf + 1] > mesh.colours[leaf + 2]);
+
+  // The same trees come out the same every time; with no sun there is no shade.
+  const again = new Mesh();
+  drawTrees(again, trees, light, { bearing: 315, factor: 1 });
+  assert.deepEqual(Array.from(again.positions.subarray(0, again.count * 3)), Array.from(mesh.positions.subarray(0, mesh.count * 3)));
+  drawTrees(again, trees, null, null);
+  assert.equal(again.count, 2 * 16 * 6);
+  assert.equal(drawTrees(again, [], light, null), 0);
+  assert.equal(again.count, 0);
 });

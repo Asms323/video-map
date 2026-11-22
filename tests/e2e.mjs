@@ -100,7 +100,7 @@ const YOUTUBE_STUB =
 
 // ── Stand-ins for the data services ───────────────────────────────────────
 
-const asked = { overpass: [], weather: 0, route: 0 };
+const asked = { overpass: [], weather: 0, route: 0, photoDay: 0 };
 
 const json = (route, body) =>
   route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(body) });
@@ -138,9 +138,14 @@ function answerPhoton(route) {
 }
 
 async function standIns(context, { recordMap = false, noMap = false } = {}) {
-  await context.route(/^https:\/\/(server\.arcgisonline\.com|tile\.openstreetmap\.org)\//, (route) =>
-    route.fulfill({ status: 200, headers: CORS, contentType: 'image/png', body: TILE }),
-  );
+  await context.route(/^https:\/\/(server\.arcgisonline\.com|tile\.openstreetmap\.org)\//, (route) => {
+    // The photo service is also asked which day a photo was taken.
+    if (route.request().url().includes('/identify')) {
+      asked.photoDay += 1;
+      return json(route, { results: [{ layerName: 'World Imagery', attributes: { 'DATE (YYYYMMDD)': '20251208', DESCRIPTION: 'GE01' } }] });
+    }
+    return route.fulfill({ status: 200, headers: CORS, contentType: 'image/png', body: TILE });
+  });
 
   if (noMap) {
     await context.route(/^https:\/\/tiles\.openfreemap\.org\//, (route) => route.abort());
@@ -838,6 +843,14 @@ try {
   await page.locator('#optTraffic').check();
   await page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.parts.get('traffic')?.mesh.count ?? 0) > 0, null, { timeout: 15000 });
   check('and on again', (await saved(page, 'settings')).traffic === true);
+  // Reading the satellite photo: the stand-in photo is featureless, so it yields nothing, quietly.
+  check('the photo switch says its results are an estimate', /an estimate/i.test(await text(page, '.setting:has(#optPhoto) .setting-note')), await text(page, '.setting:has(#optPhoto) .setting-note'));
+  check('the photo was asked for its date once', asked.photoDay === 1, `asked ${asked.photoDay} times`);
+  check('a photo that shows nothing raises no buildings', (await drawn(page, 'city-raised')) === 0 && (await layerIds(page)).includes('city-raised'));
+  await page.locator('#optPhoto').uncheck();
+  check('reading the photo can be turned off', (await saved(page, 'settings')).photo === false);
+  await page.locator('#optPhoto').check();
+  check('and on again', (await saved(page, 'settings')).photo === true);
   await page.click('#sheet-map [data-close]');
 
   // Units.

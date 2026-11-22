@@ -868,6 +868,54 @@ export function buildingShadows(buildings, reach, shortest = 0) {
   return { type: 'FeatureCollection', features };
 }
 
+/** A name for one building's polygon that stays the same each time the map hands it over: where its middle is. */
+export function buildingKey(polygon) {
+  const outline = polygon[0];
+  let lng = 0;
+  let lat = 0;
+  const count = outline.length - 1;
+  for (let i = 0; i < count; i += 1) {
+    lng += outline[i][0];
+    lat += outline[i][1];
+  }
+  return `${(lng / count).toFixed(5)},${(lat / count).toFixed(5)}`;
+}
+
+/**
+ * Apply height estimates to building footprints.
+ *
+ * buildings: what footprintsIn() gives. heightOf(polygon): the estimated
+ * height of one building in metres, or null. Only a building the map gives
+ * the stand-in height (5 m, meaning "not recorded") is changed, and only
+ * upwards: an estimate from a shadow can fall short, a record should not be
+ * overruled.
+ *
+ * Returns { buildings, raised }: the same list with the estimates in, for
+ * casting shadows, and the raised buildings alone as GeoJSON, for drawing.
+ */
+export function raisedBuildings(buildings, heightOf, standIn = 5) {
+  const out = [];
+  const features = [];
+  for (const building of buildings) {
+    if (building.height !== standIn || building.base > 0) {
+      out.push(building);
+      continue;
+    }
+    const unchanged = [];
+    for (const polygon of building.polygons) {
+      const estimate = heightOf(polygon);
+      if (estimate > standIn + 1) {
+        out.push({ height: estimate, base: 0, polygons: [polygon] });
+        features.push({ type: 'Feature', properties: { h: estimate }, geometry: { type: 'Polygon', coordinates: polygon } });
+      } else {
+        unchanged.push(polygon);
+      }
+    }
+    if (unchanged.length > 0) out.push({ ...building, polygons: unchanged });
+  }
+  return { buildings: out, raised: { type: 'FeatureCollection', features } };
+}
+
 // ── Building walls ────────────────────────────────────────────────────────
 
 /**
@@ -1105,6 +1153,8 @@ export function cityModelStyle(base) {
       },
       // The shadows the buildings cast; the app fills this in as the sun and the view move.
       'city-shade': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+      // Buildings whose height was read from the satellite photo, at that height.
+      'city-raised': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
     },
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': '#d9d2c5' } },
@@ -1256,6 +1306,31 @@ export function cityModelStyle(base) {
           'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
           'fill-extrusion-height': height,
           'fill-extrusion-vertical-gradient': true,
+        },
+      },
+      // The same building again, taller, where the photo shows it to be: it swallows the low block from the map.
+      {
+        id: 'city-raised',
+        type: 'fill-extrusion',
+        source: 'city-raised',
+        minzoom: 15,
+        paint: {
+          'fill-extrusion-color': WALL_KINDS.low.colour,
+          'fill-extrusion-pattern': wallPicture('low'),
+          'fill-extrusion-height': ['get', 'h'],
+          'fill-extrusion-vertical-gradient': true,
+        },
+      },
+      {
+        id: 'city-raised-roofs',
+        type: 'fill-extrusion',
+        source: 'city-raised',
+        minzoom: 16,
+        paint: {
+          'fill-extrusion-color': '#e9e6de',
+          'fill-extrusion-base': ['get', 'h'],
+          'fill-extrusion-height': ['+', ['get', 'h'], 1.2],
+          'fill-extrusion-vertical-gradient': false,
         },
       },
       // The windows would run across the roofs too. A plain slab on top of each

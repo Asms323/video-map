@@ -22,7 +22,7 @@ import {
 import { MAP_TYPES, MapView } from './map.js';
 import { drivingRoute, placeAt, placeDetails, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
 
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 const STORE_PREFIX = 'video-map:';
 
 const $ = (id) => document.getElementById(id);
@@ -57,6 +57,7 @@ const DEFAULT_SETTINGS = {
   roadInfo: true, // road name and speed limit
   weather: true,
   traffic: true, // simulated cars, buses and trains in the 3D city
+  photo: true, // trees and building heights read from the satellite photo
   follow: 'north', // how the map follows you: 'north' (the map does not turn) | 'heading'
   splitPortrait: null,
   splitLandscape: null,
@@ -72,7 +73,7 @@ function sanitizeSettings(saved) {
   if (saved.mapType === 'auto' || MAP_TYPES.includes(saved.mapType)) out.mapType = saved.mapType;
   if (Array.isArray(saved.places)) out.places = cleanCategories(saved.places);
   if (['north', 'heading'].includes(saved.follow)) out.follow = saved.follow;
-  for (const key of ['swap', 'keepAwake', 'roadInfo', 'weather', 'traffic']) {
+  for (const key of ['swap', 'keepAwake', 'roadInfo', 'weather', 'traffic', 'photo']) {
     if (typeof saved[key] === 'boolean') out[key] = saved[key];
   }
   for (const key of ['splitPortrait', 'splitLandscape']) {
@@ -914,6 +915,7 @@ searchInput.addEventListener('input', () => {
 const optRoad = $('optRoad');
 const optWeather = $('optWeather');
 const optTraffic = $('optTraffic');
+const optPhoto = $('optPhoto');
 const placeToggles = $('placeToggles');
 
 for (const category of PLACE_CATEGORIES) {
@@ -964,6 +966,12 @@ optTraffic.addEventListener('change', () => {
   if (mapView) mapView.setLife(settings.traffic);
 });
 
+optPhoto.addEventListener('change', () => {
+  settings.photo = optPhoto.checked;
+  saveSettings();
+  if (mapView) mapView.setPhoto(settings.photo);
+});
+
 darkQuery.addEventListener('change', () => {
   if (settings.mapType === 'auto') applyMapType();
 });
@@ -992,6 +1000,7 @@ function initMap() {
   }
   mapView.setCategories(settings.places);
   mapView.setLife(settings.traffic);
+  mapView.setPhoto(settings.photo);
   applyMapType();
 
   followBtn.addEventListener('click', () => {
@@ -1079,6 +1088,7 @@ function syncForms() {
   optRoad.checked = settings.roadInfo;
   optWeather.checked = settings.weather;
   optTraffic.checked = settings.traffic;
+  optPhoto.checked = settings.photo;
   for (const radio of document.querySelectorAll('input[name="unit"]')) {
     radio.checked = radio.value === settings.unit;
   }

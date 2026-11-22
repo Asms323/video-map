@@ -607,3 +607,65 @@ export function drawTraffic(mesh, traffic, light, reach, scale = 1) {
   });
   return drawn;
 }
+
+// ── Trees ─────────────────────────────────────────────────────────────────
+
+const LEAVES = [[58, 102, 52], [70, 116, 58], [48, 92, 50], [82, 122, 62]];
+const BARK = [104, 84, 62];
+
+/**
+ * Fill a mesh with trees: a trunk, a crown of six sides that narrows to a
+ * point, and its shade on the ground. trees: [{ x, y, radius }] in metres,
+ * radius being the crown's. The same tree always comes out the same.
+ */
+export function drawTrees(mesh, trees, light, reach) {
+  mesh.clear();
+  const direction = reach ? (reach.bearing * Math.PI) / 180 : 0;
+  for (const tree of trees) {
+    const { x, y, radius } = tree;
+    // No two trees quite alike, but each the same every time it is drawn.
+    const random = seededRandom(Math.round(x * 31 + y * 17) + 7);
+    const leaves = LEAVES[Math.floor(random() * LEAVES.length)];
+    const turn = random() * Math.PI;
+    const trunk = 1.2 + radius * 0.5;
+    const shoulder = trunk + radius * 0.9;
+    const top = shoulder + radius * (0.9 + random() * 0.5);
+    const ring = (size, height) =>
+      Array.from({ length: 6 }, (_, i) => {
+        const angle = turn + (i * Math.PI) / 3;
+        return [x + Math.sin(angle) * size, y + Math.cos(angle) * size, height];
+      });
+
+    if (reach) {
+      // The crown's shade: a six-sided patch on the ground, out along the shadows, by the crown's height.
+      const pull = Math.min(reach.factor, 2.5) * shoulder;
+      const centre = [x + Math.sin(direction) * pull, y + Math.cos(direction) * pull, 0.06];
+      const edge = ring(radius, 0.06).map(([px, py, pz]) => [px + Math.sin(direction) * pull, py + Math.cos(direction) * pull, pz]);
+      for (let i = 0; i < 6; i += 2) mesh.face(centre, edge[i], edge[i + 1], edge[(i + 2) % 6], 16, 20, 32, 0.3);
+    }
+
+    const width = 0.12 + radius * 0.07;
+    const sides = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    sides.forEach(([east, north], i) => {
+      const [nextEast, nextNorth] = sides[(i + 1) % 4];
+      const a = [x + (east - nextEast) * width, y + (north - nextNorth) * width];
+      const b = [x + (east + nextEast) * width, y + (north + nextNorth) * width];
+      const lit = faceLight(light, east, north, 0);
+      mesh.face([a[0], a[1], 0], [b[0], b[1], 0], [b[0], b[1], trunk + 0.3], [a[0], a[1], trunk + 0.3], BARK[0] * lit, BARK[1] * lit, BARK[2] * lit, 1);
+    });
+
+    const low = ring(radius * 0.7, trunk);
+    const wide = ring(radius, shoulder);
+    const peak = [x, y, top];
+    for (let i = 0; i < 6; i += 1) {
+      const next = (i + 1) % 6;
+      const angle = turn + ((i + 0.5) * Math.PI) / 3;
+      // The skirt of the crown looks outwards and a little down; the cap outwards and well up.
+      const skirt = faceLight(light, Math.sin(angle) * 0.95, Math.cos(angle) * 0.95, -0.3);
+      mesh.face(low[i], low[next], wide[next], wide[i], leaves[0] * skirt * 0.85, leaves[1] * skirt * 0.85, leaves[2] * skirt * 0.85, 1);
+      const cap = faceLight(light, Math.sin(angle) * 0.7, Math.cos(angle) * 0.7, 0.7);
+      mesh.face(wide[i], wide[next], peak, peak, leaves[0] * cap, leaves[1] * cap, leaves[2] * cap, 1);
+    }
+  }
+  return trees.length;
+}

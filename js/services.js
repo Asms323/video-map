@@ -22,6 +22,7 @@ const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 const PHOTON_URL = 'https://photon.komoot.io';
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast';
 const ROUTE_URL = 'https://router.project-osrm.org/route/v1/driving/';
+const PHOTO_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer';
 
 /** Fetch JSON, giving up after `timeout` milliseconds. Rejects on any non-2xx answer. */
 export async function fetchJson(url, { timeout = 12000, signal, ...options } = {}) {
@@ -194,4 +195,80 @@ export async function drivingRoute(from, to, { signal } = {}) {
     timeout: 15000,
   });
   return routeSummary(answer);
+}
+
+// ── The satellite photo, to look at rather than to show ──────────────────────
+
+const photoTiles = new Map(); // "zoom/x/y" → a promise of its pixels
+const PHOTO_TILES_KEPT = 160;
+
+/**
+ * The pixels of one satellite photo tile: { width, height, data }, or null if
+ * it could not be had. These are the tiles the map itself shows, so the browser
+ * usually has them already.
+ */
+export function photoTile(zoom, x, y) {
+  const key = `${zoom}/${x}/${y}`;
+  if (!photoTiles.has(key)) {
+    if (photoTiles.size >= PHOTO_TILES_KEPT) photoTiles.delete(photoTiles.keys().next().value);
+    photoTiles.set(
+      key,
+      (async () => {
+        try {
+          const response = await fetch(`${PHOTO_URL}/tile/${zoom}/${y}/${x}`);
+          if (!response.ok) return null;
+          const picture = await createImageBitmap(await response.blob());
+          const canvas = document.createElement('canvas');
+          canvas.width = picture.width;
+          canvas.height = picture.height;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(picture, 0, 0);
+          const pixels = ctx.getImageData(0, 0, picture.width, picture.height);
+          return { width: pixels.width, height: pixels.height, data: pixels.data };
+        } catch {
+          photoTiles.delete(key); // try again another time
+          return null;
+        }
+      })(),
+    );
+  }
+  return photoTiles.get(key);
+}
+
+const photoDays = new Map(); // a patch of ground → a promise of the day its photo was taken
+
+/** The day the satellite photo of a place was taken, as a Date, or null when the service does not say. */
+export function photoDate(position) {
+  // One photo covers many kilometres; ask once for each patch of about two.
+  const key = `${(position.lat * 50).toFixed(0)},${(position.lng * 50).toFixed(0)}`;
+  if (!photoDays.has(key)) {
+    const span = 0.002;
+    const query = new URLSearchParams({
+      f: 'json',
+      geometryType: 'esriGeometryPoint',
+      geometry: `${position.lng},${position.lat}`,
+      sr: '4326',
+      layers: 'all',
+      tolerance: '2',
+      returnGeometry: 'false',
+      imageDisplay: '400,400,96',
+      mapExtent: `${position.lng - span},${position.lat - span},${position.lng + span},${position.lat + span}`,
+    });
+    photoDays.set(
+      key,
+      fetchJson(`${PHOTO_URL}/identify?${query}`)
+        .then((answer) => {
+          for (const result of answer?.results ?? []) {
+            const match = /^(\d{4})(\d{2})(\d{2})$/.exec(String(result?.attributes?.['DATE (YYYYMMDD)'] ?? ''));
+            if (match) return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+          }
+          return null;
+        })
+        .catch(() => {
+          photoDays.delete(key);
+          return null;
+        }),
+    );
+  }
+  return photoDays.get(key);
 }

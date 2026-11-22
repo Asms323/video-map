@@ -27,6 +27,14 @@ the phone: no App Store, no Apple developer account, no Mac.
   tunnels, and are busier in the rush hours than at night. This is a
   simulation to bring the model to life, **not live traffic**: where each
   vehicle is, is made up. It can be switched off under the map options.
+- **Trees where they really stand.** The app reads the satellite photo under
+  the city for dark green crowns and stands a tree at each one, sized to its
+  crown, with its shade on the ground.
+- **Heights from shadows.** Most ordinary buildings have no height on record
+  and would all be drawn 5 m tall. The app looks up the day the satellite
+  photo was taken, works out where the sun stood, measures each building's
+  shadow in the photo and stands the building up to match. An estimate; see
+  the limits below. Both readings can be switched off under the map options.
 - **The ground in detail**, all from the map data: bridges and flyovers lying
   over the roads beneath them, tunnels as a faint trace, metro and railway
   lines, footpaths, lawns and playing fields.
@@ -68,7 +76,7 @@ Everything is free and needs no account or key.
 | What | From | Notes |
 | --- | --- | --- |
 | Street map, names, places, road names | [OpenFreeMap](https://openfreemap.org), built from [OpenStreetMap](https://www.openstreetmap.org/copyright) | Drawn on the phone by [MapLibre](https://maplibre.org) |
-| Satellite photos, and the ground under the 3D city | Esri World Imagery | © Esri, Maxar, Earthstar Geographics |
+| Satellite photos, and the ground under the 3D city | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. Also read on the phone for trees and shadows, and asked once per area for the day the photo was taken |
 | Detailed map picture | OpenStreetMap tile servers | [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
 | Place details, speed limits | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits |
 | Search, nearest address | [Photon](https://photon.komoot.io) (OpenStreetMap data) | |
@@ -91,6 +99,24 @@ height.
 
 The windows are drawn, not recorded: one row for every 3 m of height, because
 the map data does not say how many floors or windows a building really has.
+
+Heights read from shadows are rough, and mostly on the low side:
+
+- A shadow can only be measured where it ends on open ground. In a dense
+  street it lands on the building next door, and all that can be said is "at
+  least this tall". A building that cannot be measured is taken to be about
+  as tall as the measured ones around it, or left at 5 m if there are none.
+- The time of day of the photo is not published, only the day. The app
+  assumes the usual pass of a photo satellite, an hour and a half before or
+  after midday, and picks whichever fits the shadows.
+- Where the map draws a whole block as one building, as in many residential
+  districts of Riyadh, there is no single building to measure.
+- A height someone recorded in OpenStreetMap is never overruled, and no
+  building is made lower than the map has it.
+
+Trees are found by colour, so a dark green roof or awning can be mistaken for
+one and a tree in deep shade can be missed. Every tree is drawn as the same
+simple shape; palms and other kinds are not told apart.
 
 The sunlight is worked out on the phone from the date, the time and the place;
 nothing is downloaded for it. Shadows are those of flat-roofed blocks on level
@@ -159,6 +185,7 @@ js/app.js               the app: layout, video, location, search, place details
 js/map.js               the map: styles, markers, following, taps
 js/life.js              the simulated traffic: street network, vehicles, trains
 js/scene.js             the layer that draws the traffic into the 3D scene
+js/sight.js             reading the satellite photo: shadows to heights, trees
 js/services.js          the open data services
 js/lib.js               everything that needs no browser: parsing, distances,
                         road matching, place categories, map styles, the
