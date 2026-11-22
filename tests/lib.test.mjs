@@ -644,6 +644,7 @@ test('cityModelStyle draws the city as a white model on its real ground', () => 
   // On the ground: the soft rim at the foot of each building, then the cast shadows.
   assert.ok(at('city-road-big') < at('city-contact') && at('city-contact') < at('city-shadows'));
   assert.ok(at('city-shadows') < at('city-buildings'), 'buildings stand on their shadows');
+  assert.ok(at('city-buildings') < at('city-roofs') && at('city-towers') < at('city-roofs') && at('city-painted') < at('city-roofs'));
   assert.deepEqual(ids.slice(-2), ['poi_r1', 'road-name'], 'the map names stay on top');
 
   const buildings = style.layers[at('city-buildings')];
@@ -664,10 +665,39 @@ test('cityModelStyle draws the city as a white model on its real ground', () => 
   assert.ok(shadows.paint['fill-extrusion-opacity'] < 1, 'one even shade where shadows cross');
   assert.deepEqual(style.sources['city-shade'], { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
-  // A building keeps the colour mappers gave it; the rest are the white of the model.
-  const colour = buildings.paint['fill-extrusion-color'];
-  assert.deepEqual(colour.slice(0, 3), ['case', ['has', 'colour'], ['to-color', ['get', 'colour'], '#f2f2f0']]);
+  // Walls have rows of windows: plain from afar, then one picture per zoom level from 16 in.
+  assert.deepEqual(buildings.paint['fill-extrusion-pattern'], ['step', ['zoom'], 'vm-wall:0:low', 16, 'vm-wall:1:low', 17, 'vm-wall:2:low', 18, 'vm-wall:3:low']);
   assert.equal(buildings.paint['fill-extrusion-vertical-gradient'], true);
+  // Towers are a layer of their own, with more glass.
+  const towers = style.layers[at('city-towers')];
+  assert.deepEqual(towers.paint['fill-extrusion-pattern'].slice(0, 5), ['step', ['zoom'], 'vm-wall:0:tall', 16, 'vm-wall:1:tall']);
+  assert.deepEqual(buildings.filter.at(-1), ['<', ['coalesce', ['get', 'render_height'], 5], 60]);
+  assert.deepEqual(towers.filter.at(-1), ['>=', ['coalesce', ['get', 'render_height'], 5], 60]);
+  // A building keeps the colour mappers gave it, and is then drawn plain.
+  const painted = style.layers[at('city-painted')];
+  assert.deepEqual(painted.paint['fill-extrusion-color'], ['to-color', ['get', 'colour'], '#f3f1ec']);
+  assert.equal(painted.paint['fill-extrusion-pattern'], undefined);
+  assert.ok(JSON.stringify(painted.filter).includes('["has","colour"]') && JSON.stringify(buildings.filter).includes('["!",["has","colour"]]'));
+  // A slab on each windowed building hides the windows that would run across its roof.
+  const roofs = style.layers[at('city-roofs')];
+  assert.deepEqual(roofs.paint['fill-extrusion-base'], ['coalesce', ['get', 'render_height'], 5]);
+  assert.deepEqual(roofs.paint['fill-extrusion-height'], ['+', ['coalesce', ['get', 'render_height'], 5], 1.2]);
+  assert.equal(roofs.minzoom, 16, 'only where there are windows to hide');
+
+  // Tunnels are a faint trace under everything; bridges lie over the roads on the ground.
+  assert.ok(at('city-tunnels') < at('city-road-service-edge'));
+  assert.ok(at('city-road-marks') < at('city-bridge-shade') && at('city-bridge-shade') < at('city-bridge-edge') && at('city-bridge-edge') < at('city-bridge'));
+  assert.ok(at('city-bridge') < at('city-contact'));
+  const ground = JSON.stringify(style.layers[at('city-road-big')].filter);
+  assert.ok(ground.includes('["match",["get","brunnel"],["bridge","tunnel"],false,true]'), 'ground roads leave out bridges and tunnels');
+  assert.ok(JSON.stringify(style.layers[at('city-bridge')].filter).includes('["==",["get","brunnel"],"bridge"]'));
+  assert.ok(JSON.stringify(style.layers[at('city-tunnels')].filter).includes('["==",["get","brunnel"],"tunnel"]'));
+  // A bridge is as wide as the road it carries: 14 m for a motorway, 7 m for a side street.
+  const bridgeWidth = JSON.stringify(style.layers[at('city-bridge')].paint['line-width']);
+  assert.ok(bridgeWidth.includes('["motorway","trunk"],14') && bridgeWidth.includes('["minor","busway"],7'), bridgeWidth);
+  // Also on the ground: rail with sleepers, footpaths, lawns and playing fields.
+  for (const id of ['city-grass', 'city-pitch', 'city-paths', 'city-rail', 'city-rail-ties', 'city-bridge-marks']) assert.ok(at(id) > 0, id);
+  assert.ok(at('city-grass') < at('city-road-service-edge') && at('city-rail') < at('city-rail-ties'));
   assert.match(style.sources.imagery.attribution, /Esri/);
   assert.equal(style.sources[VECTOR_SOURCE], BASE_STYLE.sources[VECTOR_SOURCE]);
   // The app's own layers go on top of it like on any other style.
@@ -817,4 +847,33 @@ test('buildingShadows sweeps the walls that face away from the sun', () => {
   assert.deepEqual(buildingShadows(block, reach, 25).features, []);
   assert.deepEqual(buildingShadows(block, null).features, []);
   assert.deepEqual(buildingShadows([], reach).features, []);
+});
+
+// ── Building walls ───────────────────────────────────────────────────────
+
+import { WALL_DETAILS, WALL_KINDS, wallImage } from '../js/lib.js';
+
+test('wall pictures keep a floor about 3 m tall at every zoom', () => {
+  assert.equal(WALL_DETAILS[0], null, 'plain from afar');
+  const levels = WALL_DETAILS.slice(1);
+  assert.deepEqual(levels.map((level) => level.zoom), [16, 17, 18]);
+  // A picture pixel covers half as much ground at each zoom step in, so the picture doubles.
+  for (let i = 1; i < levels.length; i += 1) {
+    assert.equal(levels[i].floor, levels[i - 1].floor * 2);
+    assert.equal(levels[i].bay, levels[i - 1].bay * 2);
+  }
+  assert.equal(levels[0].floor, 3);
+  for (const kind of Object.values(WALL_KINDS)) {
+    assert.match(kind.colour, /^#[0-9a-f]{6}$/);
+    assert.ok(kind.across > 0 && kind.across < 1 && kind.up > 0 && kind.up < 1);
+  }
+  assert.ok(WALL_KINDS.tall.across > WALL_KINDS.low.across, 'towers are mostly glass');
+});
+
+test('wallImage reads the name of a wall picture', () => {
+  assert.deepEqual(wallImage('vm-wall:0:low'), { detail: 0, kind: 'low' });
+  assert.deepEqual(wallImage('vm-wall:3:tall'), { detail: 3, kind: 'tall' });
+  for (const other of ['vm-wall:4:low', 'vm-wall:1:brick', 'vm-wall:1:toString', 'vm-fuel', 'wall:1:low', 'vm-wall:1:low:x', '', null, undefined]) {
+    assert.equal(wallImage(other), null, String(other));
+  }
 });

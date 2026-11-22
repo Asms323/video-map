@@ -868,6 +868,42 @@ export function buildingShadows(buildings, reach, shortest = 0) {
   return { type: 'FeatureCollection', features };
 }
 
+// ── Building walls ────────────────────────────────────────────────────────
+
+/**
+ * Walls are drawn with rows of windows: a small picture of one window, repeated
+ * along and up every wall. The pictures are sized in screen pixels of a whole
+ * zoom level, so there is one set per level: a floor is 3 px at zoom 16 and
+ * doubles with each step in, which keeps it about 3 m on the ground. Seen from
+ * further out than zoom 16 the walls are plain.
+ */
+export const WALL_DETAILS = [
+  null,
+  { zoom: 16, floor: 3, bay: 4 },
+  { zoom: 17, floor: 6, bay: 8 },
+  { zoom: 18, floor: 12, bay: 16 },
+];
+
+/**
+ * The two kinds of wall. "glass" is laid over the wall colour; "across" and
+ * "up" say how much of a bay and of a floor the window takes.
+ */
+export const WALL_KINDS = {
+  // Plaster and stone with a window in each bay.
+  low: { colour: '#f3f1ec', glass: 'rgba(62, 84, 112, 0.34)', across: 0.64, up: 0.44 },
+  // Towers: bands of glass with little wall between.
+  tall: { colour: '#e6ebf0', glass: 'rgba(52, 84, 122, 0.46)', across: 0.84, up: 0.6 },
+};
+// Buildings from this height up are drawn as towers.
+const TOWER_METERS = 60;
+
+/** What a wall picture's name stands for, e.g. "vm-wall:2:tall": { detail, kind } or null. */
+export function wallImage(id) {
+  const match = /^vm-wall:(\d):([a-z]+)$/.exec(String(id ?? ''));
+  if (!match || Number(match[1]) >= WALL_DETAILS.length || !Object.hasOwn(WALL_KINDS, match[2])) return null;
+  return { detail: Number(match[1]), kind: match[2] };
+}
+
 // ── Map styles ────────────────────────────────────────────────────────────
 // Every style is built on OpenFreeMap's vector data ("openmaptiles"), so the
 // place markers and the road-name lookup work in all of them.
@@ -945,7 +981,12 @@ export function detailedStyle(base) {
  */
 export function cityModelStyle(base) {
   const isLine = ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false];
-  const ofClass = (...names) => ['all', isLine, ['match', ['get', 'class'], names, true, false]];
+  const isArea = ['match', ['geometry-type'], ['MultiPolygon', 'Polygon'], true, false];
+  // Roads in tunnels and on bridges are drawn apart from the ones on the ground.
+  const onGround = ['match', ['get', 'brunnel'], ['bridge', 'tunnel'], false, true];
+  const onBridge = ['==', ['get', 'brunnel'], 'bridge'];
+  const inTunnel = ['==', ['get', 'brunnel'], 'tunnel'];
+  const ofClass = (...names) => ['all', isLine, onGround, ['match', ['get', 'class'], names, true, false]];
   // Metres on the ground to pixels on screen: a pixel is about 1.1 m at zoom 16,
   // and half that at each zoom step in.
   const widthOf = (meters, extra = 0) => {
@@ -980,6 +1021,61 @@ export function cityModelStyle(base) {
     filter: ofClass(...road.classes),
     layout: round,
     paint,
+  });
+  // The same widths for layers that hold roads of every size at once.
+  const driven = roads.flatMap((road) => road.classes);
+  const metersOf = ['match', ['get', 'class'], ...roads.flatMap((road) => [road.classes, road.meters]), 4];
+  const widthOfAny = (extra = 0) => [
+    'interpolate',
+    ['exponential', 2],
+    ['zoom'],
+    11,
+    ['+', ['max', ['/', metersOf, 1.1 * 32], 0.5], extra],
+    16,
+    ['+', ['/', metersOf, 1.1], extra],
+    20,
+    ['+', ['*', ['/', metersOf, 1.1], 16], extra],
+  ];
+  const lineLayer = (id, filter, paint, more = {}) => ({
+    id,
+    type: 'line',
+    source: VECTOR_SOURCE,
+    'source-layer': 'transportation',
+    filter: ['all', isLine, ...filter],
+    paint,
+    ...more,
+  });
+  const isDriven = ['match', ['get', 'class'], driven, true, false];
+  const isRail = ['match', ['get', 'class'], ['rail', 'transit'], true, false];
+  // On a bridge the wider road is drawn last, on top.
+  const bridgeLayout = { ...round, 'line-sort-key': metersOf };
+
+  // Buildings: the white model with windows, plain below zoom 16 and finer with
+  // each zoom step in. The app draws each wall picture when the map first asks for it.
+  const height = ['coalesce', ['get', 'render_height'], 5];
+  const standing = ['!', ['has', 'hide_3d']]; // "hide_3d" marks an outline whose separate parts are drawn instead
+  const unpainted = ['!', ['has', 'colour']];
+  const wallPicture = (kind) => [
+    'step',
+    ['zoom'],
+    `vm-wall:0:${kind}`,
+    ...WALL_DETAILS.flatMap((detail, index) => (detail ? [detail.zoom, `vm-wall:${index}:${kind}`] : [])),
+  ];
+  const blocks = (id, kind, filter) => ({
+    id,
+    type: 'fill-extrusion',
+    source: VECTOR_SOURCE,
+    'source-layer': 'building',
+    minzoom: 13,
+    filter: ['all', standing, unpainted, filter],
+    paint: {
+      'fill-extrusion-color': WALL_KINDS[kind].colour,
+      'fill-extrusion-pattern': wallPicture(kind),
+      'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+      'fill-extrusion-height': height,
+      // Walls a shade darker than roofs, and darker still towards the foot of a tower.
+      'fill-extrusion-vertical-gradient': true,
+    },
   });
 
   return {
@@ -1027,6 +1123,23 @@ export function cityModelStyle(base) {
         filter: ['match', ['geometry-type'], ['MultiPolygon', 'Polygon'], true, false],
         paint: { 'fill-color': '#8f9b78', 'fill-opacity': 0.45 },
       },
+      // Lawns, gardens and woods, and the playing fields and playgrounds among them.
+      {
+        id: 'city-grass',
+        type: 'fill',
+        source: VECTOR_SOURCE,
+        'source-layer': 'landcover',
+        filter: ['all', isArea, ['match', ['get', 'class'], ['grass', 'wood', 'farmland'], true, false]],
+        paint: { 'fill-color': ['match', ['get', 'class'], 'wood', '#7f9470', '#9bab82'], 'fill-opacity': 0.5 },
+      },
+      {
+        id: 'city-pitch',
+        type: 'fill',
+        source: VECTOR_SOURCE,
+        'source-layer': 'landuse',
+        filter: ['all', isArea, ['match', ['get', 'class'], ['pitch', 'playground', 'cemetery'], true, false]],
+        paint: { 'fill-color': ['match', ['get', 'class'], 'cemetery', '#a3ad95', '#8fae7c'], 'fill-opacity': 0.5 },
+      },
       {
         id: 'city-water',
         type: 'fill',
@@ -1034,6 +1147,13 @@ export function cityModelStyle(base) {
         'source-layer': 'water',
         paint: { 'fill-color': '#8fa7b8' },
       },
+      // Roads underground: only a faint broken trace of where they run.
+      lineLayer(
+        'city-tunnels',
+        [inTunnel, isDriven],
+        { 'line-color': '#7d828c', 'line-opacity': 0.3, 'line-width': widthOfAny(), 'line-dasharray': [1.2, 1.2] },
+        { minzoom: 13 },
+      ),
       ...roads.map((road) => roadLayer(road, '-edge', { 'line-color': '#e4e0d8', 'line-width': widthOf(road.meters, 2) })),
       ...roads.map((road) => roadLayer(road, '', { 'line-color': '#737882', 'line-width': widthOf(road.meters) })),
       {
@@ -1049,6 +1169,49 @@ export function cityModelStyle(base) {
           'line-dasharray': [6, 9],
         },
       },
+      // Footpaths and squares for walking.
+      lineLayer(
+        'city-paths',
+        [['!', inTunnel], ['==', ['get', 'class'], 'path']],
+        { 'line-color': '#efebe3', 'line-width': widthOf(2.2), 'line-opacity': 0.9 },
+        { minzoom: 15, layout: round },
+      ),
+      // Railway and metro above ground: a dark line with pale sleepers across it.
+      lineLayer(
+        'city-rail',
+        [['!', inTunnel], isRail],
+        { 'line-color': '#5c616b', 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 12, 0.8, 16, 3, 20, 14] },
+        { minzoom: 12 },
+      ),
+      lineLayer(
+        'city-rail-ties',
+        [['!', inTunnel], isRail],
+        {
+          'line-color': '#e2ded5',
+          'line-width': ['interpolate', ['exponential', 2], ['zoom'], 14, 0.5, 16, 1.6, 20, 8],
+          'line-dasharray': [1.5, 2.5],
+        },
+        { minzoom: 14 },
+      ),
+      // Bridges and flyovers lie over whatever passes beneath, with a soft shade under the deck.
+      lineLayer(
+        'city-bridge-shade',
+        [onBridge, isDriven],
+        { 'line-color': '#141a28', 'line-opacity': 0.28, 'line-width': widthOfAny(7), 'line-blur': 5 },
+        { minzoom: 13, layout: bridgeLayout },
+      ),
+      lineLayer('city-bridge-edge', [onBridge, isDriven], { 'line-color': '#eceae4', 'line-width': widthOfAny(2.5) }, { minzoom: 12, layout: bridgeLayout }),
+      lineLayer('city-bridge', [onBridge, isDriven], { 'line-color': '#7c818b', 'line-width': widthOfAny() }, { minzoom: 12, layout: bridgeLayout }),
+      lineLayer(
+        'city-bridge-marks',
+        [onBridge, ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary'], true, false]],
+        {
+          'line-color': 'rgba(255, 255, 255, 0.7)',
+          'line-width': ['interpolate', ['exponential', 2], ['zoom'], 16, 0.7, 20, 5],
+          'line-dasharray': [6, 9],
+        },
+        { minzoom: 16 },
+      ),
       // A soft dark rim on the ground where each building stands, the way corners
       // gather shade even on the sunny side.
       {
@@ -1078,27 +1241,37 @@ export function cityModelStyle(base) {
           'fill-extrusion-vertical-gradient': false,
         },
       },
+      blocks('city-buildings', 'low', ['<', height, TOWER_METERS]),
+      blocks('city-towers', 'tall', ['>=', height, TOWER_METERS]),
+      // A building whose colour mappers recorded is drawn in that colour, plain.
       {
-        id: 'city-buildings',
+        id: 'city-painted',
         type: 'fill-extrusion',
         source: VECTOR_SOURCE,
         'source-layer': 'building',
         minzoom: 13,
-        filter: ['!', ['has', 'hide_3d']],
+        filter: ['all', standing, ['has', 'colour']],
         paint: {
-          // The colour mappers recorded for the building, where they did. Otherwise
-          // the white of the model: a touch warm for low stone and plaster, a touch
-          // cool for glass towers.
-          'fill-extrusion-color': [
-            'case',
-            ['has', 'colour'],
-            ['to-color', ['get', 'colour'], '#f2f2f0'],
-            ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 5], 0, '#f4f1eb', 40, '#f2f2f0', 120, '#e7ecf1', 300, '#dce5ee'],
-          ],
+          'fill-extrusion-color': ['to-color', ['get', 'colour'], WALL_KINDS.low.colour],
           'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-          'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 5],
-          // Walls a shade darker than roofs, and darker still towards the foot of a tower.
+          'fill-extrusion-height': height,
           'fill-extrusion-vertical-gradient': true,
+        },
+      },
+      // The windows would run across the roofs too. A plain slab on top of each
+      // building covers them, and stands a little proud like a roof's parapet.
+      {
+        id: 'city-roofs',
+        type: 'fill-extrusion',
+        source: VECTOR_SOURCE,
+        'source-layer': 'building',
+        minzoom: 16,
+        filter: ['all', standing, unpainted],
+        paint: {
+          'fill-extrusion-color': '#e9e6de',
+          'fill-extrusion-base': height,
+          'fill-extrusion-height': ['+', height, 1.2],
+          'fill-extrusion-vertical-gradient': false,
         },
       },
       // The names and icons of the street map, without the route-number badges

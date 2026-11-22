@@ -17,9 +17,13 @@ the phone: no App Store, no Apple developer account, no Mac.
 - **3D City**, the look it opens with: the city as an **isometric** scale
   model. It is seen corner-on from the classic isometric angle, through a lens
   so long that parallel streets stay parallel. Every building is a block of
-  its recorded height, in its recorded colour where mappers noted one and
-  white otherwise, standing on the real ground, with grey roads at their real
-  widths.
+  its recorded height with rows of windows on its walls and a plain roof:
+  white with a window in each bay for ordinary buildings, bands of glass for
+  towers, and the recorded colour where mappers noted one. They stand on the
+  real ground, with grey roads at their real widths.
+- **The ground in detail**, all from the map data: bridges and flyovers lying
+  over the roads beneath them, tunnels as a faint trace, metro and railway
+  lines, footpaths, lawns and playing fields.
 - **Real sunlight.** The model is lit from where the sun actually is at that
   place and time, and every building casts the shadow it casts right now:
   long in the morning and evening, short at noon, none after sunset.
@@ -76,6 +80,9 @@ particular are missing on many roads. Building heights are recorded for
 landmark towers but for few ordinary buildings; those without one are drawn as
 low blocks, and a tower's special shape is not known, only its outline and
 height.
+
+The windows are drawn, not recorded: one row for every 3 m of height, because
+the map data does not say how many floors or windows a building really has.
 
 The sunlight is worked out on the phone from the date, the time and the place;
 nothing is downloaded for it. Shadows are those of flat-roofed blocks on level

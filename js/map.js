@@ -4,6 +4,8 @@
 import {
   PLACE_CATEGORIES,
   VECTOR_SOURCE,
+  WALL_DETAILS,
+  WALL_KINDS,
   buildingShadows,
   categoryFilter,
   circleRing,
@@ -21,6 +23,7 @@ import {
   shadowReach,
   sunLight,
   sunPosition,
+  wallImage,
   withOverlays,
 } from './lib.js';
 import { loadStyle } from './services.js';
@@ -117,6 +120,36 @@ function drawMarker(color, path) {
     ctx.fill(new Path2D(path), 'evenodd');
   }
   return ctx.getImageData(0, 0, size, size);
+}
+
+/**
+ * A patch of wall to repeat along and up a building: one window, drawn at twice
+ * the size it is shown at. Without a layout the wall is plain.
+ */
+function drawWall(kind, layout) {
+  const width = (layout?.bay ?? 2) * 2;
+  const height = (layout?.floor ?? 2) * 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = kind.colour;
+  ctx.fillRect(0, 0, width, height);
+  if (layout) {
+    // Glass in the middle of the bay, with wall left at the sides and above and below.
+    const paneWidth = Math.round(width * kind.across);
+    const paneHeight = Math.round(height * kind.up);
+    const left = Math.round((width - paneWidth) / 2);
+    const top = Math.round((height - paneHeight) / 2);
+    ctx.fillStyle = kind.glass;
+    ctx.fillRect(left, top, paneWidth, paneHeight);
+    if (layout.floor >= 6) {
+      // Close enough to see the shade under the top of the window opening.
+      ctx.fillStyle = 'rgba(30, 40, 60, 0.22)';
+      ctx.fillRect(left, top, paneWidth, Math.max(1, Math.round(height * 0.08)));
+    }
+  }
+  return ctx.getImageData(0, 0, width, height);
 }
 
 let rtlRequested = false;
@@ -261,9 +294,11 @@ export class MapView {
     if (this.map.hasImage(id)) return;
     if (!this.images.has(id)) {
       const category = PLACE_CATEGORIES.find((item) => `vm-${item.id}` === id);
+      const wall = wallImage(id);
       let image;
       if (category) image = drawMarker(category.color, ICON_PATHS[category.id]);
       else if (id === 'vm-other') image = drawMarker('#868e96', null);
+      else if (wall) image = drawWall(WALL_KINDS[wall.kind], WALL_DETAILS[wall.detail]);
       // A base style sometimes names a picture its sprite sheet lacks; draw nothing for it.
       else image = { width: 1, height: 1, data: new Uint8Array(4) };
       this.images.set(id, image);

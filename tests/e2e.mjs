@@ -514,21 +514,23 @@ try {
   check('the map is built from the real street data', (await layerIds(page)).includes('city-buildings') && (await drawn(page, 'openmaptiles', 'transportation')) > 100);
   const model = await page.evaluate(() => {
     const live = window.__map;
+    const walls = live.getPaintProperty('city-buildings', 'fill-extrusion-pattern');
     return {
       kind: live.getLayer('city-buildings').type,
-      color: live.getPaintProperty('city-buildings', 'fill-extrusion-color'),
+      walls: JSON.stringify(walls),
+      // The wall picture for this zoom has been drawn and handed to the map.
+      wallDrawn: live.hasImage(`vm-wall:${Math.min(Math.max(Math.floor(live.getZoom()) - 15, 0), 3)}:low`),
       height: JSON.stringify(live.getPaintProperty('city-buildings', 'fill-extrusion-height')),
-      blocks: live.queryRenderedFeatures({ layers: ['city-buildings'] }).length,
+      blocks: live.queryRenderedFeatures({ layers: ['city-buildings', 'city-towers', 'city-painted'] }).length,
+      roofs: live.queryRenderedFeatures({ layers: ['city-roofs'] }).length,
+      painted: JSON.stringify(live.getPaintProperty('city-painted', 'fill-extrusion-color')),
       roads: live.queryRenderedFeatures({ layers: ['city-road-minor', 'city-road-mid', 'city-road-main'] }).length,
       ground: live.getLayer('city-ground').type,
     };
   });
-  const colouring = JSON.stringify(model.color);
-  check(
-    '3D City: every building is a block of its real height, in its recorded colour or the white of the model',
-    model.kind === 'fill-extrusion' && colouring.includes('"colour"') && colouring.includes('#f2f2f0') && model.height.includes('render_height') && model.blocks > 0,
-    JSON.stringify(model),
-  );
+  check('3D City: every building is a block of its real height', model.kind === 'fill-extrusion' && model.height.includes('render_height') && model.blocks > 0, JSON.stringify(model));
+  check('3D City: walls have rows of windows, and roofs are plain', model.walls.includes('vm-wall:1:low') && model.wallDrawn && model.roofs > 0, JSON.stringify(model));
+  check('3D City: a building with a recorded colour keeps it', model.painted.includes('"colour"'), model.painted);
   check('3D City: grey roads on the real ground', model.roads > 20 && model.ground === 'raster');
 
   await page.waitForSelector('#weather:not([hidden])');
