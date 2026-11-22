@@ -387,6 +387,14 @@ async function drive(page, meters) {
   await mapAtRest(page);
 }
 
+/** The simulated traffic as it is being drawn: how many triangle corners, and a fingerprint of where they are. */
+const trafficNow = (page) =>
+  page.evaluate(() => {
+    const mesh = window.__map.getLayer('city-life')?.implementation.parts.get('traffic')?.mesh;
+    if (!mesh) return { corners: 0, where: '' };
+    return { corners: mesh.count, where: Array.from(mesh.positions.subarray(0, Math.min(mesh.count * 3, 600))).map((value) => value.toFixed(1)).join(',') };
+  });
+
 /** Wait until the map shows a given layer: the sign that a map type has arrived. */
 const styleHas = (page, id) =>
   page.waitForFunction((layer) => (window.__map?.getStyle()?.layers ?? []).some((l) => l.id === layer), id, { timeout: 45000 });
@@ -508,6 +516,20 @@ try {
   const fall = bearingDegrees({ lng: shade.from[0], lat: shade.from[1] }, { lng: shade.to[0], lat: shade.to[1] });
   check('buildings cast shadows on the ground', shade.pieces > 20 && shade.onScreen > 0, JSON.stringify({ pieces: shade.pieces, onScreen: shade.onScreen }));
   check('shadows fall away from the sun', turn(fall, sun.azimuth + 180) < 1.5, `shadows point ${fall.toFixed(1)}°, sun is at ${sun.azimuth.toFixed(1)}°`);
+
+  // Cars, buses and trains: a simulation on the real streets.
+  await page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.parts.get('traffic')?.mesh.count ?? 0) > 0, null, { timeout: 15000 });
+  const trafficBefore = await trafficNow(page);
+  await page.waitForTimeout(800);
+  const trafficAfter = await trafficNow(page);
+  // A vehicle is at least three boxes of five faces: 90 corners.
+  check('the streets carry traffic', trafficBefore.corners >= 90 * 10, `${trafficBefore.corners} corners`);
+  check('the traffic moves', trafficBefore.where !== trafficAfter.where);
+  check('the traffic is drawn in the 3D scene, under the names', await page.evaluate(() => {
+    const order = window.__map.getLayersOrder();
+    const firstName = window.__map.getStyle().layers.find((layer) => layer.type === 'symbol').id;
+    return order.indexOf('city-life') > order.indexOf('city-roofs') && order.indexOf('city-life') < order.indexOf(firstName);
+  }));
 
   await page.waitForFunction(() => document.getElementById('roadName').textContent.trim() !== '');
   check('names the road I am on, from the map data', (await text(page, '#roadName')) === 'Al Olaya Street', await text(page, '#roadName'));
@@ -755,6 +777,7 @@ try {
   check('Streets: the coloured street map, seen from straight above', (await overlaysKept()) && inTheMiddle(spot) && near(view.bearing, 0, 0.5), JSON.stringify(spot));
   check('Streets: back to the ordinary lens, with no sun or shadows of its own', near(view.lens, 36.87, 0.01) && !(await layerIds(page)).includes('city-shadows'), `lens ${view.lens}`);
   check('Streets: the button says north is up', /north up/.test(await page.getAttribute('#followBtn', 'aria-label')), await page.getAttribute('#followBtn', 'aria-label'));
+  check('Streets: no simulated traffic outside the 3D city', !(await layerIds(page)).includes('city-life'));
   await shot(page, 'map-streets.png');
 
   await pickType('night');
@@ -809,6 +832,12 @@ try {
   check('weather can be turned off', await page.locator('#weather').isHidden());
   await page.locator('#optWeather').check();
   await page.waitForSelector('#weather:not([hidden])');
+  check('the traffic switch says it is a simulation', /simulation, not live traffic/i.test(await text(page, '.setting:has(#optTraffic) .setting-note')), await text(page, '.setting:has(#optTraffic) .setting-note'));
+  await page.locator('#optTraffic').uncheck();
+  check('moving traffic can be turned off', !(await layerIds(page)).includes('city-life') && (await saved(page, 'settings')).traffic === false);
+  await page.locator('#optTraffic').check();
+  await page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.parts.get('traffic')?.mesh.count ?? 0) > 0, null, { timeout: 15000 });
+  check('and on again', (await saved(page, 'settings')).traffic === true);
   await page.click('#sheet-map [data-close]');
 
   // Units.

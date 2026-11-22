@@ -26,6 +26,8 @@ import {
   wallImage,
   withOverlays,
 } from './lib.js';
+import { Mesh, Traffic, buildNetwork, drawTraffic, lightFrom, trafficLevel } from './life.js';
+import { SceneLayer } from './scene.js';
 import { loadStyle } from './services.js';
 
 export const MAP_TYPES = ['city', 'streets', 'night', 'satellite', 'detailed'];
@@ -60,6 +62,14 @@ const SHADE_LONGEST_WAIT_MS = 2500;
 const SUN_CHECK_MS = 60000;
 const EARTH_AROUND_METERS = 40075016.686;
 const METERS_PER_DEGREE = 111320;
+
+// The traffic lives on the streets of a wider area than the screen, so vehicles
+// are already on their way when they come into view.
+const LIFE_LAYER = 'city-life';
+const LIFE_MIN_ZOOM = 15;
+const LIFE_MARGIN_METERS = 500;
+const LIFE_REACH_METERS = 2200;
+const LIFE_LINES = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'busway', 'service', 'rail', 'transit']);
 
 /** Where the shadow of a 1 m pole ends, in metres east and north of its foot. */
 const shadowTip = (reach) => {
@@ -194,6 +204,13 @@ export class MapView {
     this.shadeTimer = null;
     this.shadeWaitingSince = 0;
     this.tilesLoaded = 0;
+    this.lifeOn = true;
+    this.lifeMade = null; // what the street network in use was made for
+    this.lifeAt = 0;
+    this.lifeDrawn = 0;
+    this.traffic = new Traffic({ seed: Date.now() % 2147483647 });
+    this.trafficMesh = new Mesh();
+    this.scene = new SceneLayer(LIFE_LAYER, { onFrame: () => this.moveLife() });
 
     this.map = new maplibregl.Map({
       container,
@@ -231,6 +248,8 @@ export class MapView {
       this.applyOverlays();
       this.sun = null;
       this.shade = null;
+      this.lifeMade = null;
+      this.syncLife();
       this.followSun();
     });
     map.on('dragstart', () => {
@@ -381,6 +400,7 @@ export class MapView {
     this.shadeTimer = setTimeout(() => {
       this.shadeTimer = null;
       this.layShade();
+      this.layLife();
     }, SHADE_PAUSE_MS);
   }
 
@@ -436,6 +456,121 @@ export class MapView {
     const metersPerPixel = (EARTH_AROUND_METERS * Math.cos((centre.lat * Math.PI) / 180)) / (512 * 2 ** zoom);
     source.setData(buildingShadows(footprintsIn(features, box), reach, SHADE_SMALLEST_PX * metersPerPixel));
     this.shade = { reach, box, zoom, tiles: this.tilesLoaded };
+  }
+
+  // ── Traffic (3D city) ───────────────────────────────────────────────────
+
+  /** Turn the moving traffic on or off. It is only ever drawn in the 3D city. */
+  setLife(on) {
+    this.lifeOn = Boolean(on);
+    this.syncLife();
+    this.queueShade(false);
+  }
+
+  /** Put the traffic's layer into the style on screen, or take it out. */
+  syncLife() {
+    this.whenStyled((map) => {
+      const wanted = this.lifeOn && this.type === 'city';
+      const there = Boolean(map.getLayer(LIFE_LAYER));
+      if (wanted && !there) {
+        // Under the names, over the buildings: the scene's depth hides what is behind a wall.
+        const names = map.getStyle().layers.find((layer) => layer.type === 'symbol');
+        map.addLayer(this.scene, names?.id);
+      } else if (!wanted && there) {
+        map.removeLayer(LIFE_LAYER);
+      }
+    });
+  }
+
+  /** Read the streets and tracks around the view from the map, for the traffic to run on. */
+  layLife() {
+    const map = this.map;
+    if (!this.lifeOn || this.type !== 'city' || map.getZoom() < LIFE_MIN_ZOOM) return;
+    const bounds = map.getBounds();
+    const view = { west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() };
+    const made = this.lifeMade;
+    if (
+      made &&
+      made.tiles === this.tilesLoaded &&
+      made.box.west <= view.west &&
+      made.box.east >= view.east &&
+      made.box.south <= view.south &&
+      made.box.north >= view.north
+    ) {
+      return;
+    }
+
+    const centre = map.getCenter();
+    const squeeze = Math.max(Math.cos((centre.lat * Math.PI) / 180), 0.01);
+    const latDegrees = (meters) => meters / METERS_PER_DEGREE;
+    const lngDegrees = (meters) => meters / (METERS_PER_DEGREE * squeeze);
+    const box = {
+      west: Math.max(view.west - lngDegrees(LIFE_MARGIN_METERS), centre.lng - lngDegrees(LIFE_REACH_METERS)),
+      east: Math.min(view.east + lngDegrees(LIFE_MARGIN_METERS), centre.lng + lngDegrees(LIFE_REACH_METERS)),
+      south: Math.max(view.south - latDegrees(LIFE_MARGIN_METERS), centre.lat - latDegrees(LIFE_REACH_METERS)),
+      north: Math.min(view.north + latDegrees(LIFE_MARGIN_METERS), centre.lat + latDegrees(LIFE_REACH_METERS)),
+    };
+    const inBox = ([lng, lat]) => lng >= box.west && lng <= box.east && lat >= box.south && lat <= box.north;
+
+    let features;
+    try {
+      features = map.querySourceFeatures(VECTOR_SOURCE, { sourceLayer: 'transportation' });
+    } catch {
+      return;
+    }
+    const lines = [];
+    for (const feature of features) {
+      const properties = feature.properties ?? {};
+      if (!LIFE_LINES.has(properties.class)) continue;
+      const geometry = feature.geometry;
+      let parts = [];
+      if (geometry?.type === 'LineString') parts = [geometry.coordinates];
+      else if (geometry?.type === 'MultiLineString') parts = geometry.coordinates;
+      for (const coordinates of parts) {
+        if (coordinates.length >= 2 && coordinates.some(inBox)) {
+          lines.push({ class: properties.class, oneway: properties.oneway, tunnel: properties.brunnel === 'tunnel', coordinates });
+        }
+      }
+    }
+
+    // Vehicles keep their place on their street while the ground under them is measured from a new spot.
+    const origin = { lng: centre.lng, lat: centre.lat };
+    const before = this.scene.origin;
+    const shift = before
+      ? [(before.lng - origin.lng) * squeeze * METERS_PER_DEGREE, (before.lat - origin.lat) * METERS_PER_DEGREE]
+      : [0, 0];
+    this.traffic.level = trafficLevel(new Date(), centre.lng);
+    this.traffic.setNetwork(buildNetwork(lines, origin), shift);
+    this.scene.setOrigin(origin);
+    this.lifeMade = { box, tiles: this.tilesLoaded };
+    map.triggerRepaint();
+  }
+
+  /** Before each picture: move the traffic on and draw it afresh. True while there is something moving. */
+  moveLife() {
+    const now = performance.now();
+    const seconds = (now - this.lifeAt) / 1000;
+    this.lifeAt = now;
+    const zoom = this.map.getZoom();
+    if (!this.lifeOn || this.type !== 'city' || zoom < LIFE_MIN_ZOOM) {
+      this.trafficMesh.clear();
+      this.scene.set('traffic', this.trafficMesh);
+      this.lifeDrawn = 0;
+      return false;
+    }
+    this.traffic.step(seconds);
+    // Life size from zoom 17.5 in; up to half as large again further out, so a car is still a car and not a speck.
+    const scale = Math.min(Math.max(1 + (17.5 - zoom) * 0.5, 1), 1.5);
+    this.lifeDrawn = drawTraffic(this.trafficMesh, this.traffic, lightFrom(this.sun), shadowReach(this.sun), scale);
+    this.scene.set('traffic', this.trafficMesh);
+    // Vehicles fade in over the first half zoom level they are shown at.
+    this.scene.opacity = Math.min((zoom - LIFE_MIN_ZOOM) * 2, 1);
+    return true;
+  }
+
+  /** What is on the streets right now, for anyone who wants to count it. */
+  lifeCounts() {
+    return { ...this.traffic.counts(), drawn: this.lifeDrawn, on: this.lifeOn && this.type === 'city' };
   }
 
   // ── "You are here" ──────────────────────────────────────────────────────

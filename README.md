@@ -21,6 +21,12 @@ the phone: no App Store, no Apple developer account, no Mac.
   white with a window in each bay for ordinary buildings, bands of glass for
   towers, and the recorded colour where mappers noted one. They stand on the
   real ground, with grey roads at their real widths.
+- **Moving traffic.** Cars, vans, lorries and buses drive the streets, and
+  trains run on the tracks above ground. They keep to the real lanes, drive on
+  the right, obey one-way streets, queue behind each other, disappear into
+  tunnels, and are busier in the rush hours than at night. This is a
+  simulation to bring the model to life, **not live traffic**: where each
+  vehicle is, is made up. It can be switched off under the map options.
 - **The ground in detail**, all from the map data: bridges and flyovers lying
   over the roads beneath them, tunnels as a faint trace, metro and railway
   lines, footpaths, lawns and playing fields.
@@ -73,7 +79,9 @@ These public services are run for light, fair use, which one person's app is.
 They can be slow or briefly unavailable; the app then simply leaves that piece
 of information out and carries on.
 
-Not included, because no open source for it exists: live traffic.
+Not included, because no open source for it exists: live traffic. The moving
+vehicles in the 3D city are a simulation on the real street network and say
+nothing about the real traffic on a road.
 
 The map is only as complete as OpenStreetMap is where you are. Speed limits in
 particular are missing on many roads. Building heights are recorded for
@@ -149,6 +157,8 @@ index.html              the page
 css/app.css             styles
 js/app.js               the app: layout, video, location, search, place details
 js/map.js               the map: styles, markers, following, taps
+js/life.js              the simulated traffic: street network, vehicles, trains
+js/scene.js             the layer that draws the traffic into the 3D scene
 js/services.js          the open data services
 js/lib.js               everything that needs no browser: parsing, distances,
                         road matching, place categories, map styles, the

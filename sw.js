@@ -3,7 +3,7 @@
 // Only the app's own files are handled here. The map, place data, YouTube
 // and video links are on other sites and always go straight to the network.
 
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const CACHE = `video-map-${VERSION}`;
 const SHELL = [
   './',
@@ -12,6 +12,8 @@ const SHELL = [
   './js/app.js',
   './js/lib.js',
   './js/map.js',
+  './js/life.js',
+  './js/scene.js',
   './js/services.js',
   './vendor/maplibre/maplibre-gl.js',
   './vendor/maplibre/maplibre-gl.css',

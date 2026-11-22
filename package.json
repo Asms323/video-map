@@ -1,12 +1,12 @@
 {
   "name": "video-map",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "description": "Video and a live map of where you are, on one screen. A web app for the phone.",
   "scripts": {
     "start": "node tests/serve.mjs",
-    "test": "node --test tests/lib.test.mjs",
+    "test": "node --test tests/lib.test.mjs tests/life.test.mjs",
     "test:e2e": "node tests/e2e.mjs"
   }
 }
