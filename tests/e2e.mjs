@@ -626,7 +626,8 @@ try {
       kind: live.getLayer('city-buildings').type,
       walls: JSON.stringify(walls),
       // The wall picture for this zoom has been drawn and handed to the map.
-      wallDrawn: live.hasImage(`vm-wall:${Math.min(Math.max(Math.floor(live.getZoom()) - 15, 0), 3)}:low`),
+      // (An ordinary building's is in one of seven shades of plaster, by the building's number.)
+      wallDrawn: [0, 1, 2, 3, 4, 5, 6].filter((shade) => live.hasImage(`vm-wall:${Math.min(Math.max(Math.floor(live.getZoom()) - 14, 0), 4)}:low${shade}`)).length,
       height: JSON.stringify(live.getPaintProperty('city-buildings', 'fill-extrusion-height')),
       blocks: live.queryRenderedFeatures({ layers: ['city-buildings', 'city-towers', 'city-painted'] }).length,
       roofs: live.queryRenderedFeatures({ layers: ['city-roofs'] }).length,
@@ -636,7 +637,7 @@ try {
     };
   });
   check('3D City: every building is a block of its own height', model.kind === 'fill-extrusion' && model.height.includes('"num_floors"') && model.height.includes('feature-state') && model.blocks > 0, JSON.stringify(model));
-  check('3D City: walls have rows of windows, and roofs are plain', model.walls.includes('vm-wall:1:low') && model.wallDrawn && model.roofs > 0, JSON.stringify(model));
+  check('3D City: walls have rows of windows, in several shades of plaster', model.walls.includes('vm-wall:1:low') && model.wallDrawn >= 3 && model.roofs > 0, JSON.stringify(model));
   check('3D City: a building with a recorded colour keeps it', model.painted.includes('"facade_color"'), model.painted);
   check('3D City: grey roads on the real ground', model.roads > 20 && model.ground === 'raster');
 
@@ -683,7 +684,30 @@ try {
     return (parts?.get('roofs')?.mesh?.count ?? 0) > 0 && (parts?.get('street')?.mesh?.count ?? 0) > 0;
   }, null, { timeout: 15000 });
   const scene = await sceneCounts(page);
-  check('3D City: roofs have their furniture', scene.buildings.roofs.furnished > 50 && scene.buildings.roofs.furnished <= scene.buildings.roofs.of && (await sceneCorners(page, 'roofs')) >= scene.buildings.roofs.furnished * 30, JSON.stringify(scene.buildings.roofs));
+  // Every low building carries its real roof, cut out of the satellite photo; only the tall ones are left to be furnished by guesswork.
+  await page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.photos.get('roofs')?.mesh?.count ?? 0) > 0 && window.__map.getLayer('city-life').implementation.photos.get('roofs').texture, null, { timeout: 20000 });
+  const roofPhoto = await page.evaluate(async () => {
+    const live = window.__map;
+    const lib = await import(new URL('js/lib.js', document.baseURI).href);
+    const sceneLayer = live.getLayer('city-life').implementation;
+    const part = sceneLayer.photos.get('roofs');
+    const counts = sceneLayer.counts().photo.roofs;
+    const mesh = part.mesh;
+    let low = Infinity;
+    let high = -Infinity;
+    let inPicture = true;
+    for (let i = 0; i < mesh.count; i += 1) {
+      low = Math.min(low, mesh.positions[i * 3 + 2]);
+      high = Math.max(high, mesh.positions[i * 3 + 2]);
+      inPicture &&= mesh.places[i * 2] >= 0 && mesh.places[i * 2] <= 1 && mesh.places[i * 2 + 1] >= 0 && mesh.places[i * 2 + 1] <= 1;
+    }
+    const look = lib.groundLook(live.getZoom());
+    return { ...counts, size: part.picture.size, kept: part.picture.data === null, low, high, inPicture, toned: JSON.stringify(sceneLayer.look) === JSON.stringify(look), strength: look.strength };
+  });
+  check('3D City: every low building has its real roof, cut from the satellite photo', roofPhoto.cut > 300 && roofPhoto.corners >= roofPhoto.cut * 6 && roofPhoto.zoom === 17 && [1024, 2048].includes(roofPhoto.size) && roofPhoto.kept && roofPhoto.inPicture, JSON.stringify(roofPhoto));
+  check('3D City: a roof lies just above its building, and no building over 32 m has one', roofPhoto.low > 3 && roofPhoto.high <= 32 + 1.2 + 0.3 + 0.01, JSON.stringify({ low: roofPhoto.low, high: roofPhoto.high }));
+  check('3D City: the roofs are toned as the photo on the ground is', roofPhoto.toned && roofPhoto.strength > 0.69 && roofPhoto.strength < 0.93, JSON.stringify(roofPhoto));
+  check('3D City: the tall roofs have their furniture', scene.buildings.roofs.furnished > 0 && scene.buildings.roofs.furnished <= scene.buildings.roofs.of && scene.buildings.roofs.of < roofPhoto.cut && (await sceneCorners(page, 'roofs')) >= scene.buildings.roofs.furnished * 30, JSON.stringify(scene.buildings.roofs));
   check('3D City: cars are parked along the side streets', scene.life.parked > 20 && (await sceneCorners(page, 'street')) >= scene.life.parked * 90, `${scene.life.parked} parked`);
   // Buses: only as many as the streets with stops call for, one every ten minutes each way; none without a stop on the map.
   check('3D City: the bus stops on the map have shelters', scene.life.busStops > 0 && scene.life.shelters > 0 && scene.life.shelters <= scene.life.busStops, JSON.stringify(scene.life));
@@ -729,6 +753,11 @@ try {
   check('3D City: a pavilion with its sign stands at each metro entrance', dressing.extras.entrances > 0 && dressing.kinds.pavilion >= 2 && dressing.kinds.pavilion <= dressing.extras.entrances * 2 && dressing.kinds.sign === dressing.kinds.pavilion, JSON.stringify(dressing));
   check('3D City: chain stores wear their own colours', dressing.extras.stores > 0 && dressing.extras.dressed > 0 && dressing.extras.dressed <= dressing.extras.stores && dressing.kinds.store > 0 && dressing.kinds.front > 0, JSON.stringify(dressing));
   check('3D City: bridges are built in 3D, deck and piers', dressing.bridges > 0 && dressing.corners > dressing.bridges * 100, JSON.stringify({ bridges: dressing.bridges, corners: dressing.corners }));
+  console.log(`  (extras here: ${JSON.stringify(dressing.extras)})`);
+  check('3D City: mosques have a dome and a minaret', dressing.extras.mosques > 0 && dressing.kinds.dome === dressing.extras.mosques * 8 && dressing.kinds.minaret >= dressing.extras.mosques * 9, JSON.stringify({ mosques: dressing.extras.mosques, dome: dressing.kinds.dome, minaret: dressing.kinds.minaret }));
+  check('3D City: the shops of no chain have a front each', dressing.extras.locals > 0 && dressing.kinds.local >= 3 && dressing.kinds.local % 3 === 0 && dressing.kinds.local <= dressing.extras.locals * 3, JSON.stringify({ locals: dressing.extras.locals, slabs: dressing.kinds.local }));
+  const paint = await page.evaluate(() => ({ marks: window.__map.getLayer('city-life').implementation.counts().life.marks, corners: window.__map.getLayer('city-life').implementation.parts.get('marks')?.mesh?.count ?? 0, flat: (window.__map.getStyle().layers ?? []).some((layer) => layer.id === 'city-road-marks') }));
+  check('3D City: the main roads have their lanes painted, and side streets a crossing where they meet one', paint.marks.lines > 5 && paint.marks.crossings > 0 && paint.corners > paint.marks.lines * 6 && !paint.flat, JSON.stringify(paint));
   check('3D City: the cable-stayed bridge is drawn only where it stands', dressing.stayed === 0);
 
   await page.waitForSelector('#weather:not([hidden])');
@@ -1021,8 +1050,16 @@ try {
   check('a photo that shows nothing raises no buildings and plants no trees', (await sceneCounts(page)).photo.heights === 0 && (await sceneCorners(page, 'trees')) === 0);
   await page.locator('#optPhoto').uncheck();
   check('reading the photo can be turned off', (await saved(page, 'settings')).photo === false);
+  // Without the photo the roofs are plain again, with something made up put on them.
+  await page.waitForFunction(() => {
+    const sceneLayer = window.__map.getLayer('city-life')?.implementation;
+    return sceneLayer && (sceneLayer.photos.get('roofs')?.mesh?.count ?? 0) === 0 && sceneLayer.counts().buildings.roofs?.furnished > 50;
+  }, null, { timeout: 20000 });
+  check('without the photo the roofs are plain, with their made-up furniture', (await sceneCounts(page)).photo.roofs === null && (await sceneCounts(page)).buildings.roofs.furnished > 50);
   await page.locator('#optPhoto').check();
   check('and on again', (await saved(page, 'settings')).photo === true);
+  await page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.photos.get('roofs')?.mesh?.count ?? 0) > 0, null, { timeout: 20000 });
+  check('and the real roofs come back', (await sceneCounts(page)).photo.roofs.cut > 300);
   await page.click('#sheet-map [data-close]');
 
   // Units.
@@ -1264,6 +1301,42 @@ try {
   check('after midnight no bus and no train is running', night.buses === 0 && night.trains === 0 && night.vehicles > 10 && night.busStops > 0, JSON.stringify(night));
   check('no errors in the page', late.errors.length === 0, late.errors.join(' | '));
   await late.context.close();
+
+  // ── The phone takes the graphics memory away ────────────────────────────
+  console.log('\nBack from the background');
+  const back = await newPhone();
+  await back.page.goto(`${base}/`);
+  await back.page.waitForSelector('.me');
+  await styleHas(back.page, 'city-buildings');
+  const sceneReady = () => {
+    const live = window.__map;
+    const sceneLayer = live.getLayer('city-life')?.implementation;
+    const gl = live.painter.context.gl;
+    if (!sceneLayer || gl.isContextLost()) return false;
+    const roofs = sceneLayer.photos.get('roofs');
+    return gl.isProgram(sceneLayer.program) && gl.isProgram(sceneLayer.photoProgram) && (roofs?.mesh?.count ?? 0) > 0 && Boolean(roofs.texture) && gl.isTexture(roofs.texture) && (sceneLayer.parts.get('traffic')?.mesh.count ?? 0) > 0;
+  };
+  await back.page.waitForFunction(sceneReady, null, { timeout: 30000 });
+  // A phone does this to a page that has been in the background for a while; here it is done by hand.
+  const taken = await back.page.evaluate(async () => {
+    const gl = window.__map.painter.context.gl;
+    const lose = gl.getExtension('WEBGL_lose_context');
+    if (!lose) return null;
+    const sceneLayer = window.__map.getLayer('city-life').implementation;
+    lose.loseContext();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const gone = gl.isContextLost() && !gl.isProgram(sceneLayer.program);
+    lose.restoreContext();
+    return gone;
+  });
+  if (taken === null) {
+    console.log('  (this browser cannot take the graphics memory away: not checked)');
+  } else {
+    await back.page.waitForFunction(sceneReady, null, { timeout: 30000 });
+    check('when the phone hands the graphics memory back empty, the city is built again: roofs, traffic and all', taken && (await sceneCounts(back.page)).photo.roofs.cut > 300);
+    check('no errors in the page', back.errors.length === 0, back.errors.join(' | '));
+  }
+  await back.context.close();
 
   // ── The buildings archive out of reach ──────────────────────────────────
   console.log('\n3D city without the buildings archive');

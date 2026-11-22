@@ -22,7 +22,7 @@ import {
 import { MAP_TYPES, MapView } from './map.js';
 import { drivingRoute, placeAt, placeDetails, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
 
-const VERSION = '1.8.0';
+const VERSION = '1.9.0';
 const STORE_PREFIX = 'video-map:';
 
 const $ = (id) => document.getElementById(id);

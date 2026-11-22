@@ -87,6 +87,132 @@ function inside(ring, x, y) {
   return hit;
 }
 
+// ── Mosques ───────────────────────────────────────────────────────────────
+
+const MOSQUE_STONE = '#e4d8bf';
+const MOSQUE_WHITE = '#f3eee2';
+const MOSQUE_GOLD = '#c8a64b';
+// A place of prayer the map marks is taken to be this building if it lies inside it, or this near its walls.
+const PRAYER_REACH_METERS = 25;
+// Between these sizes a building with a place of prayer in it is a mosque, and not a prayer room in something larger.
+const MOSQUE_LEAST_SQ_METERS = 60;
+const MOSQUE_MOST_SQ_METERS = 9000;
+
+/** A many-sided outline round a point: near enough a circle. */
+function round(x, y, radius, sides = 10) {
+  return Array.from({ length: sides }, (_, i) => [x + radius * Math.cos((i / sides) * 2 * Math.PI), y + radius * Math.sin((i / sides) * 2 * Math.PI)]);
+}
+
+/**
+ * Which buildings are mosques: those the data calls one, and those it calls
+ * religious, or gives no use at all, that have a Muslim place of prayer from
+ * the map in them or at their walls.
+ *
+ * buildings: as buildingFootprints() gives them. prayers: [[lng, lat], …].
+ * Returns [{ id, ring, height }], ring being the largest outline of each.
+ */
+export function mosquesAmong(buildings, prayers) {
+  const found = new Map();
+  const largest = (building) => building.polygons.reduce((best, polygon) => (polygon[0].length > best.length ? polygon[0] : best), []);
+  const candidates = [];
+  for (const building of buildings) {
+    if (building.replaced || building.base > 0) continue;
+    if (building.kind === 'mosque') found.set(building.id ?? found.size, { id: building.id, ring: largest(building), height: building.height });
+    else if (building.kind === undefined && (building.use === undefined || building.use === 'religious')) candidates.push(building);
+  }
+  if (prayers.length === 0 || candidates.length === 0) return [...found.values()];
+  const patch = ground(prayers[0]);
+  const places = prayers.map(patch.to);
+  for (const building of candidates) {
+    const outline = largest(building);
+    // Its box first, in degrees, which costs next to nothing; only then is it measured.
+    let west = Infinity;
+    let east = -Infinity;
+    let south = Infinity;
+    let north = -Infinity;
+    for (const [lng, lat] of outline) {
+      if (lng < west) west = lng;
+      if (lng > east) east = lng;
+      if (lat < south) south = lat;
+      if (lat > north) north = lat;
+    }
+    [west, south] = patch.to([west, south]);
+    [east, north] = patch.to([east, north]);
+    const close = places.filter(([x, y]) => x > west - PRAYER_REACH_METERS && x < east + PRAYER_REACH_METERS && y > south - PRAYER_REACH_METERS && y < north + PRAYER_REACH_METERS);
+    if (close.length === 0) continue;
+    const ring = outline.map(patch.to);
+    const area = areaOf(ring);
+    if (area < MOSQUE_LEAST_SQ_METERS || area > MOSQUE_MOST_SQ_METERS) continue;
+    // A building of no stated use must have the place of prayer inside it; one called religious may have it at its door.
+    const hit = close.some(([x, y]) => inside(ring, x, y) || (building.use === 'religious' && (nearestWall(ring, x, y)?.distance ?? Infinity) <= PRAYER_REACH_METERS));
+    if (hit) found.set(building.id ?? found.size, { id: building.id, ring: outline, height: building.height });
+  }
+  return [...found.values()];
+}
+
+/**
+ * What marks a mosque out from the houses round it: a dome on its roof and a
+ * minaret at a corner, or one at either end of a large one.
+ *
+ * mosques: [{ id, ring, height }] as mosquesAmong() gives them. roof: how far
+ * above a building's height its roof ends (the slab the map draws on it).
+ *
+ * Where the dome and the minaret of a given mosque really stand, and how
+ * tall they are, no map says: the dome is put in the middle, the minaret at
+ * a corner picked by the building's number, and both are sized to the
+ * building. Returns { features, shades }: the slabs, and what throws a shadow
+ * (the minarets), as [{ height, base, polygons }].
+ */
+export function mosqueExtras(mosques, roof = 0) {
+  const features = [];
+  const shades = [];
+  for (const mosque of mosques) {
+    if (!Array.isArray(mosque.ring) || mosque.ring.length < 4) continue;
+    const patch = ground(mosque.ring[0]);
+    const box = boxAround(mosque.ring.map(patch.to));
+    if (!box || box.halfWidth < 3.5) continue;
+    const add = (outline, base, top, paint, kind) => features.push(slab(patch, outline, base, top, paint, kind));
+    const top = mosque.height + roof;
+    const large = box.halfLength * box.halfWidth * 4 > 1600;
+
+    // The dome: a low drum, the dome itself in rings, and a gilt finial.
+    const radius = Math.min(Math.max(box.halfWidth * 0.42, 2.4), large ? 9 : 6.5);
+    add(round(box.x, box.y, radius + 0.25, 12), top, top + 0.9, MOSQUE_STONE, 'dome');
+    const rise = radius * 0.92;
+    const rings = 6;
+    for (let i = 0; i < rings; i += 1) {
+      const middle = (i + 0.5) / rings;
+      add(round(box.x, box.y, radius * Math.sqrt(1 - middle * middle), 12), top + 0.9 + (rise * i) / rings, top + 0.9 + (rise * (i + 1)) / rings, MOSQUE_WHITE, 'dome');
+    }
+    add(round(box.x, box.y, 0.22, 6), top + 0.9 + rise, top + 0.9 + rise + 1.5, MOSQUE_GOLD, 'dome');
+
+    // The minarets: a square foot inside a corner of the building, an eight-sided shaft, the balcony, a slimmer shaft, a pointed cap.
+    const pick = typeof mosque.id === 'number' && Number.isFinite(mosque.id) ? (Math.abs(mosque.id) % 7) % 4 : 0;
+    const side = pick % 2 === 0 ? 1 : -1;
+    const ends = large ? [1, -1] : [pick < 2 ? 1 : -1];
+    const height = Math.min(Math.max(mosque.height + 13 + box.halfWidth * 0.5, 20), 38) + (large ? 6 : 0);
+    for (const end of ends) {
+      const along = end * (box.halfLength - 1.9);
+      const across = side * (box.halfWidth - 1.9);
+      const x = box.x + box.east * along - box.north * across;
+      const y = box.y + box.north * along + box.east * across;
+      const foot = rectangle(x, y, box.east, box.north, 1.7, 1.7);
+      const balcony = height * 0.7;
+      add(foot, 0, top + 2.2, MOSQUE_STONE, 'minaret');
+      add(round(x, y, 1.35, 8), top + 2.2, balcony, MOSQUE_STONE, 'minaret');
+      add(round(x, y, 2.05, 8), balcony, balcony + 0.6, MOSQUE_WHITE, 'minaret');
+      add(round(x, y, 1.0, 8), balcony + 0.6, height * 0.88, MOSQUE_STONE, 'minaret');
+      const cap = height - height * 0.88;
+      for (let i = 0; i < 4; i += 1) add(round(x, y, 1.15 * (1 - (i + 0.5) / 4.4), 8), height * 0.88 + (cap * i) / 4, height * 0.88 + (cap * (i + 1)) / 4, MOSQUE_WHITE, 'minaret');
+      add(round(x, y, 0.16, 6), height, height + 1.4, MOSQUE_GOLD, 'minaret');
+      const ring = foot.map(patch.from);
+      ring.push(ring[0]);
+      shades.push({ height, base: 0, polygons: [[ring]] });
+    }
+  }
+  return { features, shades };
+}
+
 // ── Metro stations ────────────────────────────────────────────────────────
 
 // The Riyadh Metro's own colours: screens of pale gold metal, glass, grey roofs.
@@ -342,6 +468,58 @@ function nearestWall(ring, x, y) {
   return best;
 }
 
+/**
+ * The wall by which the straight line from a point inside an outline to a
+ * point outside it (the street) leaves the outline: where a shop inside has
+ * its front. In the form nearestWall() gives, or null if the line leaves by no wall.
+ */
+function exitWall(ring, x, y, sx, sy) {
+  const lx = sx - x;
+  const ly = sy - y;
+  let best = null;
+  for (let i = 1; i < ring.length; i += 1) {
+    const [x0, y0] = ring[i - 1];
+    const dx = ring[i][0] - x0;
+    const dy = ring[i][1] - y0;
+    const wall = Math.hypot(dx, dy);
+    const cross = lx * dy - ly * dx;
+    if (wall < 0.5 || Math.abs(cross) < 1e-9) continue;
+    const t = ((x0 - x) * dy - (y0 - y) * dx) / cross; // how far along the line to the street
+    const u = ((x0 - x) * ly - (y0 - y) * lx) / cross; // how far along the wall
+    if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+    // (The last wall crossed on the way: an outline with a courtyard or a notch may be crossed more than once.)
+    if (!best || t > best.t) best = { t, x: x0 + dx * u, y: y0 + dy * u, distance: Math.hypot(lx, ly) * t, east: dx / wall, north: dy / wall, wall, along: u * wall };
+  }
+  return best;
+}
+
+// A fuel station of no chain the app knows: a plain white canopy with a red edge.
+export const PLAIN_FUEL = { id: 'fuel', names: [], kind: 'fuel', band: '#ecebe6', accent: '#c4483b' };
+
+// The small shops of a street, which belong to no chain: an awning by what they sell, and a sign in one
+// of the colours shop signs come in, picked by where the shop is so that it is the same every time.
+const LOCAL_AWNINGS = { food: '#a8482f', cafe: '#6e4b3a', market: '#3d7a48', bank: '#2f4f7a', pharmacy: '#2f9a68', shop: '#7d7f86' };
+const LOCAL_SIGNS = ['#b2423b', '#2f5f9e', '#2e7d5b', '#d9a233', '#efede6', '#3a3f47', '#c96a2b', '#2a8a8a', '#7a4d8c'];
+const LOCAL_CLASSES = {
+  restaurant: 'food',
+  fast_food: 'food',
+  ice_cream: 'food',
+  bar: 'food',
+  cafe: 'cafe',
+  bakery: 'cafe',
+  grocery: 'market',
+  bank: 'bank',
+  pharmacy: 'pharmacy',
+  shop: 'shop',
+  clothing_store: 'shop',
+  car: 'shop',
+};
+
+/** What a place on the map sells, if it is the kind of place that has a shop front: 'food', 'cafe', 'market', 'bank', 'pharmacy', 'shop'; or null. */
+export function localKind(properties) {
+  return LOCAL_CLASSES[properties?.class] ?? null;
+}
+
 // How large a building a single branch of each kind can be taken to have to itself, in square metres,
 // and how many other shops the map may show in it before it is taken to be shared.
 const OWN_BUILDING = { food: 900, cafe: 500, bank: 700, shop: 500, market: 32000 };
@@ -358,12 +536,29 @@ const NEIGHBOURS_ALLOWED = { food: 1, cafe: 1, bank: 1, shop: 1, market: 3 };
  *
  * Returns { features, dressed }: the slabs as map features, and the ids of
  * the buildings that are drawn here in full and so are left out elsewhere.
+ *
+ * more.street(position): the nearest place on a street to a position, as
+ * [lng, lat], or null: a shop inside a building has its front on the wall
+ * towards the street. more.locals: the shops of no chain,
+ * [{ at: [lng, lat], kind }] (see localKind), each of which gets a small
+ * front of its own.
  */
-export function storeExtras(stores, buildings, facing = () => null, others = []) {
+export function storeExtras(stores, buildings, facing = () => null, others = [], { street = () => null, locals = [] } = {}) {
   const features = [];
   const dressed = new Set();
-  if (stores.length === 0) return { features, dressed };
-  const patch = ground(stores[0].at);
+  const roofs = new Map(); // a building dressed all round → how high its new roof lies
+  if (stores.length === 0 && locals.length === 0) return { features, dressed, roofs };
+  const patch = ground((stores[0] ?? locals[0]).at);
+  // The wall a shop at (x, y) inside an outline has its front on: the one towards the street, else the nearest.
+  const frontWall = (outline, x, y, at) => {
+    const towards = street(at);
+    if (towards) {
+      const [sx, sy] = patch.to(towards);
+      const exit = exitWall(outline.ring, x, y, sx, sy);
+      if (exit) return exit;
+    }
+    return nearestWall(outline.ring, x, y);
+  };
 
   // The outlines near a branch, in metres, filed under the squares of ground their boxes cover.
   // (Of the thousands of buildings on the map only those few are measured.)
@@ -371,8 +566,8 @@ export function storeExtras(stores, buildings, facing = () => null, others = [])
   const outlines = [];
   const grid = new Map();
   const wanted = new Set(); // the squares a branch stands in
-  for (const store of stores) {
-    const [x, y] = patch.to(store.at);
+  for (const shop of [...stores, ...locals]) {
+    const [x, y] = patch.to(shop.at);
     wanted.add(`${Math.floor(x / CELL)},${Math.floor(y / CELL)}`);
   }
   for (const building of buildings) {
@@ -413,28 +608,32 @@ export function storeExtras(stores, buildings, facing = () => null, others = [])
     }
   }
 
-  // Which building each branch is in, or stands at.
-  const tenants = new Map(); // outline → [{ store, x, y, wall, within }]
-  const alone = [];
-  for (const store of stores) {
-    const [x, y] = patch.to(store.at);
+  // Which building a shop at (x, y) is in, or stands at: { outline, wall, within }, or null.
+  const homeOf = (x, y, reach) => {
     let home = null;
     for (const index of grid.get(`${Math.floor(x / CELL)},${Math.floor(y / CELL)}`) ?? []) {
       const outline = outlines[index];
       if (x < outline.box[0] - 15 || x > outline.box[2] + 15 || y < outline.box[1] - 15 || y > outline.box[3] + 15) continue;
       const within = inside(outline.ring, x, y);
       const wall = nearestWall(outline.ring, x, y);
-      if (!wall || (!within && wall.distance > 14)) continue;
+      if (!wall || (!within && wall.distance > reach)) continue;
       const score = within ? -1 : wall.distance;
       if (!home || score < home.score) home = { outline, wall, within, score };
     }
+    return home;
+  };
+  const tenants = new Map(); // outline → [{ store, x, y, wall, within }]
+  const alone = [];
+  for (const store of stores) {
+    const [x, y] = patch.to(store.at);
+    const home = homeOf(x, y, 14);
     if (!home) {
       alone.push({ store, x, y });
       continue;
     }
     if (home.outline.station) continue;
     if (!tenants.has(home.outline)) tenants.set(home.outline, []);
-    tenants.get(home.outline).push({ store, x, y, wall: home.wall, within: home.within });
+    tenants.get(home.outline).push({ store, x, y, wall: home.within ? frontWall(home.outline, x, y, store.at) : home.wall, within: home.within });
   }
 
   // How many other shops the map shows in each of those buildings.
@@ -451,6 +650,17 @@ export function storeExtras(stores, buildings, facing = () => null, others = [])
   }
 
   const add = (outline, base, top, paint, kind) => features.push(slab(patch, outline, base, top, paint, kind));
+  const fronts = []; // where a shop front has been put and on which outline, so that the next on it keeps its distance
+  // A place a little way out of doors from a wall of an outline, by how far.
+  const outwards = (ring, wall) => {
+    let outEast = -wall.north;
+    let outNorth = wall.east;
+    if (inside(ring, wall.x + outEast * 0.8, wall.y + outNorth * 0.8)) {
+      outEast = -outEast;
+      outNorth = -outNorth;
+    }
+    return (out) => [wall.x + outEast * out, wall.y + outNorth * out];
+  };
   const pylon = (x, y, brand, east = 1, north = 0) => {
     add(rectangle(x, y, east, north, 0.3, 0.3), 0, 5.6, SIGN_POST, 'pylon');
     add(rectangle(x, y, east, north, 1.3, 0.3), 5.6, 8.2, brand.band, 'pylon');
@@ -509,31 +719,42 @@ export function storeExtras(stores, buildings, facing = () => null, others = [])
       if (brand.accent) add(swollen(closed, 0.15), height - 1.9, height - 1.5, brand.accent, 'store');
       add(swollen(closed, 0.3), height - 1.5, height + 0.4, brand.band, 'store');
       add(swollen(closed, -0.9), height + 0.4, height + 0.5, SHOP_ROOF, 'store');
+      roofs.set(outline.id, height + 0.5);
       if (!owner.within && owner.wall.distance > 3) pylon(owner.x, owner.y, brand, owner.wall.east, owner.wall.north);
       // Anyone else in the building has a front on its wall.
       group.splice(group.indexOf(owner), 1);
     }
     // A shop front: glass at the ground, a canopy over it and the chain's band above that, on the wall the branch is at.
-    const fronts = [];
     for (const tenant of group) {
       const { wall, store } = tenant;
       if (wall.distance > 22 || wall.wall < 4) continue; // deep inside a mall: no front on the street
-      if (fronts.some((front) => Math.hypot(front[0] - wall.x, front[1] - wall.y) < 11)) continue;
-      fronts.push([wall.x, wall.y]);
-      // Which side of the wall is outdoors.
-      let outEast = -wall.north;
-      let outNorth = wall.east;
-      if (inside(closed, wall.x + outEast * 0.8, wall.y + outNorth * 0.8)) {
-        outEast = -outEast;
-        outNorth = -outNorth;
-      }
+      if (fronts.some((front) => front[2] === outline && Math.hypot(front[0] - wall.x, front[1] - wall.y) < 11)) continue;
       const half = Math.min(4.8, Math.min(wall.along, wall.wall - wall.along) + 1.2, wall.wall / 2 - 0.3);
       if (half < 1.6) continue;
-      const at = (out) => [wall.x + outEast * out, wall.y + outNorth * out];
+      fronts.push([wall.x, wall.y, outline]);
+      const at = outwards(closed, wall);
       add(rectangle(...at(0.12), wall.east, wall.north, half - 0.3, 0.14), 0, 3.1, SHOP_GLASS, 'front');
       add(rectangle(...at(0.6), wall.east, wall.north, half, 0.62), 3.1, 3.35, store.brand.accent ?? store.brand.band, 'front');
       add(rectangle(...at(0.3), wall.east, wall.north, half, 0.32), 3.35, 4.85, store.brand.band, 'front');
     }
+  }
+
+  // The shops of no chain: a narrower front each, with an awning by what it sells and a sign in a colour of its own.
+  for (const shop of locals) {
+    const [x, y] = patch.to(shop.at);
+    const home = homeOf(x, y, 8);
+    if (!home || home.outline.station || dressed.has(home.outline.id)) continue;
+    const wall = home.within ? frontWall(home.outline, x, y, shop.at) : home.wall;
+    if (wall.distance > 18 || wall.wall < 3.4) continue;
+    if (fronts.some((front) => front[2] === home.outline && Math.hypot(front[0] - wall.x, front[1] - wall.y) < 6.6)) continue;
+    const half = Math.min(3.1, Math.min(wall.along, wall.wall - wall.along) + 0.9, wall.wall / 2 - 0.2);
+    if (half < 1.4) continue;
+    fronts.push([wall.x, wall.y, home.outline]);
+    const at = outwards(home.outline.ring, wall);
+    const sign = LOCAL_SIGNS[Math.abs(Math.round(shop.at[0] * 1e5) * 31 + Math.round(shop.at[1] * 1e5) * 17) % LOCAL_SIGNS.length];
+    add(rectangle(...at(0.1), wall.east, wall.north, half - 0.25, 0.12), 0, 2.9, SHOP_GLASS, 'local');
+    add(rectangle(...at(0.48), wall.east, wall.north, half, 0.5), 2.9, 3.12, LOCAL_AWNINGS[shop.kind] ?? LOCAL_AWNINGS.shop, 'local');
+    add(rectangle(...at(0.24), wall.east, wall.north, half, 0.26), 3.12, 4.05, sign, 'local');
   }
 
   // A branch with no building on the map: a fuel station's canopy, or a coffee kiosk.
@@ -547,5 +768,5 @@ export function storeExtras(stores, buildings, facing = () => null, others = [])
       add(rectangle(x, y, east, north, 3.1, 1.8), 3.7, 3.8, SHOP_ROOF, 'kiosk');
     }
   }
-  return { features, dressed };
+  return { features, dressed, roofs };
 }

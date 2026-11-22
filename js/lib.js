@@ -994,8 +994,10 @@ export function buildingHeight(properties, id) {
 /**
  * Building footprints from Overture map-tile features, for the buildings that
  * reach into a box { west, south, east, north }:
- * [{ id, height, base, known, kind, polygons }], each polygon a list of rings.
- * kind is 'station' for a metro or railway station building.
+ * [{ id, height, base, known, kind, use, polygons }], each polygon a list of rings.
+ * kind is 'station' for a metro or railway station building and 'mosque' for
+ * a mosque; use is what the data says the building is for, where it says so
+ * ('residential', 'commercial', 'religious', …).
  *
  * Left out: what is underground (a metro station under a street is recorded
  * as a building too), and a building whose separate parts are given, which
@@ -1024,7 +1026,10 @@ export function buildingFootprints(features, box, estimates, skip) {
         outline.some(([lng, lat]) => lng >= box.west && lng <= box.east && lat >= box.south && lat <= box.north)
       );
     });
-    if (polygons.length > 0) buildings.push({ id: feature.id, ...size, kind: properties.class === 'train_station' ? 'station' : undefined, polygons });
+    if (polygons.length > 0) {
+      const kind = properties.class === 'train_station' ? 'station' : properties.class === 'mosque' ? 'mosque' : undefined;
+      buildings.push({ id: feature.id, ...size, kind, ...(properties.subtype ? { use: properties.subtype } : {}), polygons });
+    }
   }
   return buildings;
 }
@@ -1148,35 +1153,52 @@ export function buildingsOnStreets(buildings, streets, least = 15) {
  * along and up every wall. The pictures are sized in screen pixels of a whole
  * zoom level, so there is one set per level: a floor is 3 px at zoom 16 and
  * doubles with each step in, which keeps it about 3 m on the ground. Seen from
- * further out than zoom 16 the walls are plain.
+ * further out than zoom 15 the walls are plain.
+ *
+ * (The level is that of the map tile a building comes with. In a tilted view
+ * the far part of the picture is drawn from tiles a level coarser than the
+ * near part: the picture for zoom 15 is what keeps the windows on there.)
  */
 export const WALL_DETAILS = [
   null,
+  { zoom: 15, floor: 1.5, bay: 2 },
   { zoom: 16, floor: 3, bay: 4 },
   { zoom: 17, floor: 6, bay: 8 },
   { zoom: 18, floor: 12, bay: 16 },
 ];
 
 /**
- * The two kinds of wall. "glass" is laid over the wall colour; "across" and
- * "up" say how much of a bay and of a floor the window takes.
+ * The kinds of wall. "glass" is laid over the wall colour; "across" and
+ * "up" say how much of a bay and of a floor the window takes; "scale" makes
+ * the whole picture so many times larger.
  */
 export const WALL_KINDS = {
   // Plaster and stone with a window in each bay.
   low: { colour: '#f3f1ec', glass: 'rgba(62, 84, 112, 0.34)', across: 0.64, up: 0.44 },
-  // Towers: bands of glass with little wall between.
-  tall: { colour: '#e6ebf0', glass: 'rgba(52, 84, 122, 0.46)', across: 0.84, up: 0.6 },
+  // Towers: bands of glass with little wall between, two floors to a band, so that a tower still shows
+  // its bands from across the city, where single floors would run together into grey.
+  tall: { colour: '#e6ebf0', glass: 'rgba(52, 84, 122, 0.5)', across: 0.84, up: 0.62, scale: 2 },
   // Metro stations: a screen of pale gold metal, pierced in a pattern of triangles.
   station: { colour: '#cfb37e', glass: 'rgba(96, 72, 30, 0.34)', across: 1, up: 1, lattice: true },
 };
 // Buildings from this height up are drawn as towers.
 const TOWER_METERS = 60;
 
-/** What a wall picture's name stands for, e.g. "vm-wall:2:tall": { detail, kind } or null. */
+/**
+ * Plaster and stone come in many shades. An ordinary building's is picked by
+ * its number in the map data, so a house is the same shade every time, and
+ * next-door neighbours seldom match. (Seven of them: the numbers are so large
+ * that only an odd count is spread evenly.) What colour a wall really is,
+ * no source says.
+ */
+export const WALL_TINTS = ['#f1eee7', '#ece4d4', '#e6dac4', '#e3ded4', '#efe2d2', '#dcd5c7', '#e9e7e2'];
+
+/** What a wall picture's name stands for, e.g. "vm-wall:2:tall" or "vm-wall:1:low4": { detail, kind, tint } or null. */
 export function wallImage(id) {
-  const match = /^vm-wall:(\d):([a-z]+)$/.exec(String(id ?? ''));
+  const match = /^vm-wall:(\d):([a-z]+)(\d?)$/.exec(String(id ?? ''));
   if (!match || Number(match[1]) >= WALL_DETAILS.length || !Object.hasOwn(WALL_KINDS, match[2])) return null;
-  return { detail: Number(match[1]), kind: match[2] };
+  if (match[3] !== '' && (match[2] !== 'low' || Number(match[3]) >= WALL_TINTS.length)) return null;
+  return { detail: Number(match[1]), kind: match[2], tint: match[3] === '' ? null : Number(match[3]) };
 }
 
 // ── Map styles ────────────────────────────────────────────────────────────
@@ -1254,6 +1276,41 @@ export function detailedStyle(base) {
  * earth-coloured ground, with grey roads drawn at their real widths. Meant to
  * be looked at tilted, from above.
  */
+/**
+ * How the satellite photo is toned in the 3D city: paled, so that it reads as
+ * sunlit ground under the model and shadows show on it, and less so from
+ * close by, where its detail is: the yards, the parking bays, what is on the
+ * roofs. The numbers are the map's own raster settings at the two zooms
+ * between which they change.
+ */
+export const GROUND_LOOK = {
+  background: '#d9d2c5',
+  far: { zoom: 15.5, opacity: 0.7, saturation: -0.36, contrast: -0.02, brightnessMin: 0.26 },
+  near: { zoom: 17.5, opacity: 0.92, saturation: -0.14, contrast: 0.06, brightnessMin: 0.14 },
+};
+
+/**
+ * The same toning at one zoom, as the numbers a picture is toned with by
+ * hand (the roofs are, see scene.js): { strength, grey, contrast, low, ground }.
+ * A pixel is first drawn `grey` of the way towards its own grey, spread about
+ * the middle by `contrast`, squeezed into `low`…1, and then shown at `strength`
+ * over the ground colour [red, green, blue] (each 0 to 1).
+ */
+export function groundLook(zoom) {
+  const { far, near, background } = GROUND_LOOK;
+  const t = Math.min(Math.max((zoom - far.zoom) / (near.zoom - far.zoom), 0), 1);
+  const between = (name) => far[name] + (near[name] - far[name]) * t;
+  const saturation = between('saturation');
+  const contrast = between('contrast');
+  return {
+    strength: between('opacity'),
+    grey: saturation > 0 ? 1 - 1 / (1.001 - saturation) : -saturation,
+    contrast: contrast > 0 ? 1 / (1 - contrast) : 1 + contrast,
+    low: between('brightnessMin'),
+    ground: [1, 3, 5].map((at) => parseInt(background.slice(at, at + 2), 16) / 255),
+  };
+}
+
 export function cityModelStyle(base, { buildings = null } = {}) {
   const isLine = ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false];
   const isArea = ['match', ['geometry-type'], ['MultiPolygon', 'Polygon'], true, false];
@@ -1322,13 +1379,17 @@ export function cityModelStyle(base, { buildings = null } = {}) {
 
   // Buildings: the white model with windows, plain below zoom 16 and finer with
   // each zoom step in. The app draws each wall picture when the map first asks for it.
+  // (An ordinary building's picture is also in one of seven shades of plaster, by the building's number.)
+  const tint = ['case', ['==', ['typeof', ['id']], 'number'], ['to-string', ['%', ['abs', ['id']], WALL_TINTS.length]], '0'];
+  const pictureName = (index, kind) => (kind === 'low' ? ['concat', `vm-wall:${index}:low`, tint] : `vm-wall:${index}:${kind}`);
   const wallPicture = (kind) => [
     'step',
     ['zoom'],
-    `vm-wall:0:${kind}`,
-    ...WALL_DETAILS.flatMap((detail, index) => (detail ? [detail.zoom, `vm-wall:${index}:${kind}`] : [])),
+    pictureName(0, kind),
+    ...WALL_DETAILS.flatMap((detail, index) => (detail ? [detail.zoom, pictureName(index, kind)] : [])),
   ];
   const ROOF = '#e9e6de';
+  const groundStops = (name) => ['interpolate', ['linear'], ['zoom'], GROUND_LOOK.far.zoom, GROUND_LOOK.far[name], GROUND_LOOK.near.zoom, GROUND_LOOK.near[name]];
   /** Walls with windows for the features of one map layer that pass a filter. */
   const walls = (id, kind, source, layer, filter, height, floor) => ({
     id,
@@ -1484,7 +1545,7 @@ export function cityModelStyle(base, { buildings = null } = {}) {
         : {}),
     },
     layers: [
-      { id: 'background', type: 'background', paint: { 'background-color': '#d9d2c5' } },
+      { id: 'background', type: 'background', paint: { 'background-color': GROUND_LOOK.background } },
       // Real ground, paled so it reads as sunlit earth under the model and shadows show on it.
       // Seen from close by it is left stronger: that is where its detail is, the
       // yards, the parking bays and the paving.
@@ -1493,10 +1554,10 @@ export function cityModelStyle(base, { buildings = null } = {}) {
         type: 'raster',
         source: 'imagery',
         paint: {
-          'raster-opacity': ['interpolate', ['linear'], ['zoom'], 15.5, 0.6, 17.5, 0.82],
-          'raster-saturation': ['interpolate', ['linear'], ['zoom'], 15.5, -0.45, 17.5, -0.28],
-          'raster-contrast': ['interpolate', ['linear'], ['zoom'], 15.5, -0.05, 17.5, 0.04],
-          'raster-brightness-min': ['interpolate', ['linear'], ['zoom'], 15.5, 0.32, 17.5, 0.22],
+          'raster-opacity': groundStops('opacity'),
+          'raster-saturation': groundStops('saturation'),
+          'raster-contrast': groundStops('contrast'),
+          'raster-brightness-min': groundStops('brightnessMin'),
         },
       },
       {
@@ -1540,19 +1601,7 @@ export function cityModelStyle(base, { buildings = null } = {}) {
       ),
       ...roads.map((road) => roadLayer(road, '-edge', { 'line-color': '#e4e0d8', 'line-width': widthOf(road.meters, 2) })),
       ...roads.map((road) => roadLayer(road, '', { 'line-color': '#737882', 'line-width': widthOf(road.meters) })),
-      {
-        id: 'city-road-marks',
-        type: 'line',
-        source: VECTOR_SOURCE,
-        'source-layer': 'transportation',
-        minzoom: 16,
-        filter: ofClass('motorway', 'trunk', 'primary', 'secondary'),
-        paint: {
-          'line-color': 'rgba(255, 255, 255, 0.7)',
-          'line-width': ['interpolate', ['exponential', 2], ['zoom'], 16, 0.7, 20, 5],
-          'line-dasharray': [6, 9],
-        },
-      },
+      // (The lines on the roads and the crossings are painted by the app, lane by lane: see drawMarks in life.js.)
       // Footpaths and squares for walking.
       lineLayer(
         'city-paths',

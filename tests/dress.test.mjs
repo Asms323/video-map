@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { BRANDS, STATION_GOLD, boxAround, brandOf, stationExtras, storeExtras } from '../js/dress.js';
+import { BRANDS, PLAIN_FUEL, STATION_GOLD, boxAround, brandOf, localKind, mosqueExtras, mosquesAmong, stationExtras, storeExtras } from '../js/dress.js';
 
 const ORIGIN = [46.67, 24.7];
 const SQUEEZE = 111320 * Math.cos((24.7 * Math.PI) / 180);
@@ -128,8 +128,10 @@ test('a branch with a building to itself is dressed all round; one in a larger b
     store('KFC', 'fast_food', 710, 7), // "inside" a metro station: left alone
   ];
   const others = [at(505, 5), at(520, 15), at(525, 5), at(150, 30), at(160, 40), at(340, 80)];
-  const { features, dressed } = storeExtras(stores, buildings, () => [1, 0], others);
+  const { features, dressed, roofs } = storeExtras(stores, buildings, () => [1, 0], others);
   assert.deepEqual([...dressed].sort(), [1, 3]);
+  // Each of the two says where its new roof ends, for the photo of the real roof to be laid on it.
+  assert.deepEqual([...roofs].sort(), [[1, 6.5], [3, 10.5]]);
   const of = (kind) => features.filter((feature) => feature.properties.kind === kind).map(span);
 
   // The restaurant: glass at the ground, its wall, the chain's yellow line and red band round the top, and the roof inside the band.
@@ -155,7 +157,7 @@ test('a branch with a building to itself is dressed all round; one in a larger b
   assert.deepEqual(kiosk.map((one) => one.paint), ['#7f96a8', '#ef6a00', '#c63663', '#e4e1d9']);
   assert.ok(kiosk.every((one) => one.west > 890 && one.east < 910));
 
-  assert.deepEqual(storeExtras([], buildings), { features: [], dressed: new Set() });
+  assert.deepEqual(storeExtras([], buildings), { features: [], dressed: new Set(), roofs: new Map() });
 });
 
 test('a fuel station is a canopy over its pumps, in the chain\'s colours, with its sign on a post', () => {
@@ -179,4 +181,128 @@ test('a fuel station is a canopy over its pumps, in the chain\'s colours, with i
   assert.equal(second.length, 7);
   assert.ok(near(second[0].north - second[0].south, 20.8, 0.2) && near(second[0].east - second[0].west, 11.4, 0.2), JSON.stringify(second[0]));
   assert.equal(canopy.filter((one) => one.west > 190 && one.east < 300).length, 0, 'nothing is done to the hall');
+});
+
+test('a shop inside a building has its front on the wall towards the street', () => {
+  // A deep building between a street to its south and a lane to its west. The café is nearer the west wall,
+  // but the street it is entered from is the one to the south.
+  const buildings = [building(1, 0, 0, 40, 30, 9), building(9, 600, 0, 30, 30, 9)];
+  const stores = [store('Starbucks', 'cafe', 4, 12)];
+  const others = [at(20, 20), at(30, 10), at(35, 25)];
+  const nearest = storeExtras(stores, buildings, () => [1, 0], others).features.map(span);
+  assert.ok(nearest.every((one) => one.kind === 'front' && one.east <= 0.3 && one.west >= -1.3), 'with nothing known about the street: on the nearest wall, the west one');
+  const south = storeExtras(stores, buildings, () => [1, 0], others, { street: () => at(4, -8) }).features.map(span);
+  assert.equal(south.length, 3);
+  assert.ok(south.every((one) => one.kind === 'front' && one.north <= 0.3 && one.south >= -1.3), JSON.stringify(south));
+  assert.ok(near((south[2].west + south[2].east) / 2, 4, 0.01), 'straight out from the café');
+  // Too deep inside for a front on the street at all: 22 m and more.
+  assert.equal(storeExtras([store('Starbucks', 'cafe', 20, 26)], buildings, () => [1, 0], others, { street: () => at(20, -8) }).features.length, 0);
+});
+
+test('the shops of no chain get a small front each, and a fuel station of no chain a plain canopy', () => {
+  assert.deepEqual(['restaurant', 'fast_food', 'cafe', 'bakery', 'grocery', 'bank', 'pharmacy', 'shop', 'clothing_store', 'office', 'lodging', 'school', undefined].map((kind) => localKind({ class: kind })), ['food', 'food', 'cafe', 'cafe', 'market', 'bank', 'pharmacy', 'shop', 'shop', null, null, null, null]);
+  assert.equal(localKind(null), null);
+  const buildings = [
+    building(1, 0, 0, 60, 20, 9), // a row of shops along a street to its south
+    building(2, 100, 0, 20, 15, 6), // a restaurant of a chain, with a building to itself
+    { ...building(3, 200, 0, 60, 20, 9), kind: 'station' },
+  ];
+  const locals = [
+    { at: at(8, 4), kind: 'food' },
+    { at: at(20, 4), kind: 'pharmacy' },
+    { at: at(22, 5), kind: 'shop' }, // right beside the pharmacy: no room for a front of its own
+    { at: at(45, 3), kind: 'bank' },
+    { at: at(30, -4), kind: 'cafe' }, // marked on the pavement in front
+    { at: at(110, 5), kind: 'shop' }, // inside the chain's own building: left to the chain
+    { at: at(220, 5), kind: 'shop' }, // inside a metro station
+    { at: at(400, 400), kind: 'food' }, // no building near
+  ];
+  const street = ([lng, lat]) => [lng, at(0, -8)[1]]; // the street runs along the south side
+  const made = storeExtras([store("McDonald's", 'fast_food', 110, 7)], buildings, () => [1, 0], [], { street, locals });
+  assert.deepEqual([...made.dressed], [2]);
+  const fronts = made.features.filter((feature) => feature.properties.kind === 'local').map(span);
+  assert.equal(fronts.length, 4 * 3, 'four shops with a front: glass, awning, sign');
+  assert.ok(fronts.every((one) => one.north <= 0.3 && one.south >= -1.1 && one.west >= -0.1 && one.east <= 60.1), 'all on the south wall of the row');
+  // The restaurant at 8 m along: glass to 2.9 m, a terracotta awning over the pavement, and its sign above.
+  const first = fronts.filter((one) => one.west < 12 && one.east > 4);
+  assert.deepEqual(first.map((one) => [one.base, one.top]), [[0, 2.9], [2.9, 3.12], [3.12, 4.05]]);
+  assert.equal(first[0].paint, '#7f96a8');
+  assert.equal(first[1].paint, '#a8482f');
+  assert.match(first[2].paint, /^#[0-9a-f]{6}$/);
+  assert.ok(near(first[2].east - first[2].west, 6.2), 'a front 6.2 m wide');
+  assert.ok(first[1].south < first[2].south - 0.3, 'the awning reaches out further than the sign');
+  // What a shop sells shows in its awning; its sign is its own, and the same every time.
+  assert.deepEqual([...new Set(fronts.filter((one) => one.base === 2.9).map((one) => one.paint))].sort(), ['#2f4f7a', '#2f9a68', '#6e4b3a', '#a8482f']);
+  const again = storeExtras([], buildings, () => [1, 0], [], { street, locals });
+  assert.deepEqual(again.features.filter((feature) => feature.properties.kind === 'local' && feature.properties.b === 3.12).map((feature) => feature.properties.c).slice(0, 1), [first[2].paint]);
+
+  // A fuel station of no chain: the outline on the map is its canopy, white with a red edge.
+  assert.deepEqual([PLAIN_FUEL.kind, PLAIN_FUEL.band, PLAIN_FUEL.accent], ['fuel', '#ecebe6', '#c4483b']);
+  const fuel = storeExtras([{ at: at(510, 8), brand: PLAIN_FUEL }], [building(5, 500, 0, 24, 14, 6)], () => [1, 0]);
+  assert.deepEqual([...fuel.dressed], [5]);
+  const canopy = fuel.features.filter((feature) => feature.properties.kind === 'canopy').map(span);
+  assert.ok(canopy.some((one) => one.paint === '#ecebe6') && canopy.some((one) => one.paint === '#c4483b'));
+  assert.ok(fuel.features.some((feature) => feature.properties.kind === 'pump'));
+});
+
+test('mosquesAmong tells the mosques from the houses round them', () => {
+  const buildings = [
+    { ...building(1, 0, 0, 30, 24, 8), kind: 'mosque', use: 'religious' }, // called a mosque by the data
+    { ...building(2, 100, 0, 30, 24, 8), use: 'religious' }, // religious, with a place of prayer marked at its door
+    { ...building(3, 200, 0, 30, 24, 8), use: 'religious' }, // religious, but nothing says of which faith
+    building(4, 300, 0, 30, 24, 8), // of no stated use, with a place of prayer inside it
+    building(5, 400, 0, 30, 24, 8), // of no stated use, with one marked on the street outside: a neighbour's
+    { ...building(6, 500, 0, 30, 24, 8), use: 'commercial' }, // a prayer room in a shopping centre
+    building(7, 600, 0, 300, 200, 20), // far too large to be a mosque
+    { ...building(8, 1000, 0, 30, 24, 8), kind: 'mosque', replaced: true }, // a landmark stands in for it
+    building(9, 1100, 0, 5, 5, 4), // a hut
+  ];
+  const prayers = [at(115, -8), at(315, 12), at(415, -6), at(515, 12), at(700, 100), at(1102, 2)];
+  const found = mosquesAmong(buildings, prayers);
+  assert.deepEqual(found.map((mosque) => mosque.id).sort((a, b) => a - b), [1, 2, 4]);
+  assert.deepEqual(found.find((mosque) => mosque.id === 2).height, 8);
+  assert.equal(found.find((mosque) => mosque.id === 4).ring.length, 5);
+  // With no places of prayer on the map, only what the data itself calls a mosque.
+  assert.deepEqual(mosquesAmong(buildings, []).map((mosque) => mosque.id), [1]);
+  assert.deepEqual(mosquesAmong([], prayers), []);
+});
+
+test('a mosque gets a dome on its roof and a minaret at a corner; a large one a minaret at either end', () => {
+  const small = { id: 1, ring: rect(0, 0, 30, 24), height: 8 };
+  const { features, shades } = mosqueExtras([small], 1.2);
+  const dome = features.filter((feature) => feature.properties.kind === 'dome').map(span);
+  const minaret = features.filter((feature) => feature.properties.kind === 'minaret').map(span);
+  // The dome: in the middle of the roof, on a low drum, narrowing as it rises, with a gilt finial.
+  assert.equal(dome.length, 8);
+  assert.ok(dome.every((one) => near((one.west + one.east) / 2, 15, 0.6) && near((one.south + one.north) / 2, 12, 0.6)), 'in the middle');
+  assert.equal(dome[0].base, 8 + 1.2);
+  const widths = dome.slice(1, 7).map((one) => one.east - one.west);
+  assert.ok(widths.every((width, i) => i === 0 || width < widths[i - 1]), widths.join(' '));
+  assert.ok(near(widths[0], 2 * 12 * 0.42, 0.5), 'sized to the building');
+  assert.equal(dome[7].paint, '#c8a64b');
+  assert.ok(dome[7].top > dome[6].top && dome[7].east - dome[7].west < 0.6);
+  // The minaret: from the ground, inside a corner of the building, well above its roof; a balcony below the top.
+  assert.equal(minaret.length, 9, 'foot, shaft, balcony, upper shaft, four rings of cap, finial');
+  assert.equal(minaret[0].base, 0);
+  const top = Math.max(...minaret.map((one) => one.top));
+  assert.ok(top > 20 + 1.3 && top < 41, `${top}`);
+  const middle = [(minaret[0].west + minaret[0].east) / 2, (minaret[0].south + minaret[0].north) / 2];
+  assert.ok(near(Math.abs(middle[0] - 15), 15 - 1.9, 0.05) && near(Math.abs(middle[1] - 12), 12 - 1.9, 0.05), `${middle}`);
+  const balcony = minaret[2];
+  assert.ok(balcony.east - balcony.west > minaret[1].east - minaret[1].west && balcony.top < top - 5, 'a balcony wider than the shaft');
+  // It throws a shadow of its own.
+  assert.equal(shades.length, 1);
+  assert.ok(near(shades[0].height, top - 1.4, 0.01) && shades[0].base === 0 && shades[0].polygons[0][0].length === 5);
+
+  // A large mosque: a larger dome, and a minaret at either end of one side, taller.
+  const large = mosqueExtras([{ id: 2, ring: rect(0, 0, 70, 40), height: 12 }], 1.2);
+  assert.equal(large.shades.length, 2);
+  assert.ok(large.shades[0].height > shades[0].height);
+  const feet = large.features.filter((feature) => feature.properties.kind === 'minaret' && feature.properties.b === 0).map(span);
+  assert.ok(near(Math.abs((feet[0].west + feet[0].east) / 2 - (feet[1].west + feet[1].east) / 2), 70 - 3.8, 0.1), 'one at either end');
+  assert.ok(near((feet[0].south + feet[0].north) / 2, (feet[1].south + feet[1].north) / 2, 0.05), 'on the same side');
+  // The same mosque comes out the same every time; a sliver of a building gets nothing.
+  assert.deepEqual(mosqueExtras([small], 1.2), { features, shades });
+  assert.deepEqual(mosqueExtras([{ id: 3, ring: rect(0, 0, 30, 5), height: 8 }], 1.2), { features: [], shades: [] });
+  assert.deepEqual(mosqueExtras([], 1.2), { features: [], shades: [] });
 });

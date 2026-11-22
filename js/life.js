@@ -174,10 +174,12 @@ const SAME_TRAIN_METERS = 600; // two trains on one track are never this close: 
 const endKey = (x, y) => `${Math.round(x)},${Math.round(y)}`;
 
 /**
- * Which way the nearest street runs at a point: [east, north], or null if no
- * street of the network lies within `reach` metres. Tracks and tunnels do not count.
+ * The nearest street to a point: { x, y, east, north, distance }, the place
+ * on it that is nearest, the way it runs there and how far off that is; or
+ * null if no street of the network lies within `reach` metres. Tracks and
+ * tunnels do not count.
  */
-export function streetDirection(network, x, y, reach = 60) {
+export function streetNear(network, x, y, reach = 60) {
   let best = null;
   for (const way of network.ways) {
     if (way.rail || way.hidden || x < way.box[0] - reach || x > way.box[2] + reach || y < way.box[1] - reach || y > way.box[3] + reach) continue;
@@ -186,7 +188,13 @@ export function streetDirection(network, x, y, reach = 60) {
   }
   if (!best) return null;
   const there = pointAlong(best.way, best.along);
-  return [there[2], there[3]];
+  return { x: there[0], y: there[1], east: there[2], north: there[3], distance: best.distance };
+}
+
+/** Which way the nearest street runs at a point: [east, north], or null if none lies within `reach` metres. */
+export function streetDirection(network, x, y, reach = 60) {
+  const street = streetNear(network, x, y, reach);
+  return street ? [street.east, street.north] : null;
 }
 
 /** Where on a way is nearest to a point: { along, distance }, both in metres. */
@@ -1437,6 +1445,120 @@ export function drawStreet(mesh, network, light, reach, most = 2500) {
   return { parked, shelters };
 }
 
+// ── What is painted on the roads ──────────────────────────────────────────
+
+const MARKED = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary']);
+const CROSSED = new Set(['primary', 'secondary', 'tertiary', 'minor']);
+const THROUGH = new Set(['primary', 'secondary', 'tertiary']);
+const MARKS_UP_METERS = 0.16; // just clear of the shadows the map lays on the ground
+const DASH_METERS = 3;
+const DASH_EVERY_METERS = 9;
+const MARKS_CLEAR_OF_END_METERS = 8;
+const CROSSING_DEEP_METERS = 3;
+const LINE_PAINT = [240, 240, 236];
+const CENTRE_PAINT = [233, 196, 92];
+
+/**
+ * Fill a mesh with what is painted on the roads: on the main roads a broken
+ * line between lanes, a line along each edge and, where traffic runs both
+ * ways, a yellow line down the middle; and a zebra crossing over a street
+ * where it meets, at an angle, a through street at least as large as itself
+ * (so over the mouth of a side street on a main road, and over all the arms
+ * of a crossroads of main roads; but not over a main road at every side
+ * street, nor where two side streets meet).
+ *
+ * The lanes are the ones the traffic keeps to, and nothing is painted beyond
+ * the width a road is drawn at. Whether a given road really has these lines,
+ * and a given junction a crossing, the map does not say.
+ * Returns { lines, crossings }.
+ */
+export function drawMarks(mesh, network) {
+  mesh.clear();
+  const a = [0, 0, 0, 0];
+  const b = [0, 0, 0, 0];
+  let lines = 0;
+  let crossings = 0;
+  const z = MARKS_UP_METERS;
+  // A strip of paint along a way, from one distance to another, at an offset to the left of its middle.
+  const strip = (way, from, to, across, half, paint, alpha = 1) => {
+    pointAlong(way, from, a);
+    pointAlong(way, to, b);
+    mesh.face(
+      [a[0] - a[3] * (across + half), a[1] + a[2] * (across + half), z],
+      [a[0] - a[3] * (across - half), a[1] + a[2] * (across - half), z],
+      [b[0] - b[3] * (across - half), b[1] + b[2] * (across - half), z],
+      [b[0] - b[3] * (across + half), b[1] + b[2] * (across + half), z],
+      paint[0],
+      paint[1],
+      paint[2],
+      alpha,
+    );
+  };
+  const painted = (way) => !way.rail && !way.hidden && !(way.deck > 0);
+
+  for (const way of network.ways) {
+    if (!painted(way) || !MARKED.has(way.class) || way.length < MARKS_CLEAR_OF_END_METERS * 2 + DASH_METERS) continue;
+    const band = way.width / 2 - 0.35;
+    const from = MARKS_CLEAR_OF_END_METERS;
+    const to = way.length - MARKS_CLEAR_OF_END_METERS;
+    const both = way.oneway === 0;
+    // Where the lines between lanes lie, and the two edges.
+    const between = [];
+    for (let k = 1; k < way.lanes; k += 1) {
+      if (both) between.push(k * LANE_METERS, -k * LANE_METERS);
+      else between.push((k - way.lanes / 2) * LANE_METERS);
+    }
+    const edge = Math.min((both ? way.lanes : way.lanes / 2) * LANE_METERS + 0.25, band);
+    for (let s = from; s + DASH_METERS <= to; s += DASH_EVERY_METERS) {
+      for (const across of between) if (Math.abs(across) < edge - 0.8) strip(way, s, s + DASH_METERS, across, 0.07, LINE_PAINT, 0.9);
+    }
+    // The lines that run unbroken: laid in short lengths, so that they follow a bend.
+    for (let s = from; s < to; s += DASH_EVERY_METERS) {
+      const until = Math.min(s + DASH_EVERY_METERS, to);
+      strip(way, s, until, edge, 0.07, LINE_PAINT, 0.85);
+      strip(way, s, until, -edge, 0.07, LINE_PAINT, 0.85);
+      if (both) strip(way, s, until, 0, 0.09, CENTRE_PAINT, 0.9);
+    }
+    lines += 1;
+  }
+
+  // Zebra crossings, just outside the junction itself.
+  const corners = [];
+  for (const [key, meeting] of network.joins) {
+    const arms = [];
+    for (const join of meeting) {
+      const way = network.ways[join.way];
+      if (!way || !painted(way)) continue;
+      // The way each arm leaves the junction.
+      pointAlong(way, join.atStart ? 0 : way.length, a);
+      arms.push({ way, atStart: join.atStart, x: a[0], y: a[1], east: join.atStart ? a[2] : -a[2], north: join.atStart ? a[3] : -a[3] });
+    }
+    if (arms.length < 3 || arms.some((arm) => arm.way.class === 'motorway' || arm.way.class === 'trunk')) continue;
+    corners.push({ key, x: arms[0].x, y: arms[0].y, arms });
+  }
+  for (const corner of corners) {
+    const widest = Math.max(...corner.arms.map((arm) => Math.min(arm.way.width, 16)));
+    for (const arm of corner.arms) {
+      const way = arm.way;
+      const band = Math.min(way.width, 16);
+      if (!CROSSED.has(way.class) || !(band >= 6)) continue;
+      // Met at an angle (not its own continuation, nor a fork off it) by a through street no smaller than itself.
+      const crossed = corner.arms.some((other) => other !== arm && THROUGH.has(other.way.class) && other.way.width >= way.width - 0.1 && Math.abs(other.east * arm.east + other.north * arm.north) < 0.7);
+      if (!crossed) continue;
+      const near = widest / 2 + 1.5;
+      if (way.length < near * 2 + CROSSING_DEEP_METERS * 2 + 6) continue;
+      const start = arm.atStart ? near : way.length - near - CROSSING_DEEP_METERS;
+      // Not inside another junction that lies a few steps on.
+      pointAlong(way, start + CROSSING_DEEP_METERS / 2, a);
+      if (corners.some((other) => other !== corner && Math.hypot(other.x - a[0], other.y - a[1]) < 12)) continue;
+      const half = band / 2 - 0.5;
+      for (let across = -half + 0.25; across <= half - 0.25; across += 1) strip(way, start, start + CROSSING_DEEP_METERS, across, 0.25, LINE_PAINT, 0.9);
+      crossings += 1;
+    }
+  }
+  return { lines, crossings };
+}
+
 const ROAD_PAINT = [124, 129, 139];
 const RAIL_BED_PAINT = [198, 192, 180];
 const RAIL_PAINT = [78, 82, 92];
@@ -1779,12 +1901,26 @@ export function drawRoofs(mesh, buildings, light) {
 // ── Trees ─────────────────────────────────────────────────────────────────
 
 const LEAVES = [[58, 102, 52], [70, 116, 58], [48, 92, 50], [82, 122, 62]];
+const FRONDS = [[74, 110, 58], [64, 100, 54], [86, 118, 64]];
 const BARK = [104, 84, 62];
+const PALM_BARK = [128, 108, 82];
+// A crown no wider than this is as likely a palm as not; the widest are never palms.
+const PALM_MOST_RADIUS = 3.4;
+
+/** Whether the tree at a place is drawn as a palm: by its size and by chance, the same every time. */
+export function isPalm(x, y, radius) {
+  if (!(radius <= PALM_MOST_RADIUS)) return false;
+  const chance = seededRandom(Math.round(x * 13 + y * 29) + 3)();
+  return chance < (radius <= 2.4 ? 0.6 : 0.25);
+}
 
 /**
- * Fill a mesh with trees: a trunk, a crown of six sides that narrows to a
- * point, and its shade on the ground. trees: [{ x, y, radius }] in metres,
- * radius being the crown's. The same tree always comes out the same.
+ * Fill a mesh with trees and their shade on the ground. Two kinds: a tree
+ * with a trunk and a rounded crown of six sides, and a date palm, a tall
+ * bare trunk with a head of drooping fronds. trees: [{ x, y, radius }] in
+ * metres, radius being the crown's. Which kind a tree is, the photo it was
+ * found in cannot say: the smaller crowns are more often made palms. The
+ * same tree always comes out the same.
  */
 export function drawTrees(mesh, trees, light, reach) {
   mesh.clear();
@@ -1795,8 +1931,9 @@ export function drawTrees(mesh, trees, light, reach) {
     const random = seededRandom(Math.round(x * 31 + y * 17) + 7);
     const leaves = LEAVES[Math.floor(random() * LEAVES.length)];
     const turn = random() * Math.PI;
-    const trunk = 1.2 + radius * 0.5;
-    const shoulder = trunk + radius * 0.9;
+    const palm = isPalm(x, y, radius);
+    const trunk = palm ? 4.2 + radius * 0.9 + random() * 1.6 : 1.2 + radius * 0.5;
+    const shoulder = palm ? trunk : trunk + radius * 0.9;
     const top = shoulder + radius * (0.9 + random() * 0.5);
     const ring = (size, height) =>
       Array.from({ length: 6 }, (_, i) => {
@@ -1812,27 +1949,51 @@ export function drawTrees(mesh, trees, light, reach) {
       for (let i = 0; i < 6; i += 2) mesh.face(centre, edge[i], edge[i + 1], edge[(i + 2) % 6], 16, 20, 32, 0.3);
     }
 
-    const width = 0.12 + radius * 0.07;
+    const width = palm ? 0.2 : 0.12 + radius * 0.07;
+    const bark = palm ? PALM_BARK : BARK;
     const sides = [[1, 0], [0, 1], [-1, 0], [0, -1]];
     sides.forEach(([east, north], i) => {
       const [nextEast, nextNorth] = sides[(i + 1) % 4];
       const a = [x + (east - nextEast) * width, y + (north - nextNorth) * width];
       const b = [x + (east + nextEast) * width, y + (north + nextNorth) * width];
       const lit = faceLight(light, east, north, 0);
-      mesh.face([a[0], a[1], 0], [b[0], b[1], 0], [b[0], b[1], trunk + 0.3], [a[0], a[1], trunk + 0.3], BARK[0] * lit, BARK[1] * lit, BARK[2] * lit, 1);
+      mesh.face([a[0], a[1], 0], [b[0], b[1], 0], [b[0], b[1], trunk + 0.3], [a[0], a[1], trunk + 0.3], bark[0] * lit, bark[1] * lit, bark[2] * lit, 1);
     });
 
-    const low = ring(radius * 0.7, trunk);
+    if (palm) {
+      // A head of fronds: each rises a little from the top of the trunk, then droops to its tip.
+      const fronds = FRONDS[Math.floor(random() * FRONDS.length)];
+      const count = 7;
+      const reachOut = Math.max(radius, 1.9);
+      for (let i = 0; i < count; i += 1) {
+        const angle = turn + (i * 2 * Math.PI) / count;
+        const east = Math.sin(angle);
+        const north = Math.cos(angle);
+        const half = 0.42;
+        const at = (out, side, height) => [x + east * out - north * side, y + north * out + east * side, height];
+        const lit = faceLight(light, east * 0.3, north * 0.3, 0.95);
+        mesh.face(at(0, half * 0.5, trunk + 0.2), at(0, -half * 0.5, trunk + 0.2), at(reachOut * 0.55, -half, trunk + 0.75), at(reachOut * 0.55, half, trunk + 0.75), fronds[0] * lit, fronds[1] * lit, fronds[2] * lit, 1);
+        const droop = faceLight(light, east * 0.7, north * 0.7, 0.7);
+        mesh.face(at(reachOut * 0.55, half, trunk + 0.75), at(reachOut * 0.55, -half, trunk + 0.75), at(reachOut, -half * 0.3, trunk - 0.5), at(reachOut, half * 0.3, trunk - 0.5), fronds[0] * droop * 0.9, fronds[1] * droop * 0.9, fronds[2] * droop * 0.9, 1);
+      }
+      continue;
+    }
+
+    // A rounded crown: out from the trunk to its widest, in again towards the top, and a cap.
+    const low = ring(radius * 0.62, trunk);
     const wide = ring(radius, shoulder);
+    const high = ring(radius * 0.72, top - radius * 0.28);
     const peak = [x, y, top];
     for (let i = 0; i < 6; i += 1) {
       const next = (i + 1) % 6;
       const angle = turn + ((i + 0.5) * Math.PI) / 3;
-      // The skirt of the crown looks outwards and a little down; the cap outwards and well up.
+      // The skirt of the crown looks outwards and a little down; its shoulder outwards and up; the cap well up.
       const skirt = faceLight(light, Math.sin(angle) * 0.95, Math.cos(angle) * 0.95, -0.3);
       mesh.face(low[i], low[next], wide[next], wide[i], leaves[0] * skirt * 0.85, leaves[1] * skirt * 0.85, leaves[2] * skirt * 0.85, 1);
-      const cap = faceLight(light, Math.sin(angle) * 0.7, Math.cos(angle) * 0.7, 0.7);
-      mesh.face(wide[i], wide[next], peak, peak, leaves[0] * cap, leaves[1] * cap, leaves[2] * cap, 1);
+      const shoulders = faceLight(light, Math.sin(angle) * 0.8, Math.cos(angle) * 0.8, 0.6);
+      mesh.face(wide[i], wide[next], high[next], high[i], leaves[0] * shoulders, leaves[1] * shoulders, leaves[2] * shoulders, 1);
+      const cap = faceLight(light, Math.sin(angle) * 0.35, Math.cos(angle) * 0.35, 0.94);
+      mesh.face(high[i], high[next], peak, peak, leaves[0] * cap, leaves[1] * cap, leaves[2] * cap, 1);
     }
   }
   return trees.length;

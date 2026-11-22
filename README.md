@@ -17,10 +17,14 @@ the phone: no App Store, no Apple developer account, no Mac.
 - **3D City**, the look it opens with: the city as an **isometric** scale
   model. It is seen corner-on from the classic isometric angle, through a lens
   so long that parallel streets stay parallel. **Every building stands on its
-  own outline**, a house at a time, with rows of windows on its walls: white
-  with a window in each bay for ordinary buildings, bands of glass for towers,
-  and the recorded colour where one is noted. They stand on the real ground,
-  with grey roads at their real widths.
+  own outline**, a house at a time, with rows of windows on its walls: plaster
+  in one of seven pale shades with a window in each bay for ordinary
+  buildings, bands of glass for towers, and the recorded colour where one is
+  noted. They stand on the real ground, with grey roads at their real widths.
+- **Real roofs.** Every building up to 32 m tall carries its own roof, cut out
+  of the satellite photo along the building's outline: its real colour, its
+  tanks, its cooling plant, its skylights. Seen from above, as a city mostly
+  is, that is most of what there is to see of a building.
 - **Riyadh's landmarks, modelled by hand.** Kingdom Centre with its arch and
   sky bridge, Al Faisaliah with its golden globe, the PIF Tower, Burj Rafal,
   the twisting Al Majdoul Tower, the TV Tower, the striped water tower and
@@ -39,6 +43,16 @@ the phone: no App Store, no Apple developer account, no Mac.
   wears that chain's colours: its own building painted and banded, a shop
   front under a coloured band where it shares a building, a canopy with pumps
   at a fuel station. Colours and shapes only; no logos or names are drawn.
+- **A front for every shop.** Every other shop, restaurant, café, bank and
+  pharmacy on the map gets a small shop front on the wall of its building
+  that faces the street: glass, an awning coloured by what it sells, and a
+  sign. Every other fuel station gets a plain canopy with pumps.
+- **Mosques with domes and minarets.** Each mosque on the map has a dome on
+  its roof and a minaret at a corner, two on a large one.
+- **Painted roads.** Main roads have their lanes: a broken line between lanes,
+  a line along each edge, a yellow line down the middle where traffic runs
+  both ways. A side street has a zebra crossing where it meets a main road,
+  and so has every arm of a crossroads of main roads.
 - **Traffic on the real streets.** Cars, vans and lorries drive the streets:
   they keep to the lanes, drive on the right, obey one-way streets, queue
   behind each other, turn at junctions, disappear into tunnels, and are busier
@@ -59,14 +73,13 @@ the phone: no App Store, no Apple developer account, no Mac.
   trace. See the limits below for what this is and is not.
 - **Trees where they really stand.** The app reads the satellite photo under
   the city for dark green crowns and stands a tree at each one, sized to its
-  crown, with its shade on the ground. Never on a road, a track or a building.
+  crown, with its shade on the ground: a round-crowned tree, or a date palm.
+  Never on a road, a track or a building.
 - **Heights from shadows.** Few ordinary buildings have a height on record.
   The app looks up the day the satellite photo was taken, works out where the
   sun stood, measures each building's shadow in the photo and stands the
-  building up to match. An estimate; see the limits below. Both readings can
-  be switched off under the map options.
-- **Roofs with something on them.** A stair head and a water tank on a house,
-  rows of cooling plant on a large roof. Made up, like the windows; see below.
+  building up to match. An estimate; see the limits below. The roofs, the
+  trees and these heights can be switched off together under the map options.
 - **The ground in detail**: the satellite photo itself, shown stronger the
   closer you look, and from the map data tunnels as a faint trace, metro and
   railway lines, footpaths, lawns and playing fields.
@@ -108,7 +121,7 @@ Everything is free and needs no account or key.
 | What | From | Notes |
 | --- | --- | --- |
 | Street map, names, places, road names | [OpenFreeMap](https://openfreemap.org), built from [OpenStreetMap](https://www.openstreetmap.org/copyright) | Drawn on the phone by [MapLibre](https://maplibre.org) |
-| Satellite photos, and the ground under the 3D city | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. Also read on the phone for trees and shadows, and asked once per area for the day the photo was taken |
+| Satellite photos, the ground under the 3D city, and the roofs of its buildings | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. The roofs are cut from the photo tiles the ground is showing, plus a margin round the screen, so they cost little extra download. Also read on the phone for trees and shadows, and asked once per area for the day the photo was taken |
 | One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
 | Detailed map picture | OpenStreetMap tile servers | [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
 | Place details, speed limits | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits |
@@ -153,8 +166,17 @@ outlines do not say is made up to look right:
   height for their kind (a house about 7.5 m), varied a little from one to the
   next, unless their shadow in the photo shows them to be taller.
 - Windows: one row for every 3 m of height.
-- Roofs: all flat, with a stair head, a tank or cooling plant placed by chance,
-  the same every time for the same building.
+- Wall colour. No source says what colour a wall is. An ordinary building is
+  given one of seven pale shades of plaster, picked by its number in the map
+  data: the same every time, but not the building's real colour.
+- Roofs. A building up to 32 m tall shows the satellite photo of its own roof.
+  The photo is taken a little from the side, so a building leans in it: the
+  taller the building, the further its roof lies from where the outline says,
+  and a strip of its wall or of the street can show along one edge. That is
+  why taller buildings are left out; their roofs are flat and plain, with a
+  stair head, a tank or cooling plant placed by chance. So are all roofs when
+  the photo is switched off or cannot be had. The photo also carries the
+  shadows of the hour it was taken at, which are not those of the hour it is.
 - A tower's special shape is not known, only its outline and height (the
   landmarks below are the exception). A building recorded in parts is drawn
   as its parts, and where the parts do not cover all of it the rest shows as
@@ -216,8 +238,24 @@ Heights read from shadows are rough, and mostly on the low side:
 Trees are found by colour, so a dark green roof or awning can be mistaken for
 one and a tree in deep shade can be missed. Anything green on a road is taken
 to be something else, so a real tree on a narrow traffic island can be missed
-too. Every tree is drawn as the same simple shape; palms and other kinds are
-not told apart.
+too. The photo cannot tell a palm from another tree. Which of the two shapes
+a tree is drawn as goes by the size of its crown and by chance (a small crown
+is more often a palm), the same every time for the same tree.
+
+Shops. Where a shop is comes from the map's places. Its front is put on the
+wall of its building towards the nearest street, which is usually right; the
+awning says what kind of shop it is, and the colour of the sign is picked by
+chance. What the shop really looks like is not known.
+
+Mosques. Which buildings are mosques is real: those the data calls one, and
+those with a Muslim place of prayer from the map inside them. Where a given
+mosque's dome and minaret stand, and how tall the minaret is, is not known:
+the dome is put in the middle of the roof, the minaret at a corner picked by
+chance, and both are sized to the building.
+
+Road markings. The lanes painted are the ones the simulated traffic keeps to,
+which go by the class of the road, not by a count of its real lanes. Whether
+a given junction really has a zebra crossing is not known.
 
 Parked cars are set out by chance along residential streets, the same way
 every time for the same street. They are not the cars really parked there.
@@ -315,7 +353,9 @@ js/life.js              the simulated traffic: street network, vehicles, trains,
                         and the bridges they cross
 js/scene.js             the layer that draws the traffic into the 3D scene
 js/landmarks.js         the landmarks modelled by hand, as stacks of slabs
-js/dress.js             metro station footbridges and pavilions, chain stores
+js/dress.js             metro station footbridges and pavilions, chain stores,
+                        shop fronts, mosques
+js/roofs.js             the real roofs, cut out of the satellite photo
 js/sight.js             reading the satellite photo: shadows to heights, trees
 js/services.js          the open data services
 js/lib.js               everything that needs no browser: parsing, distances,
@@ -328,6 +368,7 @@ firebase.json           what Firebase Hosting publishes, and how it is cached
 tools/firebase-deploy.sh  publishes to Firebase, refusing to replace another site
 vendor/maplibre/        MapLibre GL JS 5.24.1 and the right-to-left text add-on
 vendor/pmtiles/         PMTiles 4.5.0, which reads the buildings archive
+vendor/earcut/          Earcut 3.2.4, which cuts a roof's outline into triangles
 tests/                  unit tests, browser test, small local server
 ```
 
@@ -370,6 +411,7 @@ phones drop their saved copy.
 - MapLibre GL JS: BSD 3-Clause (`vendor/maplibre/LICENSE.txt`).
 - mapbox-gl-rtl-text: BSD 2-Clause, with ICU (`vendor/maplibre/LICENSE-rtl-text.md`).
 - PMTiles: BSD 3-Clause (`vendor/pmtiles/LICENSE.txt`).
+- Earcut: ISC (`vendor/earcut/LICENSE.txt`).
 - `tests/fixtures/map.har` holds map data © OpenStreetMap contributors (ODbL),
   as served by OpenFreeMap (© OpenMapTiles).
 - `tests/fixtures/buildings.json` holds building outlines from Overture Maps

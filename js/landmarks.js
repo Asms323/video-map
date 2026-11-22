@@ -102,7 +102,8 @@ function kingdomCentre() {
   // The sky bridge: a slim span from leg to leg, not the full depth of the tower.
   slabs.push({ outline: block(openAtTop + 2, 5.5), base: bridge[0], top: bridge[1], paint: '#cdd8e1' });
   // The podium that the tower rises from: the shopping centre and the hotel's wings, four storeys.
-  slabs.push({ outline: KINGDOM_PODIUM, base: 0, top: 16, paint: '#e3ddd2', north: true });
+  // (Low and wide: its roof is shown by the satellite photo, like any low building's.)
+  slabs.push({ outline: KINGDOM_PODIUM, base: 0, top: 16, paint: '#e3ddd2', north: true, roof: true });
   return slabs;
 }
 
@@ -392,6 +393,24 @@ export function landmarkSlabs() {
   }
   made = { type: 'FeatureCollection', features };
   return made;
+}
+
+/**
+ * The roofs among the landmarks' slabs that the satellite photo is to be laid
+ * on, in the form the roof cutter takes buildings in (see photoRoofs in
+ * roofs.js): [{ height, base, replaced, roofTop, polygons }].
+ */
+export function landmarkRoofs() {
+  const roofs = [];
+  for (const landmark of LANDMARKS) {
+    for (const slab of landmark.build()) {
+      if (!slab.roof) continue;
+      const ring = slab.outline.map(([u, v]) => place(landmark, u, v, slab.north));
+      ring.push(ring[0]);
+      roofs.push({ height: slab.top, base: 0, replaced: true, roofTop: slab.top, polygons: [[ring]] });
+    }
+  }
+  return roofs;
 }
 
 /**

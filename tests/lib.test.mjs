@@ -2,14 +2,17 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  MAX_RECENTS,
   addRecent,
   clamp,
   defaultSplit,
   formatSpeed,
+  GROUND_LOOK,
+  groundLook,
   linkLabel,
+  MAX_RECENTS,
   parseStartSeconds,
   parseVideoLink,
+  WALL_TINTS,
   youtubeEmbedUrl,
 } from '../js/lib.js';
 
@@ -666,11 +669,13 @@ test('cityModelStyle draws the city as a white model on its real ground', () => 
   assert.deepEqual(style.sources['city-shade'], { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
   // Walls have rows of windows: plain from afar, then one picture per zoom level from 16 in.
-  assert.deepEqual(buildings.paint['fill-extrusion-pattern'], ['step', ['zoom'], 'vm-wall:0:low', 16, 'vm-wall:1:low', 17, 'vm-wall:2:low', 18, 'vm-wall:3:low']);
+  // An ordinary building's wall picture is one of seven shades of plaster, picked by the building's number (without one: the first).
+  const shade = ['case', ['==', ['typeof', ['id']], 'number'], ['to-string', ['%', ['abs', ['id']], 7]], '0'];
+  assert.deepEqual(buildings.paint['fill-extrusion-pattern'], ['step', ['zoom'], ['concat', 'vm-wall:0:low', shade], 15, ['concat', 'vm-wall:1:low', shade], 16, ['concat', 'vm-wall:2:low', shade], 17, ['concat', 'vm-wall:3:low', shade], 18, ['concat', 'vm-wall:4:low', shade]]);
   assert.equal(buildings.paint['fill-extrusion-vertical-gradient'], true);
   // Towers are a layer of their own, with more glass.
   const towers = style.layers[at('city-towers')];
-  assert.deepEqual(towers.paint['fill-extrusion-pattern'].slice(0, 5), ['step', ['zoom'], 'vm-wall:0:tall', 16, 'vm-wall:1:tall']);
+  assert.deepEqual(towers.paint['fill-extrusion-pattern'].slice(0, 5), ['step', ['zoom'], 'vm-wall:0:tall', 15, 'vm-wall:1:tall']);
   assert.deepEqual(buildings.filter.at(-1), ['<', ['coalesce', ['get', 'render_height'], 5], 60]);
   assert.deepEqual(towers.filter.at(-1), ['>=', ['coalesce', ['get', 'render_height'], 5], 60]);
   // A building keeps the colour mappers gave it, and is then drawn plain.
@@ -686,7 +691,9 @@ test('cityModelStyle draws the city as a white model on its real ground', () => 
 
   // Tunnels are a faint trace under everything; bridges lie over the roads on the ground.
   assert.ok(at('city-tunnels') < at('city-road-service-edge'));
-  assert.ok(at('city-road-marks') < at('city-bridge-shade') && at('city-bridge-shade') < at('city-bridge-edge') && at('city-bridge-edge') < at('city-bridge'));
+  assert.ok(at('city-road-main') < at('city-bridge-shade') && at('city-bridge-shade') < at('city-bridge-edge') && at('city-bridge-edge') < at('city-bridge'));
+  // (The lines painted on the roads are the app's own work, lane by lane, not the map's.)
+  assert.equal(at('city-road-marks'), -1);
   assert.ok(at('city-bridge') < at('city-contact'));
   const ground = JSON.stringify(style.layers[at('city-road-big')].filter);
   assert.ok(ground.includes('["match",["get","brunnel"],["bridge","tunnel"],false,true]'), 'ground roads leave out bridges and tunnels');
@@ -861,13 +868,15 @@ import { WALL_DETAILS, WALL_KINDS, wallImage } from '../js/lib.js';
 test('wall pictures keep a floor about 3 m tall at every zoom', () => {
   assert.equal(WALL_DETAILS[0], null, 'plain from afar');
   const levels = WALL_DETAILS.slice(1);
-  assert.deepEqual(levels.map((level) => level.zoom), [16, 17, 18]);
+  assert.deepEqual(levels.map((level) => level.zoom), [15, 16, 17, 18]);
   // A picture pixel covers half as much ground at each zoom step in, so the picture doubles.
   for (let i = 1; i < levels.length; i += 1) {
     assert.equal(levels[i].floor, levels[i - 1].floor * 2);
     assert.equal(levels[i].bay, levels[i - 1].bay * 2);
   }
-  assert.equal(levels[0].floor, 3);
+  // 3 px to a floor at zoom 16, where a pixel is about 1.1 m; the pictures are drawn at twice their size, so half a pixel is no trouble.
+  assert.equal(levels[1].floor, 3);
+  assert.ok(levels.every((level) => Number.isInteger(level.floor * 2) && Number.isInteger(level.bay * 2)));
   for (const kind of Object.values(WALL_KINDS)) {
     assert.match(kind.colour, /^#[0-9a-f]{6}$/);
     // A window in the wall, or (a station's screen) a lattice over all of it.
@@ -875,13 +884,24 @@ test('wall pictures keep a floor about 3 m tall at every zoom', () => {
   }
   assert.ok(WALL_KINDS.tall.across > WALL_KINDS.low.across, 'towers are mostly glass');
   assert.deepEqual(Object.keys(WALL_KINDS), ['low', 'tall', 'station']);
-  assert.deepEqual(wallImage('vm-wall:2:station'), { detail: 2, kind: 'station' });
+  assert.deepEqual(wallImage('vm-wall:2:station'), { detail: 2, kind: 'station', tint: null });
+  // Seven shades of plaster, all pale: a wall is never darker than the shade its windows are.
+  assert.equal(WALL_TINTS.length, 7);
+  assert.equal(WALL_TINTS.length % 2, 1, 'an odd count: the buildings\' numbers are too large to be spread evenly over an even one');
+  for (const tint of WALL_TINTS) {
+    assert.match(tint, /^#[0-9a-f]{6}$/);
+    const [red, green, blue] = [1, 3, 5].map((at) => parseInt(tint.slice(at, at + 2), 16));
+    assert.ok(Math.min(red, green, blue) >= 190 && red >= blue, tint);
+  }
+  assert.equal(new Set(WALL_TINTS).size, 7);
 });
 
 test('wallImage reads the name of a wall picture', () => {
-  assert.deepEqual(wallImage('vm-wall:0:low'), { detail: 0, kind: 'low' });
-  assert.deepEqual(wallImage('vm-wall:3:tall'), { detail: 3, kind: 'tall' });
-  for (const other of ['vm-wall:4:low', 'vm-wall:1:brick', 'vm-wall:1:toString', 'vm-fuel', 'wall:1:low', 'vm-wall:1:low:x', '', null, undefined]) {
+  assert.deepEqual(wallImage('vm-wall:0:low'), { detail: 0, kind: 'low', tint: null });
+  assert.deepEqual(wallImage('vm-wall:4:tall'), { detail: 4, kind: 'tall', tint: null });
+  assert.deepEqual(wallImage('vm-wall:2:low6'), { detail: 2, kind: 'low', tint: 6 });
+  assert.deepEqual(wallImage('vm-wall:1:low0'), { detail: 1, kind: 'low', tint: 0 });
+  for (const other of ['vm-wall:5:low', 'vm-wall:1:brick', 'vm-wall:1:toString', 'vm-fuel', 'wall:1:low', 'vm-wall:1:low:x', 'vm-wall:1:low7', 'vm-wall:1:tall2', 'vm-wall:1:low12', '', null, undefined]) {
     assert.equal(wallImage(other), null, String(other));
   }
 });
@@ -995,6 +1015,12 @@ test('buildingFootprints takes the buildings above ground, with the heights read
   const found = buildingFootprints(features, box, estimates);
   assert.ok(found.every((building) => building.kind === undefined), 'none of them a station');
   assert.equal(buildingFootprints([feature(30, { class: 'train_station' }, square(0, 0, 20))], box)[0].kind, 'station');
+  // A mosque is known by its class too; and what a building is for is passed on where the data says.
+  const mosque = buildingFootprints([feature(31, { class: 'mosque', subtype: 'religious' }, square(0, 0, 20))], box)[0];
+  assert.deepEqual([mosque.kind, mosque.use], ['mosque', 'religious']);
+  const house = buildingFootprints([feature(32, { class: 'house', subtype: 'residential' }, square(0, 0, 20))], box)[0];
+  assert.deepEqual([house.kind, house.use], [undefined, 'residential']);
+  assert.ok(!('use' in buildingFootprints([feature(33, {}, square(0, 0, 20))], box)[0]));
   assert.deepEqual(
     found.map((building) => [building.id, Math.round(building.height * 100) / 100, building.base, building.known, building.polygons.length]),
     [
@@ -1047,7 +1073,7 @@ test('cityModelStyle draws one building per outline when it is given the buildin
   assert.ok(ids.indexOf('city-shadows') < ids.indexOf('city-buildings') && ids.indexOf('city-parts-roofs') < ids.indexOf('poi_r1'));
   // A metro station is drawn in its own dress, a screen of pale gold, 12 m tall, and by no other layer.
   const station = layer('city-stations');
-  assert.deepEqual(station.paint['fill-extrusion-pattern'].slice(0, 5), ['step', ['zoom'], 'vm-wall:0:station', 16, 'vm-wall:1:station']);
+  assert.deepEqual(station.paint['fill-extrusion-pattern'].slice(0, 5), ['step', ['zoom'], 'vm-wall:0:station', 15, 'vm-wall:1:station']);
   assert.ok(JSON.stringify(station.filter).includes('["==",["get","class"],"train_station"]'));
   for (const id of ['city-buildings', 'city-towers', 'city-painted']) assert.ok(JSON.stringify(layer(id).filter).includes('["!",["==",["get","class"],"train_station"]]'), id);
   assert.ok(JSON.stringify(station.paint['fill-extrusion-height']).includes('["case",["==",["get","class"],"train_station"],12,'));
@@ -1069,7 +1095,8 @@ test('cityModelStyle draws one building per outline when it is given the buildin
   // Which buildings are towers is settled by the record, so it can be a filter.
   assert.ok(!JSON.stringify(layer('city-towers').filter).includes('feature-state'));
   assert.deepEqual(layer('city-towers').filter.at(-1).slice(0, 1), ['>=']);
-  assert.deepEqual(layer('city-buildings').paint['fill-extrusion-pattern'].slice(0, 3), ['step', ['zoom'], 'vm-wall:0:low']);
+  assert.deepEqual(layer('city-buildings').paint['fill-extrusion-pattern'].slice(0, 2), ['step', ['zoom']]);
+  assert.deepEqual(layer('city-buildings').paint['fill-extrusion-pattern'][2].slice(0, 2), ['concat', 'vm-wall:0:low']);
   assert.deepEqual(layer('city-painted').paint['fill-extrusion-color'], ['to-color', ['get', 'facade_color'], '#f3f1ec']);
 
   // Without the archive the street map's own buildings are drawn, and nothing asks for the archive.
@@ -1089,6 +1116,26 @@ test('cityModelStyle traces the metro under ground and shows more of the photo c
   assert.ok(under.paint['line-opacity'] < 0.5 && Array.isArray(under.paint['line-dasharray']));
   assert.ok(JSON.stringify(style.layers[ids.indexOf('city-rail')].filter).includes('["!",["==",["get","brunnel"],"tunnel"]]'));
   const ground = style.layers[ids.indexOf('city-ground')].paint;
-  assert.deepEqual(ground['raster-opacity'], ['interpolate', ['linear'], ['zoom'], 15.5, 0.6, 17.5, 0.82]);
+  assert.deepEqual(ground['raster-opacity'], ['interpolate', ['linear'], ['zoom'], 15.5, 0.7, 17.5, 0.92]);
   assert.ok(ground['raster-saturation'].at(-1) > ground['raster-saturation'].at(-3));
+  assert.equal(style.layers[0].paint['background-color'], GROUND_LOOK.background);
+});
+
+test('groundLook gives the photo\'s toning at a zoom as plain numbers, for the roofs to be toned alike', () => {
+  const near = (a, b, by) => Math.abs(a - b) <= by;
+  const style = cityModelStyle(BASE_STYLE);
+  const paint = style.layers.find((layer) => layer.id === 'city-ground').paint;
+  // At and beyond the two ends: exactly what the map is told.
+  for (const [zoom, at] of [[12, 4], [15.5, 4], [17.5, 6], [20, 6]]) {
+    const look = groundLook(zoom);
+    assert.ok(near(look.strength, paint['raster-opacity'][at], 1e-9), `opacity at ${zoom}`);
+    assert.ok(near(look.grey, -paint['raster-saturation'][at], 1e-9), 'a negative saturation greys by that much');
+    assert.ok(near(look.low, paint['raster-brightness-min'][at], 1e-9));
+    const contrast = paint['raster-contrast'][at];
+    assert.ok(near(look.contrast, contrast > 0 ? 1 / (1 - contrast) : 1 + contrast, 1e-9));
+  }
+  // Half way between them: half way.
+  assert.ok(near(groundLook(16.5).strength, (0.7 + 0.92) / 2, 1e-9));
+  // The ground colour that shows through: the map's own background, as parts of one.
+  assert.deepEqual(groundLook(16).ground.map((part) => Math.round(part * 255)), [0xd9, 0xd2, 0xc5]);
 });

@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   buildNetwork,
   drawBridges,
+  drawMarks,
   drawRoofs,
   drawStreet,
   drawTraffic,
@@ -12,6 +13,7 @@ import {
   faceLight,
   GLASS,
   heightAlong,
+  isPalm,
   lightFrom,
   localTime,
   Mesh,
@@ -22,6 +24,7 @@ import {
   serviceRuns,
   stayedHere,
   streetDirection,
+  streetNear,
   Traffic,
   trafficLevel,
   VEHICLES,
@@ -592,18 +595,25 @@ test('drawTraffic draws every vehicle that can be seen, and none in a tunnel', (
 test('drawTrees stands a trunk and a crown at each place, with its shade', () => {
   const mesh = new Mesh();
   const light = lightFrom({ azimuth: 135, altitude: 45 });
-  const trees = [{ x: 10, y: 20, radius: 3 }, { x: -40, y: 5, radius: 1.5 }];
-  // Shade (3 faces), trunk (4) and crown (12): 19 faces of 6 corners.
+  // Two trees with rounded crowns (a wide crown is never a palm; the small one here happens not to be).
+  const small = Array.from({ length: 200 }, (_, i) => ({ x: -40 - i, y: 5, radius: 1.5 })).find((tree) => !isPalm(tree.x, tree.y, tree.radius));
+  const trees = [{ x: 10, y: 20, radius: 4 }, small];
+  assert.equal(isPalm(10, 20, 4), false);
+  // Shade (3 faces), trunk (4) and crown (18): 25 faces of 6 corners.
   assert.equal(drawTrees(mesh, trees, light, { bearing: 315, factor: 1 }), 2);
-  assert.equal(mesh.count, 2 * 19 * 6);
+  assert.equal(mesh.count, 2 * 25 * 6);
   const first = { x: [], y: [], z: [] };
-  for (let i = 18; i < 19 * 6; i += 1) {
+  for (let i = 18; i < 25 * 6; i += 1) {
     first.x.push(mesh.positions[i * 3]);
     first.y.push(mesh.positions[i * 3 + 1]);
     first.z.push(mesh.positions[i * 3 + 2]);
   }
-  assert.ok(near(Math.max(...first.x) - Math.min(...first.x), 6, 0.9), 'the crown is as wide as it was seen to be');
-  assert.ok(Math.min(...first.z) === 0 && Math.max(...first.z) > 5 && Math.max(...first.z) < 10, `top at ${Math.max(...first.z)}`);
+  assert.ok(near(Math.max(...first.x) - Math.min(...first.x), 8, 1.2), 'the crown is as wide as it was seen to be');
+  assert.ok(Math.min(...first.z) === 0 && Math.max(...first.z) > 6 && Math.max(...first.z) < 13, `top at ${Math.max(...first.z)}`);
+  // Rounded: at its top the crown has drawn in again, to under three quarters of its width.
+  const top = Math.max(...first.z);
+  const upper = first.x.filter((_, i) => first.z[i] > top - 4 * 0.3 && first.z[i] < top);
+  assert.ok(Math.max(...upper) - Math.min(...upper) < 8 * 0.75, `${Math.max(...upper) - Math.min(...upper)}`);
   // The shade lies on the ground, north-west of the tree, away from the sun.
   assert.ok(near(mesh.positions[2], 0.06, 1e-6) && mesh.positions[0] < 10 && mesh.positions[1] > 20);
   assert.ok(mesh.colours[3] < 100, 'and is see-through');
@@ -616,9 +626,39 @@ test('drawTrees stands a trunk and a crown at each place, with its shade', () =>
   drawTrees(again, trees, light, { bearing: 315, factor: 1 });
   assert.deepEqual(Array.from(again.positions.subarray(0, again.count * 3)), Array.from(mesh.positions.subarray(0, mesh.count * 3)));
   drawTrees(again, trees, null, null);
-  assert.equal(again.count, 2 * 16 * 6);
+  assert.equal(again.count, 2 * 22 * 6);
   assert.equal(drawTrees(again, [], light, null), 0);
   assert.equal(again.count, 0);
+});
+
+test('a small crown is as likely as not a date palm: a tall bare trunk with a head of drooping fronds', () => {
+  // Which trees are palms is settled by where they stand and how wide they are, the same every time.
+  const row = Array.from({ length: 400 }, (_, i) => ({ x: i * 7, y: i * 3, radius: 1.8 }));
+  const palms = row.filter((tree) => isPalm(tree.x, tree.y, tree.radius));
+  assert.ok(palms.length > 400 * 0.45 && palms.length < 400 * 0.75, `${palms.length} of 400`);
+  assert.deepEqual(row.map((tree) => isPalm(tree.x, tree.y, tree.radius)), row.map((tree) => isPalm(tree.x, tree.y, tree.radius)));
+  const wider = row.filter((tree) => isPalm(tree.x, tree.y, 3));
+  assert.ok(wider.length > 400 * 0.12 && wider.length < 400 * 0.4, `${wider.length} of 400 with a crown 6 m wide`);
+  assert.ok(row.every((tree) => !isPalm(tree.x, tree.y, 3.5)), 'a wide crown is never a palm');
+
+  const mesh = new Mesh();
+  const palm = palms[0];
+  drawTrees(mesh, [palm], lightFrom({ azimuth: 135, altitude: 45 }), null);
+  // Trunk (4 faces) and seven fronds of two faces each.
+  assert.equal(mesh.count, (4 + 14) * 6);
+  const z = [];
+  const out = [];
+  for (let i = 0; i < mesh.count; i += 1) {
+    z.push(mesh.positions[i * 3 + 2]);
+    out.push(Math.hypot(mesh.positions[i * 3] - palm.x, mesh.positions[i * 3 + 1] - palm.y));
+  }
+  // Taller than a tree of its width would be, with nothing but the trunk below its head.
+  assert.ok(Math.max(...z) > 6 && Math.max(...z) < 9, `${Math.max(...z)}`);
+  assert.ok(out.every((far, i) => z[i] > 4.5 || far < 0.5), 'bare below the fronds');
+  // The fronds reach out as far as the crown was seen to, and droop at their tips.
+  assert.ok(near(Math.max(...out), 1.9, 0.2), `${Math.max(...out)}`);
+  const tips = z.filter((_, i) => out[i] > 1.7);
+  assert.ok(Math.max(...tips) < Math.max(...z) - 0.9, 'the tips hang below the top of the head');
 });
 
 test('cars are parked along residential streets, the same way every time, and every bus stop has a shelter', () => {
@@ -866,6 +906,72 @@ test('a bridge hung from cables gets its masts and its fans of cables, and no pi
   assert.equal(stayedHere(network, [{ ...bridge, at: place([20000, 0]) }]).length, 0);
   assert.equal(stayedHere(buildNetwork([line('motorway', [[-600, -10], [600, -10]], { oneway: 1 })], ORIGIN), [bridge]).length, 0);
   assert.equal(stayedHere(null, [bridge]).length, 0);
+});
+
+test('drawMarks paints the lanes of the main roads, and a crossing where a street meets a larger one', () => {
+  const lines = [
+    line('primary', [[0, 0], [300, 0]], { width: 12 }), // a main road with traffic both ways: two lanes each
+    line('primary', [[300, 0], [600, 0]], { width: 12 }),
+    line('minor', [[300, 0], [300, 200]], { width: 7 }), // a side street off it
+    line('trunk', [[0, 400], [400, 400]], { oneway: 1, width: 14 }), // one carriageway of three lanes
+    line('minor', [[0, 600], [300, 600]], { width: 7 }), // side streets have no lines
+    line('minor', [[150, 600], [150, 800]], { width: 7 }), // nor a crossing where they meet each other
+    line('primary', [[0, 900], [300, 900]], { width: 12, tunnel: true }),
+    line('primary', [[0, 1000], [300, 1000]], { width: 12, bridge: true, layer: 1 }),
+    line('transit', [[0, 1100], [300, 1100]]),
+  ];
+  const network = buildNetwork(lines, ORIGIN);
+  const mesh = new Mesh();
+  const made = drawMarks(mesh, network);
+  assert.deepEqual(made, { lines: 3, crossings: 1 });
+  const corners = Array.from({ length: mesh.count }, (_, i) => ({ x: mesh.positions[i * 3], y: mesh.positions[i * 3 + 1], z: mesh.positions[i * 3 + 2], paint: Array.from(mesh.colours.subarray(i * 4, i * 4 + 4)) }));
+  assert.ok(corners.every((corner) => near(corner.z, 0.16, 1e-6)), 'flat on the road, just clear of the shadows');
+  assert.ok(corners.every((corner) => corner.y < 700), 'nothing in the tunnel, on the bridge or on the track');
+  assert.ok(!corners.some((corner) => corner.y > 500), 'and nothing on the side streets among themselves');
+
+  // The main road: a yellow line down its middle, a line along each edge, and a broken line between the two lanes each way.
+  const main = corners.filter((corner) => corner.y < 10 && corner.y > -10 && corner.x < 280);
+  const yellow = main.filter((corner) => corner.paint[0] > corner.paint[2] + 80);
+  assert.ok(yellow.length > 0 && yellow.every((corner) => Math.abs(corner.y) <= 0.1), 'the middle line');
+  const offsets = [...new Set(main.filter((corner) => corner.paint[0] <= corner.paint[2] + 80).map((corner) => Math.round(Math.abs(corner.y) * 10) / 10))].sort((a, b) => a - b);
+  // Between lanes at 3.4 m from the middle (7 cm either side of it), and the edges just inside the 12 m the road is drawn at.
+  assert.deepEqual(offsets, [3.3, 3.5, 5.6, 5.7], JSON.stringify(offsets));
+  // Lines keep 8 m clear of the ends of a stretch, where the junctions are.
+  assert.ok(near(Math.min(...main.map((corner) => corner.x)), 8, 0.01), `${Math.min(...main.map((corner) => corner.x))}`);
+  // The broken line: 3 m of paint every 9 m.
+  const dashes = main.filter((corner) => near(Math.abs(corner.y), 3.4, 0.11) && corner.y > 0).map((corner) => corner.x);
+  assert.ok(dashes.includes(8) && dashes.includes(11) && !dashes.some((x) => x > 11.01 && x < 16.99) && dashes.includes(17));
+
+  // The carriageway of three lanes: two broken lines, 1.7 m either side of its middle, and no yellow.
+  const trunk = corners.filter((corner) => corner.y > 390 && corner.y < 410);
+  assert.ok(!trunk.some((corner) => corner.paint[0] > corner.paint[2] + 80));
+  const lanes = [...new Set(trunk.map((corner) => Math.round((corner.y - 400) * 10) / 10))].sort((a, b) => a - b);
+  assert.deepEqual(lanes, [-5.4, -5.3, -1.8, -1.6, 1.6, 1.8, 5.3, 5.4], JSON.stringify(lanes));
+
+  // The crossing: over the mouth of the side street, just outside the main road, stripes 3 m long across its 7 m.
+  const zebra = corners.filter((corner) => corner.x > 290 && corner.x < 310 && corner.y > 7 && corner.y < 50);
+  assert.ok(zebra.length >= 6 * 6, `${zebra.length} corners`);
+  assert.ok(near(Math.min(...zebra.map((corner) => corner.y)), 7.5, 0.01) && near(Math.max(...zebra.map((corner) => corner.y)), 10.5, 0.01));
+  assert.ok(Math.min(...zebra.map((corner) => corner.x)) >= 296.9 && Math.max(...zebra.map((corner) => corner.x)) <= 303.1);
+  // The main road itself is not crossed at a side street.
+  assert.ok(!corners.some((corner) => Math.abs(corner.y) > 0.6 && Math.abs(corner.y) < 3 && corner.x > 280 && corner.x < 320), 'no stripes between its lines');
+
+  // Where two main roads cross, all four arms are.
+  const cross = buildNetwork([line('primary', [[0, 0], [200, 0]], { width: 12 }), line('primary', [[200, 0], [400, 0]], { width: 12 }), line('secondary', [[200, -200], [200, 0]], { width: 12 }), line('secondary', [[200, 0], [200, 200]], { width: 12 })], ORIGIN);
+  assert.equal(drawMarks(mesh, cross).crossings, 4);
+  // A network with no streets leaves the mesh empty.
+  assert.deepEqual(drawMarks(mesh, buildNetwork([line('transit', [[0, 0], [300, 0]])], ORIGIN)), { lines: 0, crossings: 0 });
+  assert.equal(mesh.count, 0);
+});
+
+test('streetNear finds the place on the nearest street', () => {
+  const network = buildNetwork([line('primary', [[0, 0], [300, 0]]), line('minor', [[100, 50], [100, 300]]), line('transit', [[0, 10], [300, 10]])], ORIGIN);
+  const found = streetNear(network, 150, 12);
+  assert.ok(near(found.x, 150) && near(found.y, 0) && near(found.distance, 12) && near(Math.abs(found.east), 1) && near(found.north, 0), JSON.stringify(found));
+  const side = streetNear(network, 104, 200);
+  assert.ok(near(side.x, 100) && near(side.y, 200) && near(side.distance, 4));
+  assert.equal(streetNear(network, 600, 600), null);
+  assert.equal(streetNear(network, 150, 100, 20), null, 'nothing within reach');
 });
 
 test('streetDirection says which way the nearest street runs', () => {
