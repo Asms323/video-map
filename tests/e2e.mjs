@@ -648,6 +648,7 @@ try {
   });
   check('3D City: one outline for every building, from the archive', houses.source === 'overture' && /^pmtiles:\/\/https:\/\/.+\/buildings\.pmtiles$/.test(houses.address) && houses.outlines > 500 && houses.numbered && (RECORD || asked.archive > 2), JSON.stringify({ ...houses, asked: asked.archive }));
   // No building stands in the street: the ones a street runs straight through (stations under it) are left out.
+  // (Left out with them: the blocks that a hand-made landmark or a chain store's own building stands in for.)
   const clear = await page.evaluate(async () => {
     const lib = await import(new URL('js/lib.js', document.baseURI).href);
     const live = window.__map;
@@ -663,14 +664,18 @@ try {
       else if (feature.geometry.type === 'MultiLineString') streets.push(...feature.geometry.coordinates);
     }
     const features = live.querySourceFeatures('overture', { sourceLayer: 'building' });
+    const found = lib.buildingsOnStreets(lib.buildingFootprints(features, everywhere), streets);
+    const counted = live.getLayer('city-life').implementation.counts().buildings;
     return {
       leftOut: out.size,
-      found: lib.buildingsOnStreets(lib.buildingFootprints(features, everywhere), streets).size,
+      found: found.size,
+      missed: [...found].filter((id) => !out.has(id)).length,
+      counted: { onStreets: counted.onStreets, replaced: counted.replaced, dressed: counted.extras?.dressed ?? 0 },
       stillThere: lib.buildingsOnStreets(lib.buildingFootprints(features, everywhere, null, out), streets).size,
       sameOnEveryLayer: ['city-towers', 'city-painted', 'city-roofs', 'city-contact'].every((id) => JSON.stringify(live.getFilter(id)).includes(left ? left[0] : '"is_underground"')),
     };
   });
-  check('3D City: no building is left standing across a street', clear.stillThere === 0 && clear.leftOut === clear.found && clear.sameOnEveryLayer, JSON.stringify(clear));
+  check('3D City: no building is left standing across a street', clear.stillThere === 0 && clear.found > 0 && clear.missed === 0 && clear.leftOut >= clear.found && clear.leftOut <= clear.counted.onStreets + clear.counted.replaced + clear.counted.dressed && clear.sameOnEveryLayer, JSON.stringify(clear));
 
   // What stands still: the furniture of the roofs, the parked cars, a shelter at every bus stop.
   await page.waitForFunction(() => {
@@ -683,6 +688,48 @@ try {
   // Buses: only as many as the streets with stops call for, one every ten minutes each way; none without a stop on the map.
   check('3D City: the bus stops on the map have shelters', scene.life.busStops > 0 && scene.life.shelters > 0 && scene.life.shelters <= scene.life.busStops, JSON.stringify(scene.life));
   check('3D City: buses are few, and only where there are stops', scene.life.busKm > 0 && scene.life.buses <= Math.ceil(scene.life.busKm / 4.2) + 1 && scene.life.buses < scene.life.vehicles / 20, JSON.stringify(scene.life));
+
+  // The landmarks: modelled by hand as stacks of slabs, standing where the map's own plain block is left out.
+  const marks = await page.evaluate(async () => {
+    const live = window.__map;
+    const { LANDMARKS, STAYED_BRIDGES } = await import(new URL('js/landmarks.js', document.baseURI).href);
+    const slabs = live.getSource('city-landmarks').serialize().data.features;
+    const kingdom = slabs.filter((slab) => slab.properties.landmark === 'kingdom-centre');
+    const order = live.getLayersOrder();
+    return {
+      known: LANDMARKS.map((one) => one.id).join(),
+      stayed: STAYED_BRIDGES.map((one) => one.id).join(),
+      slabs: slabs.length,
+      kingdom: kingdom.length,
+      top: Math.max(...kingdom.map((slab) => slab.properties.t)),
+      kind: live.getLayer('city-landmarks')?.type,
+      height: JSON.stringify(live.getPaintProperty('city-landmarks', 'fill-extrusion-height')),
+      base: JSON.stringify(live.getPaintProperty('city-landmarks', 'fill-extrusion-base')),
+      colour: JSON.stringify(live.getPaintProperty('city-landmarks', 'fill-extrusion-color')),
+      inOrder: order.indexOf('city-landmarks') > order.indexOf('city-roofs') && order.indexOf('city-extras') > order.indexOf('city-landmarks') && order.indexOf('city-life') > order.indexOf('city-extras'),
+      seen: [...new Set(live.queryRenderedFeatures({ layers: ['city-landmarks'] }).map((feature) => feature.properties.landmark))].join(),
+    };
+  });
+  check(
+    '3D City: the landmark towers are modelled by hand',
+    marks.known === 'kingdom-centre,al-faisaliah,pif-tower,burj-rafal,al-majdoul,tv-tower,water-tower,kafd-station' && marks.stayed === 'wadi-laban' && marks.slabs > 800 && marks.kind === 'fill-extrusion' && marks.height === '["get","t"]' && marks.base === '["get","b"]' && marks.colour === '["get","c"]' && marks.inOrder,
+    JSON.stringify({ ...marks, known: undefined }),
+  );
+  check('3D City: Kingdom Centre stands 302 m tall in place of its plain block', marks.kingdom > 60 && marks.top === 302 && marks.seen.includes('kingdom-centre') && scene.buildings.replaced >= 1, JSON.stringify({ kingdom: marks.kingdom, top: marks.top, seen: marks.seen, replaced: scene.buildings.replaced }));
+  // Around what the map shows: chain stores in their colours, a pavilion at each metro entrance, bridges built in 3D.
+  await page.waitForFunction(() => window.__map.getLayer('city-life')?.implementation.counts().buildings.extras !== null, null, { timeout: 15000 });
+  const dressing = await page.evaluate(() => {
+    const live = window.__map;
+    const kinds = {};
+    for (const feature of live.getSource('city-extras').serialize().data.features) kinds[feature.properties.kind] = (kinds[feature.properties.kind] ?? 0) + 1;
+    const counts = live.getLayer('city-life').implementation.counts();
+    return { kinds, extras: counts.buildings.extras, bridges: counts.life.bridges, stayed: counts.life.stayed, corners: live.getLayer('city-life').implementation.parts.get('bridges')?.mesh?.count ?? 0 };
+  });
+  check('3D City: what is built around the map is counted and drawn as blocks', dressing.extras.slabs === Object.values(dressing.kinds).reduce((sum, count) => sum + count, 0), JSON.stringify(dressing));
+  check('3D City: a pavilion with its sign stands at each metro entrance', dressing.extras.entrances > 0 && dressing.kinds.pavilion >= 2 && dressing.kinds.pavilion <= dressing.extras.entrances * 2 && dressing.kinds.sign === dressing.kinds.pavilion, JSON.stringify(dressing));
+  check('3D City: chain stores wear their own colours', dressing.extras.stores > 0 && dressing.extras.dressed > 0 && dressing.extras.dressed <= dressing.extras.stores && dressing.kinds.store > 0 && dressing.kinds.front > 0, JSON.stringify(dressing));
+  check('3D City: bridges are built in 3D, deck and piers', dressing.bridges > 0 && dressing.corners > dressing.bridges * 100, JSON.stringify({ bridges: dressing.bridges, corners: dressing.corners }));
+  check('3D City: the cable-stayed bridge is drawn only where it stands', dressing.stayed === 0);
 
   await page.waitForSelector('#weather:not([hidden])');
   check('shows the weather', (await text(page, '#weather')) === '23° Clear', await text(page, '#weather'));

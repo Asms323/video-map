@@ -2,25 +2,29 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  GLASS,
-  Mesh,
-  Traffic,
-  VEHICLES,
   buildNetwork,
+  drawBridges,
   drawRoofs,
   drawStreet,
   drawTraffic,
   drawTrees,
   drawVehicle,
   faceLight,
+  GLASS,
+  heightAlong,
   lightFrom,
   localTime,
+  Mesh,
   metroHeadway,
   pointAlong,
   railEntries,
   seededRandom,
   serviceRuns,
+  stayedHere,
+  streetDirection,
+  Traffic,
   trafficLevel,
+  VEHICLES,
 } from '../js/life.js';
 
 const ORIGIN = { lng: 46.67, lat: 24.7 };
@@ -723,4 +727,172 @@ test('roofs get their furniture: a stair head and a tank on a house, cooling pla
   assert.ok(shades.size >= 3, 'top, sunny side and far side');
   assert.equal(drawRoofs(again, [], null), 0);
   assert.equal(again.count, 0);
+});
+
+test('a bridge carries its road over the ground, with a ramp at either end, and the traffic goes up with it', () => {
+  const lines = [
+    line('primary', [[0, 0], [300, 0]], { oneway: 1, width: 12 }),
+    line('primary', [[300, 0], [700, 0]], { oneway: 1, bridge: true, layer: 1, width: 12 }), // a flyover
+    line('primary', [[700, 0], [1000, 0]], { oneway: 1, width: 12 }),
+    line('minor', [[500, -100], [500, 100]], { width: 7 }), // the street it crosses, underneath
+    line('trunk', [[300, 50], [500, 50]], { oneway: 1, bridge: true, layer: 2, width: 14 }), // a higher bridge, in two stretches
+    line('trunk', [[500, 50], [700, 50]], { oneway: 1, bridge: true, layer: 2, width: 14 }),
+    line('transit', [[0, 200], [400, 200]], { bridge: true }), // a metro viaduct
+    line('minor', [[0, 300], [400, 300]], { bridge: true, width: 7 }), // a small bridge with a bus stop marked beside it
+  ];
+  const network = buildNetwork(lines, ORIGIN, { busStops: [place([200, 304])] });
+  // Nothing on the ground is joined to what passes over it.
+  assert.equal(network.ways.length, 8);
+  const [before, flyover, after, under, highA, highB, viaduct, small] = network.ways;
+  assert.deepEqual([before.deck, flyover.deck, after.deck, under.deck, highA.deck, viaduct.deck], [0, 6.5, 0, 0, 12, 8.5]);
+  // A bridge comes down to the ground where the road carries on at ground level, and stays up where it carries on as a bridge.
+  assert.deepEqual([flyover.rise, highA.rise, highB.rise, before.rise], [[0, 0], [0, 12], [12, 0], null]);
+  assert.equal(heightAlong(before, 150), 0);
+  assert.equal(heightAlong(flyover, 0), 0);
+  assert.ok(near(heightAlong(flyover, 45), 3.25, 1e-9), 'half way up the 90 m ramp');
+  assert.equal(heightAlong(flyover, 90), 6.5);
+  assert.equal(heightAlong(flyover, 200), 6.5);
+  assert.ok(near(heightAlong(flyover, 400 - 45), 3.25, 1e-9) && heightAlong(flyover, 400) === 0);
+  assert.equal(heightAlong(highA, 200), 12);
+  assert.equal(heightAlong(highB, 0), 12);
+  assert.equal(heightAlong(viaduct, 200), 8.5);
+  for (let s = 0; s <= 400; s += 10) assert.ok(heightAlong(flyover, s) >= 0 && heightAlong(flyover, s) <= 6.5);
+  // No bus stops on a bridge, and nobody parks on one.
+  assert.equal(small.stops.length, 0);
+  const street = new Mesh();
+  assert.deepEqual(drawStreet(street, buildNetwork([lines[7]], ORIGIN), null, null), { parked: 0, shelters: 0 });
+
+  // A car on the flyover is drawn up on its deck; one on the street below, on the ground.
+  const traffic = new Traffic({ seed: 2, most: 0, now: () => MORNING });
+  traffic.setNetwork(network, [0, 0], ORIGIN);
+  const car = (way, s) => ({ way, forward: true, s, lane: 0, offset: 0, wish: 10, speed: 10, type: 'car', paint: [1, 2, 3], cargo: [1, 2, 3], shown: 1, leaving: false });
+  traffic.vehicles = [car(1, 200), car(3, 100), car(1, 45)];
+  const lifts = [];
+  traffic.eachVehicle((type, x, y, east, north, paint, cargo, shown, lift) => lifts.push(lift));
+  assert.deepEqual(lifts.map((lift) => Math.round(lift * 100) / 100), [6.5, 0, 3.25]);
+  const mesh = new Mesh();
+  drawVehicle(mesh, 'car', 0, 0, 1, 0, [200, 100, 50], [0, 0, 0], 1, null, { bearing: 0, factor: 1 }, 1, 6.5);
+  const heights = [];
+  for (let i = 0; i < mesh.count; i += 1) heights.push(mesh.positions[i * 3 + 2]);
+  assert.ok(near(Math.min(...heights), 6.56, 1e-4) && near(Math.max(...heights), 6.5 + 1.46, 1e-4), 'the car and its shade lie on the deck');
+  // A train on the viaduct rides on it too.
+  traffic.trains = [];
+  traffic.startTrain(traffic.entries.find((entry) => entry.way === 6 && entry.atStart), 10, MORNING / 1000);
+  const coaches = [];
+  traffic.eachVehicle((type, x, y, east, north, paint, cargo, shown, lift) => type === 'coach' && coaches.push(lift));
+  assert.ok(coaches.length === 3 && coaches.every((lift) => lift > 7.5 && lift <= 8.5), String(coaches));
+});
+
+test('drawBridges builds a deck with parapets and piers under every bridge', () => {
+  const network = buildNetwork(
+    [line('primary', [[0, 0], [300, 0]], { width: 12 }), line('primary', [[300, 0], [700, 0]], { bridge: true, layer: 1, width: 12 }), line('primary', [[700, 0], [1000, 0]], { width: 12 }), line('transit', [[0, 200], [400, 200]], { bridge: true }), line('minor', [[0, 400], [300, 400]], { bridge: true, tunnel: true })],
+    ORIGIN,
+  );
+  const mesh = new Mesh();
+  assert.equal(drawBridges(mesh, network, lightFrom({ azimuth: 135, altitude: 50 })), 2);
+  const road = { x: [], y: [], z: [] };
+  const rail = { x: [], y: [], z: [] };
+  for (let i = 0; i < mesh.count; i += 1) {
+    const [x, y, z] = [mesh.positions[i * 3], mesh.positions[i * 3 + 1], mesh.positions[i * 3 + 2]];
+    const part = y > 100 ? rail : road;
+    part.x.push(x);
+    part.y.push(y);
+    part.z.push(z);
+  }
+  // The road deck: as long as the bridge, a little wider than the road, up to the top of its parapet.
+  assert.ok(near(Math.min(...road.x), 300, 0.01) && near(Math.max(...road.x), 700, 0.01));
+  assert.ok(near(Math.max(...road.y), 6.7, 0.01) && near(Math.min(...road.y), -6.7, 0.01), `${Math.min(...road.y)} to ${Math.max(...road.y)}`);
+  assert.ok(near(Math.max(...road.z), 6.5 + 0.9, 1e-4) && Math.min(...road.z) === 0, 'from the foot of its piers to the top of its parapet');
+  // The viaduct: narrower, and higher.
+  assert.ok(near(Math.max(...rail.y), 202.7, 0.01) && near(Math.max(...rail.z), 8.5 + 0.9, 1e-4));
+  // At its two ends the deck's flank comes down to the ground with the ramp. Between them only the piers
+  // touch the ground, and they stand only where the deck is well clear of it: none in the first 50 m of a ramp.
+  const piers = [];
+  for (let i = 0; i < mesh.count; i += 1) {
+    const x = mesh.positions[i * 3];
+    if (mesh.positions[i * 3 + 2] === 0 && mesh.positions[i * 3 + 1] < 100 && x > 335 && x < 665) piers.push(x);
+  }
+  assert.ok(piers.length >= 8 * 8 && piers.every((x) => x > 350 && x < 650), `${piers.length} corners from ${Math.min(...piers)} to ${Math.max(...piers)}`);
+  // A network with no bridge leaves the mesh empty.
+  assert.equal(drawBridges(mesh, buildNetwork([line('primary', [[0, 0], [300, 0]])], ORIGIN), null), 0);
+  assert.equal(mesh.count, 0);
+});
+
+test('a bridge hung from cables gets its masts and its fans of cables, and no piers', () => {
+  // A motorway bridge running east, 800 m long, as two carriageways 20 m apart.
+  const carriageways = [
+    line('motorway', [[-600, -10], [-400, -10]], { oneway: 1 }),
+    line('motorway', [[-400, -10], [400, -10]], { oneway: 1, bridge: true, layer: 1 }),
+    line('motorway', [[400, -10], [600, -10]], { oneway: 1 }),
+    line('motorway', [[600, 10], [400, 10]], { oneway: 1 }),
+    line('motorway', [[400, 10], [-400, 10]], { oneway: 1, bridge: true, layer: 1 }),
+    line('motorway', [[-400, 10], [-600, 10]], { oneway: 1 }),
+  ];
+  const network = buildNetwork(carriageways, ORIGIN);
+  const bridge = { id: 'test', at: place([0, 0]), bearing: 90, masts: [-200, 200], mast: 96, cables: 22, reach: { bank: 168, span: 196 }, between: 10 };
+  const [frame] = stayedHere(network, [bridge]);
+  assert.ok(near(frame.x, 0, 0.01) && near(frame.y, 0, 0.01) && near(frame.east, 1, 1e-9) && near(frame.north, 0, 1e-9));
+  assert.deepEqual([frame.from, frame.to], [-368, 368]);
+
+  const plain = new Mesh();
+  assert.equal(drawBridges(plain, network, lightFrom({ azimuth: 135, altitude: 50 })), 2);
+  const mesh = new Mesh();
+  assert.equal(drawBridges(mesh, network, lightFrom({ azimuth: 135, altitude: 50 }), [bridge]), 2);
+  const corners = (from) => Array.from({ length: from.count }, (_, i) => [from.positions[i * 3], from.positions[i * 3 + 1], from.positions[i * 3 + 2]]);
+  const all = corners(mesh);
+  // The masts stand on the deck's centre line, 96 m above the deck.
+  const high = all.filter(([, , z]) => z > 60);
+  assert.ok(near(Math.max(...high.map(([, , z]) => z)), 6.5 + 96, 1e-3), `${Math.max(...high.map(([, , z]) => z))}`);
+  assert.ok(high.every(([x, y]) => Math.abs(y) < 2 && (Math.abs(x + 200) < 196 || Math.abs(x - 200) < 196)), 'nothing but masts and cables up there');
+  const heads = all.filter(([, , z]) => near(z, 102.5, 1e-3));
+  assert.deepEqual([...new Set(heads.map(([x]) => Math.round(x / 10) * 10))].sort((a, b) => a - b), [-200, 200]);
+  // Every cable comes down to the middle of the deck (which near the banks is already on its way down to the
+  // ground): the farthest 168 m out towards a bank, 196 m towards the middle of the bridge.
+  const ends = all.filter(([x, y, z]) => Math.abs(y) < 0.3 && z < 7.4 && Math.abs(Math.abs(x) - 200) > 13 && z !== 6.8);
+  const anchors = ends.map(([x]) => x);
+  assert.ok(near(Math.min(...anchors), -368, 0.01) && near(Math.max(...anchors), 368, 0.01), `${Math.min(...anchors)} to ${Math.max(...anchors)}`);
+  assert.ok(anchors.some((x) => near(x, -4, 0.01)) && anchors.some((x) => near(x, 4, 0.01)), 'the two inner fans all but meet in the middle of the main span');
+  assert.ok(ends.filter(([x]) => Math.abs(x) < 300).every(([, , z]) => near(z, 6.5 + 0.6, 0.29)), 'on the level deck a cable ends just above it');
+  // 2 masts × 2 fans × 22 cables, each two crossed ribbons along the deck's centre line.
+  assert.equal(all.filter(([, y]) => Math.abs(y) < 0.3).length, 2 * 2 * 22 * 12);
+  // On the ground under the hung spans stand only the two broad piers under the masts; a plain bridge has one every 30 m.
+  const grounded = (from) => corners(from).filter(([x, , z]) => z === 0 && Math.abs(x) < 340).map(([x]) => Math.round(x));
+  assert.ok(grounded(plain).length > 20 * 8);
+  assert.deepEqual([...new Set(grounded(mesh).map((x) => Math.sign(x) * 200))].sort((a, b) => a - b), [-200, 200]);
+  assert.ok(grounded(mesh).every((x) => Math.abs(Math.abs(x) - 200) <= 3), JSON.stringify([...new Set(grounded(mesh))]));
+
+  // A bridge whose deck is not on the map here, or that is far away, is left alone.
+  assert.equal(stayedHere(network, [{ ...bridge, at: place([0, 300]) }]).length, 0);
+  assert.equal(stayedHere(network, [{ ...bridge, at: place([20000, 0]) }]).length, 0);
+  assert.equal(stayedHere(buildNetwork([line('motorway', [[-600, -10], [600, -10]], { oneway: 1 })], ORIGIN), [bridge]).length, 0);
+  assert.equal(stayedHere(null, [bridge]).length, 0);
+});
+
+test('streetDirection says which way the nearest street runs', () => {
+  const network = buildNetwork([line('primary', [[0, 0], [300, 0]]), line('minor', [[100, 50], [100, 300]]), line('transit', [[0, 10], [300, 10]]), line('minor', [[0, -40], [300, -40]], { tunnel: true })], ORIGIN);
+  assert.deepEqual(streetDirection(network, 150, 12).map((value) => Math.round(Math.abs(value))), [1, 0], 'the main road, not the track beside it');
+  assert.deepEqual(streetDirection(network, 104, 200).map((value) => Math.round(Math.abs(value))), [0, 1]);
+  assert.deepEqual(streetDirection(network, 150, -30).map((value) => Math.round(Math.abs(value))), [1, 0], 'not the tunnel underneath');
+  assert.equal(streetDirection(network, 600, 600), null);
+  assert.equal(streetDirection(network, 150, 100, 20), null, 'nothing within reach');
+});
+
+test('a station gets a vaulted roof in place of roof furniture', () => {
+  const hall = [[0, 0], [120, 0], [120, 20], [0, 20], [0, 0]];
+  const mesh = new Mesh();
+  assert.equal(drawRoofs(mesh, [{ ring: hall, top: 13, vault: true }], lightFrom({ azimuth: 180, altitude: 50 })), 1);
+  const x = [];
+  const y = [];
+  const z = [];
+  for (let i = 0; i < mesh.count; i += 1) {
+    x.push(mesh.positions[i * 3]);
+    y.push(mesh.positions[i * 3 + 1]);
+    z.push(mesh.positions[i * 3 + 2]);
+  }
+  // The length of the hall and a little over, from its eaves up to the ridge along its middle.
+  assert.ok(near(Math.min(...x), -1.2, 1e-4) && near(Math.max(...x), 121.2, 1e-4) && near(Math.min(...y), -1.2, 1e-4) && near(Math.max(...y), 21.2, 1e-4));
+  assert.ok(near(Math.min(...z), 13, 1e-4) && near(Math.max(...z), 13 + 11.2 * 0.36, 1e-3), `${Math.max(...z)}`);
+  const ridge = y[z.indexOf(Math.max(...z))];
+  assert.ok(near(ridge, 10, 1e-3), 'the ridge runs down the middle');
+  assert.equal(mesh.count, 8 * 3 * 6, 'eight strips, each with its piece of the two ends');
 });

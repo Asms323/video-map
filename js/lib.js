@@ -1,5 +1,7 @@
 // Pure helpers shared by the app and its tests. Nothing in here touches the DOM.
 
+import { landmarkSlabs } from './landmarks.js';
+
 export const SPLIT_MIN = 0.2;
 export const SPLIT_MAX = 0.8;
 export const MAX_RECENTS = 8;
@@ -964,6 +966,7 @@ export const USUAL_HEIGHTS = {
   outbuilding: 3,
 };
 export const USUAL_HEIGHT = 6;
+export const STATION_HEIGHT = 12; // a metro station building: a hall over its platforms
 const FLOOR_METERS = 3.3;
 // No street is built to one height. The usual height is varied a little from
 // building to building by the building's number in the map data, so a row of
@@ -982,6 +985,7 @@ export function buildingHeight(properties, id) {
   if (recorded > base) return { height: recorded, base, known: true };
   const floors = Number(properties?.num_floors);
   if (floors > 0) return { height: base + floors * FLOOR_METERS, base, known: true };
+  if (properties?.class === 'train_station') return { height: base + STATION_HEIGHT, base, known: false };
   const usual = Object.hasOwn(USUAL_HEIGHTS, properties?.subtype) ? USUAL_HEIGHTS[properties.subtype] : USUAL_HEIGHT;
   const spread = typeof id === 'number' && Number.isFinite(id) ? HEIGHT_SPREAD[Math.abs(id) % HEIGHT_SPREAD.length] : 1;
   return { height: base + usual * spread, base, known: false };
@@ -990,7 +994,8 @@ export function buildingHeight(properties, id) {
 /**
  * Building footprints from Overture map-tile features, for the buildings that
  * reach into a box { west, south, east, north }:
- * [{ id, height, base, known, polygons }], each polygon a list of rings.
+ * [{ id, height, base, known, kind, polygons }], each polygon a list of rings.
+ * kind is 'station' for a metro or railway station building.
  *
  * Left out: what is underground (a metro station under a street is recorded
  * as a building too), and a building whose separate parts are given, which
@@ -1019,7 +1024,7 @@ export function buildingFootprints(features, box, estimates, skip) {
         outline.some(([lng, lat]) => lng >= box.west && lng <= box.east && lat >= box.south && lat <= box.north)
       );
     });
-    if (polygons.length > 0) buildings.push({ id: feature.id, ...size, polygons });
+    if (polygons.length > 0) buildings.push({ id: feature.id, ...size, kind: properties.class === 'train_station' ? 'station' : undefined, polygons });
   }
   return buildings;
 }
@@ -1161,6 +1166,8 @@ export const WALL_KINDS = {
   low: { colour: '#f3f1ec', glass: 'rgba(62, 84, 112, 0.34)', across: 0.64, up: 0.44 },
   // Towers: bands of glass with little wall between.
   tall: { colour: '#e6ebf0', glass: 'rgba(52, 84, 122, 0.46)', across: 0.84, up: 0.6 },
+  // Metro stations: a screen of pale gold metal, pierced in a pattern of triangles.
+  station: { colour: '#cfb37e', glass: 'rgba(96, 72, 30, 0.34)', across: 1, up: 1, lattice: true },
 };
 // Buildings from this height up are drawn as towers.
 const TOWER_METERS = 60;
@@ -1310,6 +1317,8 @@ export function cityModelStyle(base, { buildings = null } = {}) {
   const isRail = ['match', ['get', 'class'], ['rail', 'transit'], true, false];
   // On a bridge the wider road is drawn last, on top.
   const bridgeLayout = { ...round, 'line-sort-key': metersOf };
+  // From close by a bridge is built in 3D by the app: its flat drawing fades as that one appears.
+  const untilBuilt = (opacity = 1) => ['interpolate', ['linear'], ['zoom'], 15.1, opacity, 15.6, 0];
 
   // Buildings: the white model with windows, plain below zoom 16 and finer with
   // each zoom step in. The app draws each wall picture when the map first asks for it.
@@ -1371,6 +1380,20 @@ export function cityModelStyle(base, { buildings = null } = {}) {
     },
   });
 
+  /** Blocks that say for themselves where they start (b), where they end (t) and what colour they are (c). */
+  const slabLayer = (id, source, minzoom) => ({
+    id,
+    type: 'fill-extrusion',
+    source,
+    minzoom,
+    paint: {
+      'fill-extrusion-color': ['get', 'c'],
+      'fill-extrusion-base': ['get', 'b'],
+      'fill-extrusion-height': ['get', 't'],
+      'fill-extrusion-vertical-gradient': false,
+    },
+  });
+
   let buildingLayers;
   if (buildings) {
     // One outline per building, from Overture. Height: read from its shadow by
@@ -1382,7 +1405,8 @@ export function cityModelStyle(base, { buildings = null } = {}) {
       ['match', ['%', ['abs', ['id']], HEIGHT_SPREAD.length], ...HEIGHT_SPREAD.flatMap((factor, left) => (left > 0 ? [left, factor] : [])), HEIGHT_SPREAD[0]],
       1,
     ];
-    const usual = ['*', ['match', ['get', 'subtype'], ...Object.entries(USUAL_HEIGHTS).flat(), USUAL_HEIGHT], spread];
+    const isStation = ['==', ['get', 'class'], 'train_station'];
+    const usual = ['case', isStation, STATION_HEIGHT, ['*', ['match', ['get', 'subtype'], ...Object.entries(USUAL_HEIGHTS).flat(), USUAL_HEIGHT], spread]];
     const floor = ['to-number', ['get', 'min_height'], 0];
     const recorded = [
       'case',
@@ -1396,15 +1420,17 @@ export function cityModelStyle(base, { buildings = null } = {}) {
     // A metro station under a street is on record as a building too: leave what is underground out.
     const aboveGround = ['!=', ['get', 'is_underground'], true];
     const whole = ['all', aboveGround, ['!=', ['get', 'has_parts'], true]]; // one with parts is drawn as its parts
-    const plain = ['!', ['has', 'facade_color']];
+    const plain = ['all', ['!', ['has', 'facade_color']], ['!', isStation]];
     const roofColour = ['case', ['has', 'roof_color'], ['to-color', ['get', 'roof_color'], ROOF], ROOF];
     buildingLayers = [
       walls('city-buildings', 'low', BUILDING_SOURCE, 'building', ['all', whole, plain, ['<', recorded, TOWER_METERS]], height, floor),
       walls('city-towers', 'tall', BUILDING_SOURCE, 'building', ['all', whole, plain, ['>=', recorded, TOWER_METERS]], height, floor),
-      painted('city-painted', BUILDING_SOURCE, 'building', ['all', whole, ['has', 'facade_color']], ['get', 'facade_color'], height, floor),
+      painted('city-painted', BUILDING_SOURCE, 'building', ['all', whole, ['has', 'facade_color'], ['!', isStation]], ['get', 'facade_color'], height, floor),
+      // Metro stations in their own dress: golden screens all round.
+      walls('city-stations', 'station', BUILDING_SOURCE, 'building', ['all', whole, isStation], height, floor),
       walls('city-parts', 'tall', BUILDING_SOURCE, 'building_part', ['all', aboveGround, plain], height, floor),
       painted('city-parts-painted', BUILDING_SOURCE, 'building_part', ['all', aboveGround, ['has', 'facade_color']], ['get', 'facade_color'], height, floor),
-      roofs('city-roofs', BUILDING_SOURCE, 'building', ['all', whole, plain], height, roofColour),
+      roofs('city-roofs', BUILDING_SOURCE, 'building', ['all', whole, ['!', ['has', 'facade_color']]], height, roofColour),
       roofs('city-parts-roofs', BUILDING_SOURCE, 'building_part', ['all', aboveGround, plain], height, roofColour),
     ];
   } else {
@@ -1448,6 +1474,10 @@ export function cityModelStyle(base, { buildings = null } = {}) {
       },
       // The shadows the buildings cast; the app fills this in as the sun and the view move.
       'city-shade': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+      // The landmark towers, modelled by hand as stacks of slabs.
+      'city-landmarks': { type: 'geojson', data: landmarkSlabs() },
+      // Built by the app around what the map shows: the footbridges and pavilions of metro stations, the fronts of chain stores.
+      'city-extras': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
       // One outline per building, read straight out of Overture's archive in the cloud.
       ...(buildings
         ? { [BUILDING_SOURCE]: { type: 'vector', url: `pmtiles://${buildings}`, attribution: 'Buildings © <a href="https://overturemaps.org">Overture Maps Foundation</a>' } }
@@ -1543,10 +1573,15 @@ export function cityModelStyle(base, { buildings = null } = {}) {
         { minzoom: 13 },
       ),
       // Railway and metro above ground: a dark line with pale sleepers across it.
+      // (On a viaduct the track is built in 3D from close by, like a road bridge: there the flat line fades.)
       lineLayer(
         'city-rail',
         [['!', inTunnel], isRail],
-        { 'line-color': '#5c616b', 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 12, 0.8, 16, 3, 20, 14] },
+        {
+          'line-color': '#5c616b',
+          'line-width': ['interpolate', ['exponential', 2], ['zoom'], 12, 0.8, 16, 3, 20, 14],
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 15.1, 1, 15.6, ['case', onBridge, 0, 1]],
+        },
         { minzoom: 12 },
       ),
       lineLayer(
@@ -1556,8 +1591,16 @@ export function cityModelStyle(base, { buildings = null } = {}) {
           'line-color': '#e2ded5',
           'line-width': ['interpolate', ['exponential', 2], ['zoom'], 14, 0.5, 16, 1.6, 20, 8],
           'line-dasharray': [1.5, 2.5],
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 15.1, 1, 15.6, ['case', onBridge, 0, 1]],
         },
         { minzoom: 14 },
+      ),
+      // The shade under a viaduct.
+      lineLayer(
+        'city-rail-shade',
+        [onBridge, isRail],
+        { 'line-color': '#141a28', 'line-opacity': 0.24, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 13, 2, 16, 9, 20, 110], 'line-blur': 4 },
+        { minzoom: 13 },
       ),
       // Bridges and flyovers lie over whatever passes beneath, with a soft shade under the deck.
       lineLayer(
@@ -1566,18 +1609,8 @@ export function cityModelStyle(base, { buildings = null } = {}) {
         { 'line-color': '#141a28', 'line-opacity': 0.28, 'line-width': widthOfAny(7), 'line-blur': 5 },
         { minzoom: 13, layout: bridgeLayout },
       ),
-      lineLayer('city-bridge-edge', [onBridge, isDriven], { 'line-color': '#eceae4', 'line-width': widthOfAny(2.5) }, { minzoom: 12, layout: bridgeLayout }),
-      lineLayer('city-bridge', [onBridge, isDriven], { 'line-color': '#7c818b', 'line-width': widthOfAny() }, { minzoom: 12, layout: bridgeLayout }),
-      lineLayer(
-        'city-bridge-marks',
-        [onBridge, ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary'], true, false]],
-        {
-          'line-color': 'rgba(255, 255, 255, 0.7)',
-          'line-width': ['interpolate', ['exponential', 2], ['zoom'], 16, 0.7, 20, 5],
-          'line-dasharray': [6, 9],
-        },
-        { minzoom: 16 },
-      ),
+      lineLayer('city-bridge-edge', [onBridge, isDriven], { 'line-color': '#eceae4', 'line-width': widthOfAny(2.5), 'line-opacity': untilBuilt() }, { minzoom: 12, layout: bridgeLayout }),
+      lineLayer('city-bridge', [onBridge, isDriven], { 'line-color': '#7c818b', 'line-width': widthOfAny(), 'line-opacity': untilBuilt() }, { minzoom: 12, layout: bridgeLayout }),
       // A soft dark rim on the ground where each building stands, the way corners
       // gather shade even on the sunny side.
       {
@@ -1609,6 +1642,9 @@ export function cityModelStyle(base, { buildings = null } = {}) {
         },
       },
       ...buildingLayers,
+      // The landmarks: each slab a block from its own bottom to its own top, in its own colour.
+      slabLayer('city-landmarks', 'city-landmarks', 11),
+      slabLayer('city-extras', 'city-extras', 14),
       // The names and icons of the street map, without the route-number badges
       // that repeat along every main road.
       ...base.layers.filter((layer) => layer.type === 'symbol' && !layer.id.includes('shield')),

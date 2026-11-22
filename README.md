@@ -21,6 +21,24 @@ the phone: no App Store, no Apple developer account, no Mac.
   with a window in each bay for ordinary buildings, bands of glass for towers,
   and the recorded colour where one is noted. They stand on the real ground,
   with grey roads at their real widths.
+- **Riyadh's landmarks, modelled by hand.** Kingdom Centre with its arch and
+  sky bridge, Al Faisaliah with its golden globe, the PIF Tower, Burj Rafal,
+  the twisting Al Majdoul Tower, the TV Tower, the striped water tower and
+  the KAFD metro station each have their own shape, built from reference
+  photos on the building's real outline, in place of a plain block.
+- **Bridges you can drive over.** Flyovers, interchange ramps and metro
+  viaducts are built in 3D: a deck with parapets on piers, with the traffic
+  and the trains up on it. The Wadi Laban Bridge on the Western Ring Road has
+  its two masts and fans of cables.
+- **Metro stations that look like stations.** A station building wears the
+  golden screen and vaulted roof of the Riyadh Metro, with covered footbridges
+  over the road to its entrances; an entrance to an underground station gets
+  a glass pavilion with a sign.
+- **Chain stores in their own colours.** A branch of a chain the app knows
+  (some fifty: restaurants, cafés, supermarkets, fuel stations, banks, shops)
+  wears that chain's colours: its own building painted and banded, a shop
+  front under a coloured band where it shares a building, a canopy with pumps
+  at a fuel station. Colours and shapes only; no logos or names are drawn.
 - **Traffic on the real streets.** Cars, vans and lorries drive the streets:
   they keep to the lanes, drive on the right, obey one-way streets, queue
   behind each other, turn at junctions, disappear into tunnels, and are busier
@@ -50,9 +68,8 @@ the phone: no App Store, no Apple developer account, no Mac.
 - **Roofs with something on them.** A stair head and a water tank on a house,
   rows of cooling plant on a large roof. Made up, like the windows; see below.
 - **The ground in detail**: the satellite photo itself, shown stronger the
-  closer you look, and from the map data bridges and flyovers lying over the
-  roads beneath them, tunnels as a faint trace, metro and railway lines,
-  footpaths, lawns and playing fields.
+  closer you look, and from the map data tunnels as a faint trace, metro and
+  railway lines, footpaths, lawns and playing fields.
 - **Real sunlight.** The model is lit from where the sun actually is at that
   place and time, and every building casts the shadow it casts right now:
   long in the morning and evening, short at noon, none after sunset.
@@ -138,9 +155,42 @@ outlines do not say is made up to look right:
 - Windows: one row for every 3 m of height.
 - Roofs: all flat, with a stair head, a tank or cooling plant placed by chance,
   the same every time for the same building.
-- A tower's special shape is not known, only its outline and height. A
-  building recorded in parts is drawn as its parts, and where the parts do not
-  cover all of it the rest shows as the photo on the ground.
+- A tower's special shape is not known, only its outline and height (the
+  landmarks below are the exception). A building recorded in parts is drawn
+  as its parts, and where the parts do not cover all of it the rest shows as
+  the photo on the ground.
+
+Landmarks. Eight of Riyadh's are modelled by hand, as stacks of thin slabs
+that follow the building's shape: Kingdom Centre, Al Faisaliah Tower, the PIF
+Tower, Burj Rafal, Al Majdoul Tower, the TV Tower, the water tower and the
+KAFD metro station. Position, outline and height are the real ones; the shape
+was worked out from photos on Wikimedia Commons and from what is published
+about each building, and simplified: a model, not a survey. The water tower
+was built from memory, with no photo to check it against. The other tall
+buildings of the city (the towers of the financial district among them)
+remain plain blocks.
+
+Bridges. Which stretches of road and track are on a bridge, and which pass
+over which, is real. How high a bridge is, is not recorded: a road deck is
+taken to be 6.5 m up and a metro viaduct 8.5 m, each level above another
+5.5 m more, with a ramp down to the ground at either end, and a pier every
+30 m. The ground itself is flat in this model, so a bridge over a valley, as
+at Wadi Laban, stands no higher than a flyover. The Wadi Laban Bridge's masts
+and cables are set out from a photo and from its published span of 405 m.
+
+Metro stations. Where a station building and its entrances are, is real. The
+golden screen, the vaulted roof, the footbridges and the pavilions are the
+typical Riyadh Metro look, the same for every station; only the KAFD station
+has its own model. A footbridge runs straight from the station to an entrance
+across the road, which is about right but not surveyed.
+
+Chain stores. Which branch is where comes from the map's places; the colours
+are each chain's own, most of them looked up with
+[Brandfetch](https://brandfetch.com) and a few set from a photo or from
+memory, so one or two may be a shade off. What a branch really looks like is
+not known: every branch of a chain gets the same simple dress, and a chain
+the app does not know stays a plain building. No logo, name or sign of any
+brand is drawn.
 
 Two kinds of outline are left out on purpose: what the data marks as
 underground, and any building a street runs straight through. The second rule
@@ -261,8 +311,11 @@ index.html              the page
 css/app.css             styles
 js/app.js               the app: layout, video, location, search, place details
 js/map.js               the map: styles, markers, following, taps
-js/life.js              the simulated traffic: street network, vehicles, trains
+js/life.js              the simulated traffic: street network, vehicles, trains,
+                        and the bridges they cross
 js/scene.js             the layer that draws the traffic into the 3D scene
+js/landmarks.js         the landmarks modelled by hand, as stacks of slabs
+js/dress.js             metro station footbridges and pavilions, chain stores
 js/sight.js             reading the satellite photo: shadows to heights, trees
 js/services.js          the open data services
 js/lib.js               everything that needs no browser: parsing, distances,
@@ -274,6 +327,7 @@ icons/                  made by tools/make_icons.py
 firebase.json           what Firebase Hosting publishes, and how it is cached
 tools/firebase-deploy.sh  publishes to Firebase, refusing to replace another site
 vendor/maplibre/        MapLibre GL JS 5.24.1 and the right-to-left text add-on
+vendor/pmtiles/         PMTiles 4.5.0, which reads the buildings archive
 tests/                  unit tests, browser test, small local server
 ```
 
@@ -286,7 +340,7 @@ node tests/serve.mjs
 Unit tests, with Node 22 or newer:
 
 ```bash
-node --test tests/lib.test.mjs
+npm test
 ```
 
 Browser test, which needs Playwright with Chromium installed:
@@ -297,8 +351,10 @@ node tests/e2e.mjs
 
 The browser test needs no internet. The street map is replayed from
 `tests/fixtures/map.har`, a recording of the real OpenFreeMap service around
-the test route in Riyadh; the other services are answered by stand-ins in the
-test file. To refresh the recording from the live service:
+the test route in Riyadh, and the buildings from `tests/fixtures/buildings.json`,
+the pieces of Overture's archive that route needs; the other services are
+answered by stand-ins in the test file. To refresh both recordings from the
+live services:
 
 ```bash
 RECORD=1 node tests/e2e.mjs
@@ -313,5 +369,8 @@ phones drop their saved copy.
 
 - MapLibre GL JS: BSD 3-Clause (`vendor/maplibre/LICENSE.txt`).
 - mapbox-gl-rtl-text: BSD 2-Clause, with ICU (`vendor/maplibre/LICENSE-rtl-text.md`).
+- PMTiles: BSD 3-Clause (`vendor/pmtiles/LICENSE.txt`).
 - `tests/fixtures/map.har` holds map data © OpenStreetMap contributors (ODbL),
   as served by OpenFreeMap (© OpenMapTiles).
+- `tests/fixtures/buildings.json` holds building outlines from Overture Maps
+  (© OpenStreetMap contributors and Overture Maps Foundation, ODbL).

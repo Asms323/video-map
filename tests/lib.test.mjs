@@ -696,7 +696,12 @@ test('cityModelStyle draws the city as a white model on its real ground', () => 
   const bridgeWidth = JSON.stringify(style.layers[at('city-bridge')].paint['line-width']);
   assert.ok(bridgeWidth.includes('["motorway","trunk"],14') && bridgeWidth.includes('["minor","busway"],7'), bridgeWidth);
   // Also on the ground: rail with sleepers, footpaths, lawns and playing fields.
-  for (const id of ['city-grass', 'city-pitch', 'city-paths', 'city-rail', 'city-rail-ties', 'city-bridge-marks']) assert.ok(at(id) > 0, id);
+  for (const id of ['city-grass', 'city-pitch', 'city-paths', 'city-rail', 'city-rail-ties', 'city-rail-shade']) assert.ok(at(id) > 0, id);
+  // From close by the app builds bridges and viaducts in 3D: their flat drawing fades out as that takes over, and the shade under them stays.
+  for (const id of ['city-bridge', 'city-bridge-edge']) assert.deepEqual(style.layers[at(id)].paint['line-opacity'], ['interpolate', ['linear'], ['zoom'], 15.1, 1, 15.6, 0], id);
+  assert.equal(style.layers[at('city-bridge-shade')].paint['line-opacity'], 0.28);
+  assert.deepEqual(style.layers[at('city-rail')].paint['line-opacity'], ['interpolate', ['linear'], ['zoom'], 15.1, 1, 15.6, ['case', ['==', ['get', 'brunnel'], 'bridge'], 0, 1]]);
+  assert.equal(at('city-bridge-marks'), -1, 'the lines on a bridge are painted on the deck itself');
   assert.ok(at('city-grass') < at('city-road-service-edge') && at('city-rail') < at('city-rail-ties'));
   assert.match(style.sources.imagery.attribution, /Esri/);
   assert.equal(style.sources[VECTOR_SOURCE], BASE_STYLE.sources[VECTOR_SOURCE]);
@@ -865,9 +870,12 @@ test('wall pictures keep a floor about 3 m tall at every zoom', () => {
   assert.equal(levels[0].floor, 3);
   for (const kind of Object.values(WALL_KINDS)) {
     assert.match(kind.colour, /^#[0-9a-f]{6}$/);
-    assert.ok(kind.across > 0 && kind.across < 1 && kind.up > 0 && kind.up < 1);
+    // A window in the wall, or (a station's screen) a lattice over all of it.
+    assert.ok(kind.lattice ? kind.across === 1 && kind.up === 1 : kind.across > 0 && kind.across < 1 && kind.up > 0 && kind.up < 1);
   }
   assert.ok(WALL_KINDS.tall.across > WALL_KINDS.low.across, 'towers are mostly glass');
+  assert.deepEqual(Object.keys(WALL_KINDS), ['low', 'tall', 'station']);
+  assert.deepEqual(wallImage('vm-wall:2:station'), { detail: 2, kind: 'station' });
 });
 
 test('wallImage reads the name of a wall picture', () => {
@@ -925,7 +933,7 @@ test('groundWidth is how much ground a line of the street map takes up', () => {
 
 // ── Buildings ────────────────────────────────────────────────────────────
 
-import { BUILDING_SOURCE, BUILDING_STORE, HEIGHT_SPREAD, USUAL_HEIGHT, USUAL_HEIGHTS, buildingArchives, buildingFootprints, buildingHeight, buildingsOnStreets } from '../js/lib.js';
+import { BUILDING_SOURCE, BUILDING_STORE, HEIGHT_SPREAD, STATION_HEIGHT, USUAL_HEIGHT, USUAL_HEIGHTS, buildingArchives, buildingFootprints, buildingHeight, buildingsOnStreets } from '../js/lib.js';
 
 /** A square outline, `size` metres wide, with its south-west corner `east` and `north` metres from 46.67°E 24.7°N. */
 const SQUEEZE = 111195 * Math.cos((24.7 * Math.PI) / 180);
@@ -966,6 +974,9 @@ test('buildingHeight reads a height from the record, or falls back on the usual 
   assert.ok(Math.min(...HEIGHT_SPREAD) > 0.8 && Math.max(...HEIGHT_SPREAD) < 1.5 && HEIGHT_SPREAD.includes(1));
   assert.equal(buildingHeight({ height: 20 }, 4).height, 20, 'a recorded height is left as it is');
   assert.equal(buildingHeight({ subtype: 'residential' }, 9007199254740991).known, false, 'a very large number is a number too');
+  // A station is a hall over its platforms, whichever number it has.
+  assert.deepEqual(buildingHeight({ subtype: 'transportation', class: 'train_station' }, 4), { height: STATION_HEIGHT, base: 0, known: false });
+  assert.deepEqual(buildingHeight({ subtype: 'transportation', class: 'train_station', height: 20 }, 4), { height: 20, base: 0, known: true });
 });
 
 test('buildingFootprints takes the buildings above ground, with the heights read from the photo', () => {
@@ -982,6 +993,8 @@ test('buildingFootprints takes the buildings above ground, with the heights read
   const box = { west: at(-10, 0)[0], east: at(1000, 0)[0], south: at(0, -10)[1], north: at(0, 100)[1] };
   const estimates = new Map([[10, 14.5], [11, 55], [17, USUAL_HEIGHTS.residential * HEIGHT_SPREAD[2] + 0.5]]);
   const found = buildingFootprints(features, box, estimates);
+  assert.ok(found.every((building) => building.kind === undefined), 'none of them a station');
+  assert.equal(buildingFootprints([feature(30, { class: 'train_station' }, square(0, 0, 20))], box)[0].kind, 'station');
   assert.deepEqual(
     found.map((building) => [building.id, Math.round(building.height * 100) / 100, building.base, building.known, building.polygons.length]),
     [
@@ -1030,11 +1043,17 @@ test('cityModelStyle draws one building per outline when it is given the buildin
   assert.equal(style.sources[BUILDING_SOURCE].url, `pmtiles://${archive}`);
   assert.match(style.sources[BUILDING_SOURCE].attribution, /Overture Maps Foundation/);
   const drawn = style.layers.filter((item) => item.source === BUILDING_SOURCE).map((item) => `${item.id}:${item['source-layer']}`);
-  assert.deepEqual(drawn, ['city-contact:building', 'city-buildings:building', 'city-towers:building', 'city-painted:building', 'city-parts:building_part', 'city-parts-painted:building_part', 'city-roofs:building', 'city-parts-roofs:building_part']);
+  assert.deepEqual(drawn, ['city-contact:building', 'city-buildings:building', 'city-towers:building', 'city-painted:building', 'city-stations:building', 'city-parts:building_part', 'city-parts-painted:building_part', 'city-roofs:building', 'city-parts-roofs:building_part']);
   assert.ok(ids.indexOf('city-shadows') < ids.indexOf('city-buildings') && ids.indexOf('city-parts-roofs') < ids.indexOf('poi_r1'));
+  // A metro station is drawn in its own dress, a screen of pale gold, 12 m tall, and by no other layer.
+  const station = layer('city-stations');
+  assert.deepEqual(station.paint['fill-extrusion-pattern'].slice(0, 5), ['step', ['zoom'], 'vm-wall:0:station', 16, 'vm-wall:1:station']);
+  assert.ok(JSON.stringify(station.filter).includes('["==",["get","class"],"train_station"]'));
+  for (const id of ['city-buildings', 'city-towers', 'city-painted']) assert.ok(JSON.stringify(layer(id).filter).includes('["!",["==",["get","class"],"train_station"]]'), id);
+  assert.ok(JSON.stringify(station.paint['fill-extrusion-height']).includes('["case",["==",["get","class"],"train_station"],12,'));
 
   // What is underground is left out everywhere, and a building with parts is drawn as its parts.
-  for (const id of ['city-contact', 'city-buildings', 'city-towers', 'city-painted', 'city-parts', 'city-parts-painted', 'city-roofs', 'city-parts-roofs']) {
+  for (const id of ['city-contact', 'city-buildings', 'city-towers', 'city-painted', 'city-stations', 'city-parts', 'city-parts-painted', 'city-roofs', 'city-parts-roofs']) {
     assert.ok(JSON.stringify(layer(id).filter).includes('["!=",["get","is_underground"],true]'), id);
   }
   for (const id of ['city-buildings', 'city-towers', 'city-painted', 'city-roofs']) assert.ok(JSON.stringify(layer(id).filter).includes('["!=",["get","has_parts"],true]'), id);

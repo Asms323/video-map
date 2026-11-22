@@ -32,7 +32,9 @@ import {
   wallImage,
   withOverlays,
 } from './lib.js';
-import { Mesh, Traffic, buildNetwork, drawRoofs, drawStreet, drawTraffic, drawTrees, lightFrom, trafficLevel } from './life.js';
+import { brandOf, stationExtras, storeExtras } from './dress.js';
+import { STAYED_BRIDGES, landmarkShades, replacedByLandmarks } from './landmarks.js';
+import { Mesh, Traffic, buildNetwork, drawBridges, drawRoofs, drawStreet, drawTraffic, drawTrees, lightFrom, stayedHere, streetDirection, trafficLevel } from './life.js';
 import { SceneLayer } from './scene.js';
 import { buildingArchive, loadStyle, photoDate, photoTile } from './services.js';
 import { footprintGrid, heightsFromShadows, passSuns, pavedGrid, photoGrid, tilesFor, treesInPhoto } from './sight.js';
@@ -60,6 +62,7 @@ const cameraOf = (type) => (type === 'city' ? CITY_CAMERA : FLAT_CAMERA);
 // Shadows are worked out for what is on screen and a margin around it, and
 // again once the view leaves that area, new map tiles arrive or the sun moves on.
 const SHADE_SOURCE = 'city-shade';
+const EXTRAS_SOURCE = 'city-extras';
 const SHADE_MIN_ZOOM = 15;
 const SHADE_MARGIN_METERS = 250;
 const SHADE_REACH_METERS = 1500; // never further than this from the middle of the view
@@ -84,9 +87,12 @@ const LIFE_LINES = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertia
 const ARCHIVE_WAIT_MS = 2500;
 const ARCHIVE_FAILURES = 3;
 // The layers that draw buildings from the archive, and the streets no building may stand on.
-const BUILDING_LAYERS = ['city-buildings', 'city-towers', 'city-painted', 'city-roofs', 'city-contact'];
+const BUILDING_LAYERS = ['city-buildings', 'city-towers', 'city-painted', 'city-stations', 'city-roofs', 'city-contact'];
+const PART_LAYERS = ['city-parts', 'city-parts-painted', 'city-parts-roofs'];
 const THROUGH_STREETS = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor']);
 const ON_STREET_METERS = 15;
+// The kinds of place that make a building a shared one: with several of them in it, it is no single chain's.
+const SHOP_CLASSES = new Set(['restaurant', 'fast_food', 'cafe', 'shop', 'grocery', 'clothing_store', 'bank', 'pharmacy', 'bakery', 'car', 'lodging', 'cinema', 'office', 'bar', 'ice_cream', 'beer']);
 
 // The satellite photo is read for trees and for building heights around the
 // view, at the zoom level the map itself shows it at, so little is downloaded twice.
@@ -185,7 +191,19 @@ function drawWall(kind, layout) {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = kind.colour;
   ctx.fillRect(0, 0, width, height);
-  if (layout) {
+  if (layout && kind.lattice) {
+    // A screen pierced in triangles: the two diagonals of every bay, and a line where the bays meet.
+    ctx.strokeStyle = kind.glass;
+    ctx.lineWidth = Math.max(1, width / 9);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(width, height);
+    ctx.moveTo(width, 0);
+    ctx.lineTo(0, height);
+    ctx.moveTo(0, height - 0.5);
+    ctx.lineTo(width, height - 0.5);
+    ctx.stroke();
+  } else if (layout) {
     // Glass in the middle of the bay, with wall left at the sides and above and below.
     const paneWidth = Math.round(width * kind.across);
     const paneHeight = Math.round(height * kind.up);
@@ -257,8 +275,11 @@ export class MapView {
     this.archiveTiles = 0;
     this.onStreets = new Set(); // buildings a street runs through, which are not drawn
     this.onStreetsFor = null; // the tiles they were last looked for in
+    this.replaced = { building: new Set(), parts: new Set() }; // the map's own blocks where a landmark model stands
+    this.dressed = new Set(); // the buildings drawn in a chain's colours instead
     this.buildingFilters = new Map(); // layer → its filter as the style gave it
     this.archiveRead = null; // the archive's buildings as last read from the map, kept until new tiles arrive
+    this.extrasMade = null; // what the footbridges, pavilions and store fronts were last built for
     this.lifeOn = true;
     this.lifeMade = null; // what the street network in use was made for
     this.lifeAt = 0;
@@ -277,6 +298,9 @@ export class MapView {
     this.treesLit = null;
     this.streetMesh = new Mesh(); // parked cars and bus shelters
     this.streetMade = null;
+    this.network = null; // the streets and tracks around the view, as last read from the map
+    this.bridgeMesh = new Mesh(); // the decks and piers of bridges and viaducts
+    this.bridgesMade = 0;
     this.roofMesh = new Mesh(); // what stands on the roofs
     this.roofs = []; // the buildings the shadows were last laid for
     this.roofsMade = null;
@@ -321,8 +345,10 @@ export class MapView {
       this.sun = null;
       this.shade = null;
       this.lifeMade = null;
+      this.network = null;
       this.raiseBuildings(this.heights.keys()); // a new style starts without the heights read from the photo
       this.buildingFilters.clear();
+      this.extrasMade = null;
       this.clearStreets(true);
       this.syncLife();
       this.followSun();
@@ -390,6 +416,9 @@ export class MapView {
       // Another set of buildings: what was read from the photo belonged to the old ones.
       this.buildings = buildings;
       this.onStreets.clear();
+      this.replaced.building.clear();
+      this.replaced.parts.clear();
+      this.dressed = new Set();
       this.onStreetsFor = null;
       this.heights.clear();
       this.photoMade = null;
@@ -513,10 +542,11 @@ export class MapView {
   }
 
   /**
-   * Leave out the buildings a street runs straight through: mostly stations
-   * under the street, which the data does not always say are underground.
-   * Looked for whenever new map tiles have arrived. always: put the filters
-   * on the layers even if nothing new was found (a new style has none).
+   * Leave out the map's own buildings that should not be drawn: those a street
+   * runs straight through (mostly stations under the street, which the data
+   * does not always say are underground), and those a landmark model stands
+   * in for. Looked for whenever new map tiles have arrived. always: put the
+   * filters on the layers even if nothing new was found (a new style has none).
    */
   clearStreets(always = false) {
     const map = this.map;
@@ -525,7 +555,8 @@ export class MapView {
     if (this.onStreetsFor !== this.tilesLoaded) {
       try {
         const everywhere = { west: -180, south: -90, east: 180, north: 90 };
-        const buildings = buildingFootprints(this.archiveBuildings().building, everywhere, null, this.onStreets);
+        const { building, parts } = this.archiveBuildings();
+        const buildings = buildingFootprints(building, everywhere, null, this.onStreets);
         const streets = [];
         for (const feature of map.querySourceFeatures(VECTOR_SOURCE, { sourceLayer: 'transportation' })) {
           const properties = feature.properties ?? {};
@@ -536,21 +567,39 @@ export class MapView {
           this.onStreets.add(id);
           grown = true;
         }
+        const outlines = (list) => list.flatMap((one) => one.polygons.map((polygon) => ({ id: one.id, ring: polygon[0] })));
+        for (const [kind, list] of [['building', buildings], ['parts', buildingFootprints(parts, everywhere, null)]]) {
+          for (const id of replacedByLandmarks(outlines(list))) {
+            if (this.replaced[kind].has(id)) continue;
+            this.replaced[kind].add(id);
+            grown = true;
+          }
+        }
         this.onStreetsFor = this.tilesLoaded;
       } catch {
         return; // the style is on its way; looked for again with the next tiles
       }
     }
-    if ((!grown && !always) || this.onStreets.size === 0) return;
-    this.whenStyled(() => {
-      const hidden = ['!', ['in', ['id'], ['literal', [...this.onStreets]]]];
-      for (const id of BUILDING_LAYERS) {
-        if (!map.getLayer(id)) continue;
-        if (!this.buildingFilters.has(id)) this.buildingFilters.set(id, map.getFilter(id) ?? true);
-        map.setFilter(id, ['all', this.buildingFilters.get(id), hidden]);
-      }
-    });
+    if (!grown && !always) return;
+    this.leaveOutBuildings();
     if (grown) this.heightsRead += 1; // their shadows and roof furniture go too
+  }
+
+  /** Tell the map which of its own buildings not to draw: those on streets, under landmarks, or dressed as stores. */
+  leaveOutBuildings() {
+    const map = this.map;
+    this.whenStyled(() => {
+      const leaveOut = (layers, ids) => {
+        for (const id of layers) {
+          if (!map.getLayer(id)) continue;
+          if (!this.buildingFilters.has(id)) this.buildingFilters.set(id, map.getFilter(id) ?? true);
+          const own = this.buildingFilters.get(id);
+          map.setFilter(id, ids.length > 0 ? ['all', own, ['!', ['in', ['id'], ['literal', ids]]]] : own);
+        }
+      };
+      leaveOut(BUILDING_LAYERS, [...this.onStreets, ...this.replaced.building, ...this.dressed]);
+      leaveOut(PART_LAYERS, [...this.replaced.parts]);
+    });
   }
 
   /** The footprints of the buildings that reach into a box, from whichever source the style on screen draws them from. */
@@ -559,7 +608,10 @@ export class MapView {
     if (this.buildings) {
       const { building, parts } = this.archiveBuildings();
       // (The heights read from the photo are for whole buildings; the parts of one carry their own.)
-      return [...buildingFootprints(building, box, estimates, this.onStreets), ...buildingFootprints(parts, box, null)];
+      // A block that a landmark model stands in for still throws its shadow, but gets no roof furniture.
+      const whole = buildingFootprints(building, box, estimates, this.onStreets).map((one) => (this.replaced.building.has(one.id) || this.dressed.has(one.id) ? { ...one, replaced: true } : one));
+      const pieces = buildingFootprints(parts, box, null).map((one) => (this.replaced.parts.has(one.id) ? { ...one, replaced: true } : one));
+      return [...whole, ...pieces];
     }
     return footprintsIn(map.querySourceFeatures(VECTOR_SOURCE, { sourceLayer: 'building' }), box).map((building) => ({
       ...building,
@@ -568,9 +620,84 @@ export class MapView {
     }));
   }
 
+  /**
+   * Build what stands around the map's own buildings: the footbridges and
+   * entrance pavilions of metro stations, and the fronts of chain stores in
+   * their house colours. Done again when new map tiles arrive.
+   */
+  layExtras() {
+    const map = this.map;
+    let source = null;
+    this.whenStyled(() => {
+      source = map.getSource(EXTRAS_SOURCE);
+    });
+    if (this.type !== 'city' || !source) return;
+    const made = this.extrasMade;
+    if (made && made.tiles === this.tilesLoaded && made.network === this.network && made.heights === this.heightsRead) return;
+    let features = [];
+    let counts = { stations: 0, entrances: 0, stores: 0 };
+    let dressed = new Set();
+    try {
+      const entrances = new Map();
+      const stores = new Map();
+      const others = [];
+      for (const feature of map.querySourceFeatures(VECTOR_SOURCE, { sourceLayer: 'poi' })) {
+        const properties = feature.properties ?? {};
+        if (feature.geometry?.type !== 'Point') continue;
+        const [lng, lat] = feature.geometry.coordinates;
+        const key = `${lng.toFixed(6)},${lat.toFixed(6)}`;
+        if (properties.subclass === 'subway_entrance') {
+          entrances.set(key, [lng, lat]);
+          continue;
+        }
+        const brand = brandOf(properties);
+        if (brand) stores.set(`${key}:${brand.id}`, { at: [lng, lat], brand });
+        else if (SHOP_CLASSES.has(properties.class)) others.push([lng, lat]);
+      }
+      // The station buildings above ground, once each (a building on a tile's edge comes with both tiles).
+      const stations = new Map();
+      let buildings = [];
+      if (this.buildings) {
+        const everywhere = { west: -180, south: -90, east: 180, north: 90 };
+        buildings = buildingFootprints(this.archiveBuildings().building, everywhere, this.photoOn ? this.heights : null, this.onStreets);
+        for (const building of buildings) {
+          // (A station with a model of its own, as at KAFD, keeps to that: none of the usual footbridges.)
+          if (building.kind !== 'station' || this.replaced.building.has(building.id)) continue;
+          const outline = building.polygons.reduce((largest, polygon) => (polygon[0].length > largest.length ? polygon[0] : largest), []);
+          if (!stations.has(building.id) || outline.length > stations.get(building.id).length) stations.set(building.id, outline);
+        }
+      }
+      // A pavilion, a kiosk or a canopy faces the street it stands in.
+      const origin = this.scene.origin;
+      const squeeze = origin ? Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE : 1;
+      const facing = ([lng, lat]) => (this.network && origin ? streetDirection(this.network, (lng - origin.lng) * squeeze, (lat - origin.lat) * METERS_PER_DEGREE) : null);
+      features = stationExtras([...stations.values()], [...entrances.values()], facing);
+      if (this.buildings) {
+        // (With only the street map's welded blocks to go by, no building can be told to be one store's.)
+        const shops = storeExtras([...stores.values()], buildings.filter((one) => !this.replaced.building.has(one.id)), facing, others);
+        features = features.concat(shops.features);
+        dressed = shops.dressed;
+      }
+      counts = { stations: stations.size, entrances: entrances.size, stores: stores.size };
+    } catch {
+      return; // the style is on its way; built again with the next tiles
+    }
+    // More tiles seldom bring anything new here: the map is only handed what differs from what it has.
+    const drawn = JSON.stringify(features);
+    if (made?.drawn !== drawn) source.setData({ type: 'FeatureCollection', features });
+    const changed = dressed.size !== this.dressed.size || [...dressed].some((id) => !this.dressed.has(id));
+    this.dressed = dressed;
+    this.extrasMade = { tiles: this.tilesLoaded, network: this.network, heights: this.heightsRead + (changed ? 1 : 0), slabs: features.length, dressed: dressed.size, drawn, ...counts };
+    if (changed) {
+      this.leaveOutBuildings();
+      this.heightsRead += 1; // the roofs are furnished again, without theirs
+      this.layShade();
+    }
+  }
+
   /** Which buildings the city is drawn with, for anyone who wants to know. */
   buildingCounts() {
-    return { source: this.buildings ? 'overture' : 'streets', archive: this.buildings, tiles: this.archiveTiles, raised: this.heights.size, roofs: this.roofsMade, onStreets: this.onStreets.size };
+    return { source: this.buildings ? 'overture' : 'streets', archive: this.buildings, tiles: this.archiveTiles, raised: this.heights.size, roofs: this.roofsMade, onStreets: this.onStreets.size, replaced: this.replaced.building.size + this.replaced.parts.size, extras: this.extrasMade ? { slabs: this.extrasMade.slabs, stations: this.extrasMade.stations, entrances: this.extrasMade.entrances, stores: this.extrasMade.stores, dressed: this.extrasMade.dressed } : null };
   }
 
   // ── Sun and shadows (3D city) ───────────────────────────────────────────
@@ -598,6 +725,7 @@ export class MapView {
       if (this.trees.length > 0) this.layTrees();
       this.layStreet();
       this.layRoofs();
+      this.layBridges();
       this.treesLit = this.sun;
     }
     this.queueShade(false);
@@ -624,6 +752,8 @@ export class MapView {
       this.layShade();
       await breathe();
       this.layLife();
+      await breathe();
+      this.layExtras();
       await breathe();
       this.layPhoto();
     }, SHADE_PAUSE_MS);
@@ -680,7 +810,8 @@ export class MapView {
       return;
     }
     const metersPerPixel = (EARTH_AROUND_METERS * Math.cos((centre.lat * Math.PI) / 180)) / (512 * 2 ** zoom);
-    source.setData(reach ? buildingShadows(buildings, reach, SHADE_SMALLEST_PX * metersPerPixel) : EMPTY);
+    // (Landmarks the map has no building for throw a shadow too.)
+    source.setData(reach ? buildingShadows([...buildings, ...landmarkShades()], reach, SHADE_SMALLEST_PX * metersPerPixel) : EMPTY);
     this.shade = { reach, box, zoom, tiles: this.tilesLoaded, heights: this.heightsRead };
     // The same buildings get their roofs furnished.
     this.roofs = this.buildings ? buildings : [];
@@ -702,12 +833,13 @@ export class MapView {
     const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
     const local = [];
     for (const building of this.roofs) {
-      if (building.base > 0) continue; // a part that starts above the ground: a bridge between towers, a canopy
+      if (building.base > 0 || building.replaced) continue; // a part that starts above the ground (a bridge between towers, a canopy), or a landmark with a roof of its own
       for (const polygon of building.polygons) {
         if (polygon.length > 1) continue; // a courtyard in the middle: leave its roof bare
         local.push({
           ring: polygon[0].map(([lng, lat]) => [(lng - origin.lng) * squeeze, (lat - origin.lat) * METERS_PER_DEGREE]),
           top: building.height + ROOF_CAP_METERS,
+          vault: building.kind === 'station',
         });
       }
     }
@@ -883,6 +1015,8 @@ export class MapView {
   /** Turn the moving traffic on or off. It is only ever drawn in the 3D city. */
   setLife(on) {
     this.lifeOn = Boolean(on);
+    if (!this.lifeOn) this.traffic = new Traffic({ seed: Date.now() % 2147483647 }); // a fresh start when it is switched on again
+    this.lifeMade = null; // read the streets again, with or without traffic on them
     this.syncLife();
     this.layStreet();
     this.queueShade(false);
@@ -903,10 +1037,13 @@ export class MapView {
     });
   }
 
-  /** Read the streets and tracks around the view from the map, for the traffic to run on. */
+  /**
+   * Read the streets and tracks around the view from the map: for the bridges
+   * to be built on, and for the traffic to run on.
+   */
   layLife() {
     const map = this.map;
-    if (!this.lifeOn || this.type !== 'city' || map.getZoom() < LIFE_MIN_ZOOM) return;
+    if (this.type !== 'city' || map.getZoom() < LIFE_MIN_ZOOM) return;
     const bounds = map.getBounds();
     const view = { west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() };
     const made = this.lifeMade;
@@ -956,6 +1093,7 @@ export class MapView {
             oneway: properties.oneway,
             tunnel: properties.brunnel === 'tunnel',
             bridge: properties.brunnel === 'bridge',
+            layer: properties.layer,
             service: properties.service,
             width: groundWidth(properties.class),
             coordinates,
@@ -979,17 +1117,35 @@ export class MapView {
     const shift = before
       ? [(before.lng - origin.lng) * squeeze * METERS_PER_DEGREE, (before.lat - origin.lat) * METERS_PER_DEGREE]
       : [0, 0];
-    this.traffic.level = trafficLevel(new Date(), centre.lng);
-    this.traffic.view = null; // set again, from the new origin, before the next step
-    this.lifeView = null;
-    this.traffic.setNetwork(buildNetwork(lines, origin, { busStops: [...busStops.values()], stations: [...stations.values()] }), shift, origin);
+    this.network = buildNetwork(lines, origin, { busStops: [...busStops.values()], stations: [...stations.values()] });
+    if (this.lifeOn) {
+      this.traffic.level = trafficLevel(new Date(), centre.lng);
+      this.traffic.view = null; // set again, from the new origin, before the next step
+      this.lifeView = null;
+      this.traffic.setNetwork(this.network, shift, origin);
+    }
     this.scene.setOrigin(origin);
     this.lifeMade = { box, tiles: this.tilesLoaded, stops: busStops.size, stations: stations.size };
     // Everything that stands still is measured from the same spot.
     this.layTrees();
     this.layRoofs();
+    this.layBridges();
     this.layStreet();
     map.triggerRepaint();
+  }
+
+  /** Build the bridges and viaducts afresh: their decks, parapets and piers. */
+  layBridges() {
+    if (!this.scene.origin || this.type !== 'city' || !this.network) {
+      if (this.bridgeMesh.count > 0) {
+        this.bridgeMesh.clear();
+        this.scene.set('bridges', this.bridgeMesh);
+      }
+      this.bridgesMade = 0;
+      return;
+    }
+    this.bridgesMade = drawBridges(this.bridgeMesh, this.network, lightFrom(this.sun), STAYED_BRIDGES);
+    this.scene.set('bridges', this.bridgeMesh);
   }
 
   /** Draw the parked cars and the bus shelters afresh, for the streets the traffic runs on. */
@@ -1054,6 +1210,8 @@ export class MapView {
       busKm: this.traffic.network.busKm ?? 0,
       parked: this.streetMade?.parked ?? 0,
       shelters: this.streetMade?.shelters ?? 0,
+      bridges: this.bridgesMade,
+      stayed: this.bridgesMade > 0 ? stayedHere(this.network, STAYED_BRIDGES).length : 0,
     };
   }
 

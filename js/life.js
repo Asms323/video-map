@@ -10,6 +10,33 @@ const METERS_PER_DEGREE = 111320;
 const LANE_METERS = 3.4;
 const NARROW_LANE_METERS = 2; // on a residential street, where cars are parked along both sides
 
+// Bridges. The map says which stretches are on a bridge and on which level
+// (1 over the ground, 2 over another bridge); how high that is, it does not
+// say. A road deck is taken to be 6.5 m up and a railway viaduct 8.5 m, each
+// level above the first another 5.5 m, and where a bridge meets the ground it
+// comes down in a ramp.
+const ROAD_DECK_METERS = 6.5;
+const RAIL_DECK_METERS = 8.5;
+const DECK_ABOVE_DECK_METERS = 5.5;
+const BRIDGE_RAMP_METERS = 90;
+const DECK_THICK_METERS = 1.4;
+const PARAPET_METERS = 0.9;
+const RAIL_DECK_HALF_METERS = 2.7;
+const PIER_EVERY_METERS = 30;
+
+/** How high above the ground a way runs at a distance along it, in metres: 0 except on a bridge. */
+export function heightAlong(way, distance) {
+  if (!(way.deck > 0)) return 0;
+  const run = Math.min(BRIDGE_RAMP_METERS, way.length * 0.45);
+  const ease = (t) => {
+    const k = Math.min(Math.max(t, 0), 1);
+    return k * k * (3 - 2 * k);
+  };
+  const fromStart = way.rise[0] + (way.deck - way.rise[0]) * ease(distance / run);
+  const fromEnd = way.rise[1] + (way.deck - way.rise[1]) * ease((way.length - distance) / run);
+  return Math.min(fromStart, fromEnd);
+}
+
 /** How many lanes a way has for one direction of traffic. */
 const lanesOf = (way) => (way.oneway === 0 ? Math.max(way.lanes - 1, 1) : way.lanes);
 
@@ -146,6 +173,22 @@ const SAME_TRAIN_METERS = 600; // two trains on one track are never this close: 
 
 const endKey = (x, y) => `${Math.round(x)},${Math.round(y)}`;
 
+/**
+ * Which way the nearest street runs at a point: [east, north], or null if no
+ * street of the network lies within `reach` metres. Tracks and tunnels do not count.
+ */
+export function streetDirection(network, x, y, reach = 60) {
+  let best = null;
+  for (const way of network.ways) {
+    if (way.rail || way.hidden || x < way.box[0] - reach || x > way.box[2] + reach || y < way.box[1] - reach || y > way.box[3] + reach) continue;
+    const found = nearestOn(way, x, y);
+    if (found.distance <= reach && (!best || found.distance < best.distance)) best = { way, ...found };
+  }
+  if (!best) return null;
+  const there = pointAlong(best.way, best.along);
+  return [there[2], there[3]];
+}
+
 /** Where on a way is nearest to a point: { along, distance }, both in metres. */
 function nearestOn(way, x, y) {
   const { xy, along } = way;
@@ -230,8 +273,8 @@ function cutAtJunctions(drafts) {
           const list = grid.get((cellX + 32768) * 65536 + (cellY + 32768));
           for (let i = 0; list && i < list.length; i += 2) {
             const other = drafts[list[i]];
-            // A street that ends above a tunnel does not join it.
-            if (list[i] === index || other.rail !== draft.rail || other.hidden !== draft.hidden) continue;
+            // A street that ends above a tunnel does not join it, nor one that ends under a bridge.
+            if (list[i] === index || other.rail !== draft.rail || other.level !== draft.level) continue;
             const k = list[i + 1];
             const x0 = other.xy[k * 2 - 2];
             const y0 = other.xy[k * 2 - 1];
@@ -306,14 +349,15 @@ function piecesOf(draft) {
 /**
  * Turn map lines into ways that can be driven.
  *
- * lines: [{ class, oneway (1, -1 or 0), tunnel, bridge, service, width (metres, as drawn), coordinates: [[lng, lat], …] }]
+ * lines: [{ class, oneway (1, -1 or 0), tunnel, bridge, layer, service, width (metres, as drawn), coordinates: [[lng, lat], …] }]
  * origin: { lng, lat }
  * busStops, stations: [[lng, lat], …], the stops and stations on the map
  * Returns { ways, joins, roadKm, railKm, busKm }. A way runs from one junction
  * to the next. Each knows the stops along it (stops: [{ at: metres along,
  * side: 1 for traffic going forward, -1 for the other way, 0 for both,
  * kerb: 1 if it stands on the right of the way, -1 on the left }]) and
- * whether buses use it (bus).
+ * whether buses use it (bus). A way on a bridge knows how high its deck is
+ * (deck, metres) and how high it is where it starts and where it ends (rise).
  */
 export function buildNetwork(lines, origin, { busStops = [], stations = [] } = {}) {
   const squeeze = Math.cos((origin.lat * Math.PI) / 180) * METERS_PER_DEGREE;
@@ -335,7 +379,9 @@ export function buildNetwork(lines, origin, { busStops = [], stations = [] } = {
       xy[i * 2] = (coordinates[i][0] - origin.lng) * squeeze;
       xy[i * 2 + 1] = (coordinates[i][1] - origin.lat) * METERS_PER_DEGREE;
     }
-    drafts.push({ line, rail, road, xy, hidden: Boolean(line.tunnel), level: line.tunnel ? -1 : line.bridge ? 1 : 0, cuts: [] });
+    // Its level: 0 on the ground, 1 or more on a bridge, below 0 in a tunnel.
+    const storey = Math.max(Math.abs(Math.round(Number(line.layer) || 0)), 1);
+    drafts.push({ line, rail, road, xy, hidden: Boolean(line.tunnel), level: line.tunnel ? -storey : line.bridge ? storey : 0, cuts: [] });
   }
   cutAtJunctions(drafts);
 
@@ -394,6 +440,8 @@ export function buildNetwork(lines, origin, { busStops = [], stations = [] } = {
         class: line.class,
         oneway: rail ? 0 : Number(line.oneway) || 0,
         hidden: draft.hidden,
+        deck: draft.level > 0 ? (rail ? RAIL_DECK_METERS : ROAD_DECK_METERS) + (draft.level - 1) * DECK_ABOVE_DECK_METERS : 0, // how high its bridge carries it
+        rise: null, // on a bridge: how high it is at its start and at its end
         lanes: rail ? 1 : road.lanes,
         width: Number(line.width) > 0 ? Number(line.width) : rail ? 5 : road.lanes * LANE_METERS * (Number(line.oneway) ? 1 : 2),
         speed: rail ? 20 : road.speed,
@@ -413,6 +461,19 @@ export function buildNetwork(lines, origin, { busStops = [], stations = [] } = {
       if (rail) railKm += length / 1000;
       else roadKm += (length / 1000) * (way.oneway === 0 ? 2 : 1);
     }
+  }
+
+  // A bridge comes down to whatever it meets at each end: the ground, or the bridge it carries on as.
+  for (const way of ways) {
+    if (!(way.deck > 0)) continue;
+    way.rise = way.ends.map((key) => {
+      let met = 0;
+      for (const join of joins.get(key)) {
+        const other = ways[join.way];
+        if (other !== way && other.rail === way.rail) met = Math.max(met, other.deck);
+      }
+      return Math.min(way.deck, met);
+    });
   }
 
   // Put each bus stop on the street it stands beside, and each station on every track that passes it.
@@ -437,7 +498,7 @@ export function buildNetwork(lines, origin, { busStops = [], stations = [] } = {
       }
     }
   };
-  place(busStops, (way) => !way.rail && !way.hidden && BUS_ROADS.has(way.class), BUS_STOP_REACH_METERS, true);
+  place(busStops, (way) => !way.rail && !way.hidden && !(way.deck > 0) && BUS_ROADS.has(way.class), BUS_STOP_REACH_METERS, true);
   place(stations, (way) => way.rail, STATION_REACH_METERS, false);
 
   // A bus route carries on along its street between stops: the street straight
@@ -472,7 +533,7 @@ export function buildNetwork(lines, origin, { busStops = [], stations = [] } = {
   for (const way of ways) {
     if (way.bus && !way.hidden) busKm += (way.length / 1000) * (way.oneway === 0 ? 2 : 1);
   }
-  return { ways, joins, roadKm, railKm, busKm };
+  return { origin: { lng: origin.lng, lat: origin.lat }, ways, joins, roadKm, railKm, busKm };
 }
 
 /** The point at a distance along a way, and the direction of the way there: [x, y, east, north]. */
@@ -1084,7 +1145,7 @@ export class Traffic {
     const trail = train.trail;
     const lastAt = trail.length > 0 ? trail[trail.length - 1][2] : -Infinity;
     if (train.travelled - lastAt >= TRAIL_STEP_METERS) {
-      trail.push([x, y, train.travelled, ways[train.way].hidden]);
+      trail.push([x, y, train.travelled, ways[train.way].hidden, heightAlong(ways[train.way], train.s)]);
       const keep = Math.ceil((train.cars * TRAIN_CAR_METERS) / TRAIL_STEP_METERS) + 4;
       if (trail.length > keep) trail.splice(0, trail.length - keep);
     }
@@ -1111,8 +1172,8 @@ export class Traffic {
 
   /**
    * Call back with each vehicle that can be seen: (type, x, y, east, north,
-   * paint, cargo, shown). A train's cars come as 'coach', or as 'under' while
-   * they are in a tunnel.
+   * paint, cargo, shown, lift). A train's cars come as 'coach', or as 'under'
+   * while they are in a tunnel. lift: how high the road is there, on a bridge.
    */
   eachVehicle(draw) {
     const ways = this.network.ways;
@@ -1125,7 +1186,7 @@ export class Traffic {
       const east = spot[2] * sign;
       const north = spot[3] * sign;
       // The lane lies to the right of the middle line, seen the way the vehicle travels.
-      draw(vehicle.type, spot[0] + north * vehicle.offset, spot[1] - east * vehicle.offset, east, north, vehicle.paint, vehicle.cargo, vehicle.shown);
+      draw(vehicle.type, spot[0] + north * vehicle.offset, spot[1] - east * vehicle.offset, east, north, vehicle.paint, vehicle.cargo, vehicle.shown, heightAlong(way, vehicle.s));
     }
     for (const train of this.trains) {
       const trail = train.trail;
@@ -1141,7 +1202,7 @@ export class Traffic {
         const span = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
         const t = (back - a[2]) / (b[2] - a[2] || 1);
         // In a tunnel a car is only a faint mark on the ground above it.
-        draw(b[3] ? 'under' : 'coach', a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, (b[0] - a[0]) / span, (b[1] - a[1]) / span, train.paint, train.stripe, train.shown);
+        draw(b[3] ? 'under' : 'coach', a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, (b[0] - a[0]) / span, (b[1] - a[1]) / span, train.paint, train.stripe, train.shown, a[4] + (b[4] - a[4]) * t);
       }
     }
   }
@@ -1228,9 +1289,10 @@ export function lightFrom(sun) {
 /**
  * Add one vehicle to a mesh: its boxes, and the shade it throws on the road.
  * (x, y) is its middle, (east, north) the way it points. reach: what
- * shadowReach() gives, or null. scale: 1 is life size.
+ * shadowReach() gives, or null. scale: 1 is life size. lift: how high the
+ * road is under it, on a bridge.
  */
-export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, light, reach, scale = 1) {
+export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, light, reach, scale = 1, lift = 0) {
   const shape = VEHICLES[type];
   const length = shape.length * scale;
   const halfLength = length / 2;
@@ -1252,7 +1314,7 @@ export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, 
     const pull = Math.min(reach.factor, 2) * 1.2 * scale;
     const sx = x + Math.sin(direction) * pull;
     const sy = y + Math.cos(direction) * pull;
-    const corner = (along, across) => [sx + east * along + rightEast * across, sy + north * along + rightNorth * across, 0.06];
+    const corner = (along, across) => [sx + east * along + rightEast * across, sy + north * along + rightNorth * across, lift + 0.06];
     mesh.face(corner(-halfLength, -halfWidth), corner(halfLength, -halfWidth), corner(halfLength, halfWidth), corner(-halfLength, halfWidth), 16, 20, 32, 0.3 * shown);
   }
 
@@ -1260,8 +1322,8 @@ export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, 
     const rear = -halfLength + length * from;
     const front = -halfLength + length * to;
     const side = halfWidth * share;
-    const low = bottom * scale;
-    const high = top * scale;
+    const low = lift + bottom * scale;
+    const high = lift + top * scale;
     const colour = material === 'glass' ? GLASS : material === 'cargo' ? cargo : paint;
     const at = (along, across, z) => [x + east * along + rightEast * across, y + north * along + rightNorth * across, z];
     const paintFace = (a, b, c, d, nEast, nNorth, nUp) => {
@@ -1284,8 +1346,8 @@ export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, 
 export function drawTraffic(mesh, traffic, light, reach, scale = 1) {
   mesh.clear();
   let drawn = 0;
-  traffic.eachVehicle((type, x, y, east, north, paint, cargo, shown) => {
-    drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, light, reach, scale);
+  traffic.eachVehicle((type, x, y, east, north, paint, cargo, shown, lift) => {
+    drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, light, reach, scale, lift);
     drawn += 1;
   });
   return drawn;
@@ -1332,7 +1394,7 @@ export function drawStreet(mesh, network, light, reach, most = 2500) {
   // Nearest streets first, so the cars that are left out are the far ones.
   const streets = [];
   network.ways.forEach((way) => {
-    if (way.rail || way.hidden || !(PARKING[way.class] > 0) || way.length < PARKING_FROM_CORNER_METERS * 2 + PARKING_SLOT_METERS) return;
+    if (way.rail || way.hidden || way.deck > 0 || !(PARKING[way.class] > 0) || way.length < PARKING_FROM_CORNER_METERS * 2 + PARKING_SLOT_METERS) return;
     streets.push({ way, far: Math.hypot((way.box[0] + way.box[2]) / 2, (way.box[1] + way.box[3]) / 2) });
   });
   streets.sort((a, b) => a.far - b.far);
@@ -1375,6 +1437,201 @@ export function drawStreet(mesh, network, light, reach, most = 2500) {
   return { parked, shelters };
 }
 
+const ROAD_PAINT = [124, 129, 139];
+const RAIL_BED_PAINT = [198, 192, 180];
+const RAIL_PAINT = [78, 82, 92];
+const CONCRETE_PAINT = [214, 209, 198];
+const PARAPET_PAINT = [233, 229, 221];
+const MARK_PAINT = [236, 236, 232];
+
+/**
+ * Fill a mesh with the bridges of a network: for every stretch of road or
+ * track on a bridge a deck at its height, with parapets along both edges, a
+ * line down the middle of a road and rails on a viaduct, standing on piers.
+ * Returns the number of stretches drawn.
+ */
+export function drawBridges(mesh, network, light, stayed = []) {
+  mesh.clear();
+  const spot = [0, 0, 0, 0];
+  let drawn = 0;
+  const shade = (paint, east, north, up) => {
+    const lit = faceLight(light, east, north, up);
+    return [paint[0] * lit, paint[1] * lit, paint[2] * lit];
+  };
+  // The bridges that hang from cables stand on no piers of their own.
+  const hung = stayedHere(network, stayed);
+  const hangs = (x, y) => hung.some((frame) => {
+    const along = (x - frame.x) * frame.east + (y - frame.y) * frame.north;
+    const across = -(x - frame.x) * frame.north + (y - frame.y) * frame.east;
+    return along > frame.from - 4 && along < frame.to + 4 && Math.abs(across) < frame.bridge.between + 14;
+  });
+  for (const frame of hung) drawStays(mesh, network, frame, shade);
+  for (const way of network.ways) {
+    if (!(way.deck > 0) || way.hidden) continue;
+    const half = way.rail ? RAIL_DECK_HALF_METERS : way.width / 2 + 0.7;
+    const steps = Math.max(Math.ceil(way.length / 9), 1);
+    // The deck's two edges at each step along it, and how high it is there.
+    const cuts = [];
+    for (let i = 0; i <= steps; i += 1) {
+      const s = (way.length * i) / steps;
+      pointAlong(way, s, spot);
+      cuts.push({ x: spot[0], y: spot[1], east: spot[2], north: spot[3], h: Math.max(heightAlong(way, s), 0.05), s });
+    }
+    const edge = (cut, across, z) => [cut.x - cut.north * across, cut.y + cut.east * across, z]; // across: metres to the left of the way
+    const top = shade(way.rail ? RAIL_BED_PAINT : ROAD_PAINT, 0, 0, 1);
+    const capTop = shade(PARAPET_PAINT, 0, 0, 1);
+    for (let i = 1; i < cuts.length; i += 1) {
+      const a = cuts[i - 1];
+      const b = cuts[i];
+      mesh.face(edge(a, half, a.h), edge(a, -half, a.h), edge(b, -half, b.h), edge(b, half, b.h), top[0], top[1], top[2], 1);
+      for (const side of [1, -1]) {
+        // Its flank, from the underside of the deck to the top of the parapet; then the parapet's top and its inner face.
+        const out = shade(CONCRETE_PAINT, -a.north * side, a.east * side, 0);
+        const inner = shade(CONCRETE_PAINT, a.north * side, -a.east * side, 0);
+        const under = (cut) => Math.max(cut.h - DECK_THICK_METERS, 0);
+        mesh.face(edge(a, half * side, under(a)), edge(b, half * side, under(b)), edge(b, half * side, b.h + PARAPET_METERS), edge(a, half * side, a.h + PARAPET_METERS), out[0], out[1], out[2], 1);
+        const lip = (half - 0.35) * side;
+        mesh.face(edge(a, half * side, a.h + PARAPET_METERS), edge(b, half * side, b.h + PARAPET_METERS), edge(b, lip, b.h + PARAPET_METERS), edge(a, lip, a.h + PARAPET_METERS), capTop[0], capTop[1], capTop[2], 1);
+        mesh.face(edge(a, lip, a.h), edge(b, lip, b.h), edge(b, lip, b.h + PARAPET_METERS), edge(a, lip, a.h + PARAPET_METERS), inner[0], inner[1], inner[2], 1);
+      }
+      if (way.rail) {
+        // The two rails, as one dark band down the middle of the bed.
+        const rails = shade(RAIL_PAINT, 0, 0, 1);
+        mesh.face(edge(a, 0.9, a.h + 0.06), edge(a, -0.9, a.h + 0.06), edge(b, -0.9, b.h + 0.06), edge(b, 0.9, b.h + 0.06), rails[0], rails[1], rails[2], 1);
+      } else if (way.lanes >= 2 && i % 2 === 0) {
+        // A broken line between the lanes.
+        const mark = shade(MARK_PAINT, 0, 0, 1);
+        mesh.face(edge(a, 0.13, a.h + 0.05), edge(a, -0.13, a.h + 0.05), edge(b, -0.13, b.h + 0.05), edge(b, 0.13, b.h + 0.05), mark[0], mark[1], mark[2], 0.85);
+      }
+    }
+    // Piers: one every 30 m where the deck is clear of the ground, as wide as half the deck.
+    const pierHalf = Math.min(Math.max(half * 0.5, 1), 3.4);
+    for (let s = PIER_EVERY_METERS / 2; s < way.length; s += PIER_EVERY_METERS) {
+      const high = heightAlong(way, s) - DECK_THICK_METERS;
+      if (high < 2.5) continue;
+      pointAlong(way, s, spot);
+      if (!way.rail && hangs(spot[0], spot[1])) continue;
+      const pier = { x: spot[0], y: spot[1], east: spot[2], north: spot[3] };
+      const at = (along, across, z) => [pier.x + pier.east * along - pier.north * across, pier.y + pier.north * along + pier.east * across, z];
+      for (const [nAlong, nAcross] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const lit = shade(CONCRETE_PAINT, pier.east * nAlong - pier.north * nAcross, pier.north * nAlong + pier.east * nAcross, 0);
+        const a = nAlong !== 0 ? at(0.8 * nAlong, -pierHalf, 0) : at(-0.8, pierHalf * nAcross, 0);
+        const b = nAlong !== 0 ? at(0.8 * nAlong, pierHalf, 0) : at(0.8, pierHalf * nAcross, 0);
+        mesh.face(a, b, [b[0], b[1], high], [a[0], a[1], high], lit[0] * 0.92, lit[1] * 0.92, lit[2] * 0.92, 1);
+      }
+    }
+    drawn += 1;
+  }
+  return drawn;
+}
+
+const MAST_PAINT = [222, 217, 206];
+const CABLE_PAINT = [247, 246, 242];
+const CABLE_HALF_METERS = 0.28; // drawn thicker than life, to be seen from across the city
+const STAYS_WITHIN_METERS = 9000;
+
+/** The road deck nearest to a point, within a reach: how high it is there and half its width. Null if there is none. */
+function deckNear(network, x, y, reach) {
+  let best = null;
+  for (const way of network.ways) {
+    if (!(way.deck > 0) || way.hidden || way.rail) continue;
+    if (x < way.box[0] - reach || x > way.box[2] + reach || y < way.box[1] - reach || y > way.box[3] + reach) continue;
+    const found = nearestOn(way, x, y);
+    if (found.distance > reach || (best && found.distance >= best.distance)) continue;
+    best = { distance: found.distance, h: heightAlong(way, found.along), half: way.width / 2 + 0.7 };
+  }
+  return best;
+}
+
+/**
+ * Which of the cable-stayed bridges (see STAYED_BRIDGES in landmarks.js) have
+ * their deck among a network's ways, each with its place in the network's
+ * metres: [{ bridge, x, y, east, north, from, to }], from and to being how
+ * far its cables reach along the deck either side of its middle.
+ */
+export function stayedHere(network, stayed = []) {
+  const frames = [];
+  if (!network?.origin) return frames;
+  const squeeze = Math.cos((network.origin.lat * Math.PI) / 180) * METERS_PER_DEGREE;
+  for (const bridge of stayed) {
+    const x = (bridge.at[0] - network.origin.lng) * squeeze;
+    const y = (bridge.at[1] - network.origin.lat) * METERS_PER_DEGREE;
+    if (Math.hypot(x, y) > STAYS_WITHIN_METERS) continue;
+    const turn = (bridge.bearing * Math.PI) / 180;
+    const frame = { bridge, x, y, east: Math.sin(turn), north: Math.cos(turn), from: Math.min(...bridge.masts) - bridge.reach.bank, to: Math.max(...bridge.masts) + bridge.reach.bank };
+    // Every mast must have the deck under it; a bridge only half on the map is left as the map has it.
+    const decked = bridge.masts.every((along) => deckNear(network, x + frame.east * along, y + frame.north * along, bridge.between + 8));
+    if (decked) frames.push(frame);
+  }
+  return frames;
+}
+
+/**
+ * What a cable-stayed bridge has that other bridges have not: the strip down
+ * the middle of its deck, its masts standing in that strip, and from each
+ * mast a fan of cables down to the deck on either side.
+ */
+function drawStays(mesh, network, frame, shade) {
+  const { bridge, east, north } = frame;
+  const at = (along, across, z) => [frame.x + east * along - north * across, frame.y + north * along + east * across, z];
+  const deckAt = (along) => {
+    const [x, y] = at(along, 0, 0);
+    return deckNear(network, x, y, bridge.between + 8) ?? { h: 0.05, half: bridge.between - 2 };
+  };
+  // The middle strip, from the first cable to the last, between the two carriageways.
+  const strip = Math.max(bridge.between - deckAt(0).half + 0.5, 1.2);
+  const top = shade(PARAPET_PAINT, 0, 0, 1);
+  const pieces = Math.ceil((frame.to - frame.from) / 12);
+  for (let i = 0; i < pieces; i += 1) {
+    const a = frame.from + ((frame.to - frame.from) * i) / pieces;
+    const b = frame.from + ((frame.to - frame.from) * (i + 1)) / pieces;
+    const ha = deckAt(a).h + 0.3;
+    const hb = deckAt(b).h + 0.3;
+    mesh.face(at(a, strip, ha), at(a, -strip, ha), at(b, -strip, hb), at(b, strip, hb), top[0], top[1], top[2], 1);
+  }
+  const sides = [[1, 0], [-1, 0], [0, 1], [0, -1]]; // the four ways a mast's faces look: along the deck and across it
+  for (const place of bridge.masts) {
+    const deck = deckAt(place).h;
+    const crown = deck + bridge.mast;
+    // Under the deck, one broad pier carries mast and deck together.
+    const pierHalf = bridge.between + deckAt(place).half - 1.5;
+    const under = Math.max(deck - DECK_THICK_METERS, 0);
+    if (under > 1) {
+      for (const [nAlong, nAcross] of sides) {
+        const lit = shade(CONCRETE_PAINT, east * nAlong - north * nAcross, north * nAlong + east * nAcross, 0);
+        const a = nAlong !== 0 ? at(place + 2.4 * nAlong, -pierHalf, 0) : at(place - 2.4, pierHalf * nAcross, 0);
+        const b = nAlong !== 0 ? at(place + 2.4 * nAlong, pierHalf, 0) : at(place + 2.4, pierHalf * nAcross, 0);
+        mesh.face(a, b, [b[0], b[1], under], [a[0], a[1], under], lit[0] * 0.92, lit[1] * 0.92, lit[2] * 0.92, 1);
+      }
+    }
+    // The mast: a slender concrete blade, a little slimmer at its head than at its foot.
+    const foot = [2.4, 1.8];
+    const head = [1.7, 1.3];
+    for (const [nAlong, nAcross] of sides) {
+      const lit = shade(MAST_PAINT, east * nAlong - north * nAcross, north * nAlong + east * nAcross, 0);
+      const corner = (size, turn, z) => (nAlong !== 0 ? at(place + size[0] * nAlong, size[1] * turn, z) : at(place + size[0] * turn, size[1] * nAcross, z));
+      mesh.face(corner(foot, -1, deck), corner(foot, 1, deck), corner(head, 1, crown), corner(head, -1, crown), lit[0], lit[1], lit[2], 1);
+    }
+    const cap = shade(MAST_PAINT, 0, 0, 1);
+    mesh.face(at(place - head[0], -head[1], crown), at(place + head[0], -head[1], crown), at(place + head[0], head[1], crown), at(place - head[0], head[1], crown), cap[0], cap[1], cap[2], 1);
+    // The cables: the shortest from two fifths of the way up the mast to near its foot, the longest from its head to the far end of its fan.
+    for (const towards of [-1, 1]) {
+      const inwards = Math.sign(place) !== towards; // a fan towards the middle of the bridge reaches further than one towards the bank
+      const reach = bridge.masts.length > 1 && inwards ? bridge.reach.span : bridge.reach.bank;
+      for (let i = 0; i < bridge.cables; i += 1) {
+        const t = bridge.cables > 1 ? i / (bridge.cables - 1) : 1;
+        const anchor = place + towards * (14 + (reach - 14) * t);
+        const high = [place + towards * 1.2, deck + bridge.mast * (0.4 + 0.585 * t)];
+        const low = [anchor, deckAt(anchor).h + 0.6];
+        const w = CABLE_HALF_METERS;
+        // Two ribbons crossed, so the cable shows from the side and from above.
+        mesh.face(at(high[0], 0, high[1] + w), at(high[0], 0, high[1] - w), at(low[0], 0, low[1] - w), at(low[0], 0, low[1] + w), CABLE_PAINT[0], CABLE_PAINT[1], CABLE_PAINT[2], 1);
+        mesh.face(at(high[0], w, high[1]), at(high[0], -w, high[1]), at(low[0], -w, low[1]), at(low[0], w, low[1]), CABLE_PAINT[0] * 0.93, CABLE_PAINT[1] * 0.93, CABLE_PAINT[2] * 0.93, 1);
+      }
+    }
+  }
+}
+
 /** True if a point lies inside a ring of [x, y] corners. */
 function insideRing(ring, x, y) {
   let inside = false;
@@ -1386,6 +1643,49 @@ function insideRing(ring, x, y) {
   return inside;
 }
 
+const VAULT_PAINT = [226, 229, 232];
+const VAULT_GLASS = [132, 160, 184];
+
+/** A barrel vault over a long building: along (east, north), from the roof's edge up to a ridge and down again. */
+function drawVault(mesh, ring, east, north, top, light) {
+  let low = Infinity;
+  let high = -Infinity;
+  let lowAcross = Infinity;
+  let highAcross = -Infinity;
+  for (const [x, y] of ring) {
+    const along = x * east + y * north;
+    const across = -x * north + y * east;
+    low = Math.min(low, along);
+    high = Math.max(high, along);
+    lowAcross = Math.min(lowAcross, across);
+    highAcross = Math.max(highAcross, across);
+  }
+  const eaves = 1.2; // how far the roof reaches past the walls
+  const middle = (lowAcross + highAcross) / 2;
+  const half = (highAcross - lowAcross) / 2 + eaves;
+  const rise = Math.min(Math.max(half * 0.36, 2), 4.6);
+  const at = (along, across, z) => [along * east - across * north, along * north + across * east, z];
+  const strips = 8;
+  const edge = (i) => {
+    const turn = (-1 + (2 * i) / strips) * (Math.PI / 2);
+    return [middle + Math.sin(turn) * half, top + Math.cos(turn) * rise, turn];
+  };
+  for (let i = 0; i < strips; i += 1) {
+    const [across0, z0, turn0] = edge(i);
+    const [across1, z1, turn1] = edge(i + 1);
+    const turn = (turn0 + turn1) / 2;
+    // Each strip looks outwards and up; the two along the ridge are glass.
+    const lit = faceLight(light, -north * Math.sin(turn) * 0.8, east * Math.sin(turn) * 0.8, Math.cos(turn) * 0.6 + 0.4);
+    const paint = i === strips / 2 - 1 || i === strips / 2 ? VAULT_GLASS : VAULT_PAINT;
+    mesh.face(at(low - eaves, across0, z0), at(high + eaves, across0, z0), at(high + eaves, across1, z1), at(low - eaves, across1, z1), paint[0] * lit, paint[1] * lit, paint[2] * lit, 1);
+    // The two ends, closed.
+    for (const [end, facing] of [[low - eaves, -1], [high + eaves, 1]]) {
+      const gable = faceLight(light, east * facing, north * facing, 0);
+      mesh.face(at(end, across0, top), at(end, across1, top), at(end, across1, z1), at(end, across0, z0), VAULT_PAINT[0] * gable, VAULT_PAINT[1] * gable, VAULT_PAINT[2] * gable, 1);
+    }
+  }
+}
+
 const ROOF_PAINT = [233, 230, 222]; // the roofs' own colour
 const PLANT_PAINT = [176, 180, 184];
 const TANK_PAINT = [214, 214, 208];
@@ -1394,7 +1694,9 @@ const TANK_PAINT = [214, 214, 208];
  * Fill a mesh with what stands on flat roofs: on a house the room at the head
  * of the stairs and a water tank, on a large roof rows of cooling plant.
  *
- * buildings: [{ ring: [[x, y], …] in metres, top: the height of the roof }].
+ * buildings: [{ ring: [[x, y], …] in metres, top: the height of the roof,
+ * vault: true for a station }]. A station gets a long vaulted roof with a
+ * strip of glass along its ridge, in place of furniture.
  * Nobody maps these things, so they are made up: placed by chance, but the
  * same way every time for the same building. Returns the number of roofs furnished.
  */
@@ -1427,6 +1729,11 @@ export function drawRoofs(mesh, buildings, light) {
     }
     const area = Math.abs(doubled) / 2;
     if (!(area > 45) || !(building.top > 0)) continue;
+    if (building.vault) {
+      drawVault(mesh, ring, east, north, building.top, light);
+      furnished += 1;
+      continue;
+    }
     const middleX = sumX / (3 * doubled);
     const middleY = sumY / (3 * doubled);
     const random = seededRandom(Math.round(middleX * 131 + middleY * 71) + Math.round(area));
