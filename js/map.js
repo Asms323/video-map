@@ -37,11 +37,14 @@ import {
   wallImage,
   withOverlays,
 } from './lib.js';
+import { characterAt } from './districts.js';
 import { PLAIN_FUEL, brandOf, localKind, mosqueExtras, mosquesAmong, stationExtras, storeExtras } from './dress.js';
 import { STAYED_BRIDGES, landmarkBeacons, landmarkModels, landmarkRoofs, landmarkShades, replacedByLandmarks } from './landmarks.js';
 import { drawFarLights, drawLamps, drawRoofLights, drawTrafficLights, lightPoints, shopSpill } from './lights.js';
 import { Mesh, Traffic, buildNetwork, drawBridges, drawMarks, drawRoofs, drawStreet, drawTraffic, drawTrees, faceLight, lightFrom, stayedHere, streetDirection, streetNear, trafficLevel } from './life.js';
 import { ModelMesh } from './models.js';
+import { plotWalls } from './plots.js';
+import { drawRoadside, medianPalms } from './roadside.js';
 import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
 import { SceneLayer } from './scene.js';
 import { buildingArchive, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
@@ -450,6 +453,10 @@ export class MapView {
     this.farLightMesh = new Mesh(); // the city's lights beyond where the lamps stand one by one, out to the horizon
     this.farMade = null;
     this.beaconMesh = new Mesh(); // the red lamps on what is tall
+    this.plotMesh = new Mesh(); // the walls round the houses
+    this.roadsideMesh = new Mesh(); // barriers, sign gantries and the kerbs of medians
+    this.roadsideMade = null;
+    this.plotsMade = null;
     this.modelMesh = new ModelMesh(); // the famous buildings that are true models
     this.modelsMade = null;
     this.roadNames = null; // the layers of names along the roads, and how strongly they are shown
@@ -1184,7 +1191,10 @@ export class MapView {
     if (recorded) return recorded;
     const worked = this.photoOn ? this.wallColours.get(building.id) : undefined;
     if (worked) return worked;
-    return colourOf(WALL_TINTS[typeof building.id === 'number' ? Math.abs(building.id) % WALL_TINTS.length : 0]);
+    // Not known: one of the colours its district is built in. (The same one every time, by the building's own number.)
+    const place = building.polygons?.[0]?.[0]?.[0];
+    const tints = place ? characterAt(place[0], place[1]).walls : WALL_TINTS;
+    return colourOf(tints[typeof building.id === 'number' ? Math.abs(building.id) % tints.length : 0]);
   }
 
   /**
@@ -1226,6 +1236,8 @@ export class MapView {
         this.wallMesh.clear();
         this.footMesh.clear();
         this.parapetMesh.clear();
+        this.plotMesh.clear();
+        this.scene.set('plots', this.plotMesh);
         this.scene.set('roofs', this.roofMesh, { lifted: 1 });
         this.scene.set('roofshade', this.roofShadeMesh, { lifted: 2 });
         this.scene.set('parapets', this.parapetMesh, { lifted: 1 });
@@ -1274,6 +1286,14 @@ export class MapView {
     this.scene.setWalls(this.wallMesh);
     this.scene.set('feet', this.footMesh, { shaded: false });
     this.scene.set('parapets', this.parapetMesh, { lifted: 1 });
+    // Round the houses, the walls of their plots: as many as the district they stand in has.
+    if (this.detailOn) {
+      this.plotsMade = plotWalls(this.plotMesh, whole, this.network, origin, lightFrom(this.sun), { fencedAt: (lng, lat) => characterAt(lng, lat), built: this.builtGround()?.built ?? null });
+    } else {
+      this.plotMesh.clear();
+      this.plotsMade = null;
+    }
+    this.scene.set('plots', this.plotMesh);
     // The shadows the buildings throw on each other's walls and roofs, to go with the ones the map lays on the ground.
     const sunFall = shadowFall(shadowReach(this.sun));
     const fall = this.detailOn ? sunFall : null;
@@ -1511,17 +1531,24 @@ export class MapView {
   /** Draw the trees afresh: they are measured from the scene's origin and lit by the sun. */
   layTrees() {
     const origin = this.scene.origin;
-    if (!origin || !this.photoOn || this.type !== 'city') {
+    if (!origin || this.type !== 'city') {
       this.treeMesh.clear();
       this.scene.set('trees', this.treeMesh);
       return;
     }
     const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
-    const local = this.trees.map((tree) => ({
-      x: (tree.lng - origin.lng) * squeeze,
-      y: (tree.lat - origin.lat) * METERS_PER_DEGREE,
-      radius: tree.radius,
-    }));
+    const local = this.photoOn
+      ? this.trees.map((tree) => ({
+          x: (tree.lng - origin.lng) * squeeze,
+          y: (tree.lat - origin.lat) * METERS_PER_DEGREE,
+          radius: tree.radius,
+        }))
+      : [];
+    // Down the medians of the avenues, a row of date palms: stood by rule (see roadside.js).
+    const palms = this.detailOn && this.network ? medianPalms(this.network, { built: this.builtGround()?.built ?? null }) : [];
+    this.palmsMade = palms.length;
+    // (Where the photo already shows a tree, there is no need of another.)
+    for (const palm of palms) if (!local.some((tree) => Math.hypot(tree.x - palm.x, tree.y - palm.y) < 5)) local.push(palm);
     drawTrees(this.treeMesh, local, lightFrom(this.sun), shadowReach(this.sun));
     this.scene.set('trees', this.treeMesh);
     this.treesLit = this.sun;
@@ -1667,18 +1694,25 @@ export class MapView {
   /** Build the bridges and viaducts afresh: their decks, parapets and piers. And paint the roads: their lines and crossings. */
   layBridges() {
     if (!this.scene.origin || this.type !== 'city' || !this.network) {
-      if (this.bridgeMesh.count > 0 || this.markMesh.count > 0) {
+      if (this.bridgeMesh.count > 0 || this.markMesh.count > 0 || this.roadsideMesh.count > 0) {
         this.bridgeMesh.clear();
         this.markMesh.clear();
+        this.roadsideMesh.clear();
         this.scene.set('bridges', this.bridgeMesh);
         this.scene.set('marks', this.markMesh);
+        this.scene.set('roadside', this.roadsideMesh);
       }
       this.bridgesMade = 0;
       this.marksMade = null;
+      this.roadsideMade = null;
       return;
     }
     this.bridgesMade = drawBridges(this.bridgeMesh, this.network, lightFrom(this.sun), STAYED_BRIDGES);
     this.scene.set('bridges', this.bridgeMesh);
+    // What stands along the roads: the barrier down the middle of a great road, the sign gantries over it,
+    // the yellow-and-black kerb of an avenue's median.
+    this.roadsideMade = drawRoadside(this.roadsideMesh, this.network, lightFrom(this.sun));
+    this.scene.set('roadside', this.roadsideMesh);
     // (The paint does not change with the sun: laid once for each network.)
     if (this.marksMade?.network !== this.network) {
       this.marksMade = { network: this.network, ...drawMarks(this.markMesh, this.network) };
@@ -1706,7 +1740,11 @@ export class MapView {
       this.farMade = null;
       return;
     }
-    const made = drawLamps(this.lampPostMesh, this.lampLightMesh, this.network, lightFrom(this.sun), { most: LAMPS_MOST, built: this.builtGround()?.built ?? null, heads: this.lampHeadMesh });
+    // (The side streets of a district have the new white lamps or the old amber ones, by the kind of district it is.)
+    const from = this.scene.origin;
+    const squeezed = from ? Math.max(Math.cos((from.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE : 1;
+    const ledAt = from ? (x, y) => characterAt(from.lng + x / squeezed, from.lat + y / METERS_PER_DEGREE).led : null;
+    const made = drawLamps(this.lampPostMesh, this.lampLightMesh, this.network, lightFrom(this.sun), { most: LAMPS_MOST, built: this.builtGround()?.built ?? null, heads: this.lampHeadMesh, ledAt });
     this.lampsMade = { ...made, roofs: this.roofs };
     this.scene.set('lampposts', this.lampPostMesh);
     this.scene.set('lamplight', this.lampLightMesh, { glow: true });

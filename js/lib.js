@@ -1455,7 +1455,7 @@ const NIGHT_TEXT_EDGE = 'rgba(7, 9, 15, 0.85)';
  * roads are lit white; its side streets still glow in the amber of sodium
  * lamps, which is what gives the city its colour from the air by night.
  */
-export const LAMP_LIGHT = { big: '#ffd29c', main: '#ffc27c', side: '#ffb163' };
+export const LAMP_LIGHT = { big: '#ffe6c4', main: '#ffc27c', side: '#ffb163', led: '#ffe9cc' };
 // The roads that have lamps along them.
 const LAMP_CLASSES = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'busway'];
 const GLOW_SPILL_METERS = 4.5; // how far the lamps' light reaches past the edge of the road

@@ -141,7 +141,7 @@ export function seededRandom(seed) {
 // normal.
 // (Riyadh's great roads are full for most of the day: most of the traffic is put on them.)
 const ROADS = {
-  motorway: { lanes: 3, speed: 27, perKm: 62 },
+  motorway: { lanes: 4, speed: 27, perKm: 62 },
   trunk: { lanes: 3, speed: 22, perKm: 54 },
   primary: { lanes: 2, speed: 16, perKm: 38 },
   secondary: { lanes: 2, speed: 13, perKm: 22 },
@@ -1751,8 +1751,9 @@ export function drawMarks(mesh, network) {
     // The lines that run unbroken: laid in short lengths, so that they follow a bend.
     for (let s = from; s < to; s += DASH_EVERY_METERS) {
       const until = Math.min(s + DASH_EVERY_METERS, to);
-      strip(way, s, until, edge, 0.07, LINE_PAINT, 0.85);
-      strip(way, s, until, -edge, 0.07, LINE_PAINT, 0.85);
+      // (Along a one-way carriageway the edge by the median, on the left of its traffic, is yellow: as on Saudi roads.)
+      strip(way, s, until, edge, 0.07, way.oneway === 1 ? CENTRE_PAINT : LINE_PAINT, 0.85);
+      strip(way, s, until, -edge, 0.07, way.oneway === -1 ? CENTRE_PAINT : LINE_PAINT, 0.85);
       if (both) strip(way, s, until, 0, 0.09, CENTRE_PAINT, 0.9);
     }
     lines += 1;
@@ -2334,7 +2335,7 @@ export function drawTrees(mesh, trees, light, reach) {
     const random = seededRandom(Math.round(x * 31 + y * 17) + 7);
     const leaves = LEAVES[Math.floor(random() * LEAVES.length)];
     const turn = random() * Math.PI;
-    const palm = isPalm(x, y, radius);
+    const palm = tree.palm ?? isPalm(x, y, radius);
     const trunk = palm ? 4.2 + radius * 0.9 + random() * 1.6 : 1.2 + radius * 0.5;
     const shoulder = palm ? trunk : trunk + radius * 0.9;
     const top = shoulder + radius * (0.9 + random() * 0.5);

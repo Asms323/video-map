@@ -1207,9 +1207,13 @@ test('drawMarks paints the lanes of the main roads, and a crossing where a stree
   const dashes = main.filter((corner) => near(Math.abs(corner.y), 3.4, 0.11) && corner.y > 0).map((corner) => corner.x);
   assert.ok(dashes.includes(8) && dashes.includes(11) && !dashes.some((x) => x > 11.01 && x < 16.99) && dashes.includes(17));
 
-  // The carriageway of three lanes: two broken lines, 1.7 m either side of its middle, and no yellow.
+  // The carriageway of three lanes: two broken lines, 1.7 m either side of its middle. No yellow down its
+  // middle; but its edge by the median, on the left of its traffic, is yellow, as on Saudi roads.
   const trunk = corners.filter((corner) => corner.y > 390 && corner.y < 410);
-  assert.ok(!trunk.some((corner) => corner.paint[0] > corner.paint[2] + 80));
+  const yellowEdge = trunk.filter((corner) => corner.paint[0] > corner.paint[2] + 80);
+  assert.ok(yellowEdge.length > 0 && yellowEdge.every((corner) => Math.abs(Math.abs(corner.y - 400) - 5.35) < 0.08), 'one edge only');
+  assert.equal(new Set(yellowEdge.map((corner) => Math.sign(corner.y - 400))).size, 1);
+  assert.ok(trunk.some((corner) => corner.paint[0] <= corner.paint[2] + 80 && Math.abs(Math.abs(corner.y - 400) - 5.35) < 0.08), 'the other edge is white');
   const lanes = [...new Set(trunk.map((corner) => Math.round((corner.y - 400) * 10) / 10))].sort((a, b) => a - b);
   assert.deepEqual(lanes, [-5.4, -5.3, -1.8, -1.6, 1.6, 1.8, 5.3, 5.4], JSON.stringify(lanes));
 

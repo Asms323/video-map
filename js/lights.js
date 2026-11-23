@@ -31,7 +31,7 @@ import { facadeOf, localRing, wallsOfRing } from './walls.js';
 
 const METERS_PER_DEGREE = 111320;
 const hex = (text) => [parseInt(text.slice(1, 3), 16), parseInt(text.slice(3, 5), 16), parseInt(text.slice(5, 7), 16)];
-const LIGHT = { big: hex(LAMP_LIGHT.big), main: hex(LAMP_LIGHT.main), side: hex(LAMP_LIGHT.side) };
+const LIGHT = { big: hex(LAMP_LIGHT.big), main: hex(LAMP_LIGHT.main), side: hex(LAMP_LIGHT.side), led: hex(LAMP_LIGHT.led) };
 
 /**
  * The lamps of each kind of road: how far apart they stand (every), how tall
@@ -134,6 +134,8 @@ function pool(glow, x, y, z, radius, colour, strength, sides = POOL_SIDES) {
  * whether a building stands at a spot, where that is known: no post stands
  * in a building. heads: a Mesh of points of light for the lit heads, one
  * corner each; without it each head is a small round patch in `glow`.
+ * ledAt(x, y): whether the streets at a spot have the new white lamps (the
+ * great roads have them everywhere).
  *
  * A post stands just behind the kerb, clear of every other road, or on the
  * parapet of a bridge; where there is no room on the side the rule gives, it
@@ -143,7 +145,7 @@ function pool(glow, x, y, z, radius, colour, strength, sides = POOL_SIDES) {
  * the network they reach (every street nearer than that has its lamps;
  * Infinity if none was left out).
  */
-export function drawLamps(posts, glow, network, light, { most = 3000, built = null, heads = null } = {}) {
+export function drawLamps(posts, glow, network, light, { most = 3000, built = null, heads = null, ledAt = null } = {}) {
   posts.clear();
   glow.clear();
   heads?.clear();
@@ -225,8 +227,9 @@ export function drawLamps(posts, glow, network, light, { most = 3000, built = nu
       1,
     );
 
-    // Its light: the head, seen as a point of light; and the pool it throws.
-    const colour = LIGHT[rule.light];
+    // Its light: the head, seen as a point of light; and the pool it throws. (A side street has the new
+    // white lamps where its district has been given them, and the amber of sodium where it has not.)
+    const colour = rule.light !== 'big' && ledAt && ledAt(px, py) ? LIGHT.led : LIGHT[rule.light];
     const head = [255, (colour[1] + 255) / 2, (colour[2] + 255) / 2];
     if (heads) {
       heads.room(1);
