@@ -70,12 +70,28 @@ function rectangle(x, y, east, north, halfLength, halfWidth) {
   return [corner(-halfLength, -halfWidth), corner(halfLength, -halfWidth), corner(halfLength, halfWidth), corner(-halfLength, halfWidth)];
 }
 
-/** One slab as map data: its outline (metres on a patch of ground), where it starts and ends, and its colour. */
-function slab(patch, outline, base, top, paint, kind) {
-  const ring = outline.map(patch.from);
-  ring.push(ring[0]);
-  return { type: 'Feature', properties: { kind, b: base, t: top, c: paint }, geometry: { type: 'Polygon', coordinates: [ring] } };
+/**
+ * One slab as map data: its outline (metres on a patch of ground), where it
+ * starts and ends, and its colour. night: the colour it shows in by night if
+ * it is lit then (n), or true for a sign with a light of its own, which keeps
+ * its colour. Whatever has none is left to the dark. hole: an outline cut
+ * out of the slab's middle, which makes a band of it: a band round a roof
+ * has no top of its own under the roof to show through it from afar.
+ */
+function slab(patch, outline, base, top, paint, kind, night = LIT_BY_NIGHT[paint], hole = null) {
+  const closed = (corners) => {
+    const ring = corners.map(patch.from);
+    ring.push(ring[0]);
+    return ring;
+  };
+  const properties = { kind, b: base, t: top, c: paint };
+  if (night) properties.n = night === true ? paint : night;
+  return { type: 'Feature', properties, geometry: { type: 'Polygon', coordinates: hole ? [closed(outline), closed(hole)] : [closed(outline)] } };
 }
+
+// What is lit by night whatever it belongs to, and the colour it shows in then: the glass of a shop or a
+// station with the lights on behind it, the gold screens of the metro lit from within.
+const LIT_BY_NIGHT = { '#7f96a8': '#ffe3ad', '#9db4c6': '#ffe7b8', '#c9ad78': '#e2b45c' };
 
 function inside(ring, x, y) {
   let hit = false;
@@ -92,6 +108,8 @@ function inside(ring, x, y) {
 const MOSQUE_STONE = '#e4d8bf';
 const MOSQUE_WHITE = '#f3eee2';
 const MOSQUE_GOLD = '#c8a64b';
+// A mosque by night: floodlit stone, and the green lamps that mark a minaret from across the city.
+const MOSQUE_NIGHT = { stone: '#85775c', dome: '#b9b29c', shaft: '#b0a488', green: '#62f08e', gold: '#ffd873' };
 // A place of prayer the map marks is taken to be this building if it lies inside it, or this near its walls.
 const PRAYER_REACH_METERS = 25;
 // Between these sizes a building with a place of prayer in it is a mosque, and not a prayer room in something larger.
@@ -171,20 +189,21 @@ export function mosqueExtras(mosques, roof = 0) {
     const patch = ground(mosque.ring[0]);
     const box = boxAround(mosque.ring.map(patch.to));
     if (!box || box.halfWidth < 3.5) continue;
-    const add = (outline, base, top, paint, kind) => features.push(slab(patch, outline, base, top, paint, kind));
+    const add = (outline, base, top, paint, kind, night) => features.push(slab(patch, outline, base, top, paint, kind, night));
     const top = mosque.height + roof;
     const large = box.halfLength * box.halfWidth * 4 > 1600;
 
     // The dome: a low drum, the dome itself in rings, and a gilt finial.
     const radius = Math.min(Math.max(box.halfWidth * 0.42, 2.4), large ? 9 : 6.5);
-    add(round(box.x, box.y, radius + 0.25, 12), top, top + 0.9, MOSQUE_STONE, 'dome');
+    // (By night a mosque is lit: its dome softly, its minaret in white with the green lamps of its balcony and cap.)
+    add(round(box.x, box.y, radius + 0.25, 12), top, top + 0.9, MOSQUE_STONE, 'dome', MOSQUE_NIGHT.stone);
     const rise = radius * 0.92;
     const rings = 6;
     for (let i = 0; i < rings; i += 1) {
       const middle = (i + 0.5) / rings;
-      add(round(box.x, box.y, radius * Math.sqrt(1 - middle * middle), 12), top + 0.9 + (rise * i) / rings, top + 0.9 + (rise * (i + 1)) / rings, MOSQUE_WHITE, 'dome');
+      add(round(box.x, box.y, radius * Math.sqrt(1 - middle * middle), 12), top + 0.9 + (rise * i) / rings, top + 0.9 + (rise * (i + 1)) / rings, MOSQUE_WHITE, 'dome', MOSQUE_NIGHT.dome);
     }
-    add(round(box.x, box.y, 0.22, 6), top + 0.9 + rise, top + 0.9 + rise + 1.5, MOSQUE_GOLD, 'dome');
+    add(round(box.x, box.y, 0.22, 6), top + 0.9 + rise, top + 0.9 + rise + 1.5, MOSQUE_GOLD, 'dome', MOSQUE_NIGHT.gold);
 
     // The minarets: a square foot inside a corner of the building, an eight-sided shaft, the balcony, a slimmer shaft, a pointed cap.
     const pick = typeof mosque.id === 'number' && Number.isFinite(mosque.id) ? (Math.abs(mosque.id) % 7) % 4 : 0;
@@ -199,12 +218,12 @@ export function mosqueExtras(mosques, roof = 0) {
       const foot = rectangle(x, y, box.east, box.north, 1.7, 1.7);
       const balcony = height * 0.7;
       add(foot, 0, top + 2.2, MOSQUE_STONE, 'minaret');
-      add(round(x, y, 1.35, 8), top + 2.2, balcony, MOSQUE_STONE, 'minaret');
-      add(round(x, y, 2.05, 8), balcony, balcony + 0.6, MOSQUE_WHITE, 'minaret');
-      add(round(x, y, 1.0, 8), balcony + 0.6, height * 0.88, MOSQUE_STONE, 'minaret');
+      add(round(x, y, 1.35, 8), top + 2.2, balcony, MOSQUE_STONE, 'minaret', MOSQUE_NIGHT.shaft);
+      add(round(x, y, 2.05, 8), balcony, balcony + 0.6, MOSQUE_WHITE, 'minaret', MOSQUE_NIGHT.green);
+      add(round(x, y, 1.0, 8), balcony + 0.6, height * 0.88, MOSQUE_STONE, 'minaret', MOSQUE_NIGHT.shaft);
       const cap = height - height * 0.88;
-      for (let i = 0; i < 4; i += 1) add(round(x, y, 1.15 * (1 - (i + 0.5) / 4.4), 8), height * 0.88 + (cap * i) / 4, height * 0.88 + (cap * (i + 1)) / 4, MOSQUE_WHITE, 'minaret');
-      add(round(x, y, 0.16, 6), height, height + 1.4, MOSQUE_GOLD, 'minaret');
+      for (let i = 0; i < 4; i += 1) add(round(x, y, 1.15 * (1 - (i + 0.5) / 4.4), 8), height * 0.88 + (cap * i) / 4, height * 0.88 + (cap * (i + 1)) / 4, MOSQUE_WHITE, 'minaret', MOSQUE_NIGHT.green);
+      add(round(x, y, 0.16, 6), height, height + 1.4, MOSQUE_GOLD, 'minaret', MOSQUE_NIGHT.gold);
       const ring = foot.map(patch.from);
       ring.push(ring[0]);
       shades.push({ height, base: 0, polygons: [[ring]] });
@@ -651,7 +670,8 @@ export function storeExtras(stores, buildings, facing = () => null, others = [],
     }
   }
 
-  const add = (outline, base, top, paint, kind) => features.push(slab(patch, outline, base, top, paint, kind));
+  // (lit: true for a band or a sign with a light of its own, which shows in its own colour by night too.)
+  const add = (outline, base, top, paint, kind, lit, hole) => features.push(slab(patch, outline, base, top, paint, kind, lit, hole));
   const fronts = []; // where a shop front has been put and on which outline, so that the next on it keeps its distance
   // A place a little way out of doors from a wall of an outline, by how far.
   const outwards = (ring, wall) => {
@@ -665,16 +685,17 @@ export function storeExtras(stores, buildings, facing = () => null, others = [],
   };
   const pylon = (x, y, brand, east = 1, north = 0) => {
     add(rectangle(x, y, east, north, 0.3, 0.3), 0, 5.6, SIGN_POST, 'pylon');
-    add(rectangle(x, y, east, north, 1.3, 0.3), 5.6, 8.2, brand.band, 'pylon');
-    add(rectangle(x, y, east, north, 1.3, 0.3), 8.2, 8.7, brand.accent ?? '#ffffff', 'pylon');
+    add(rectangle(x, y, east, north, 1.3, 0.3), 5.6, 8.2, brand.band, 'pylon', true);
+    add(rectangle(x, y, east, north, 1.3, 0.3), 8.2, 8.7, brand.accent ?? '#ffffff', 'pylon', true);
   };
   /** A canopy on four posts with its pumps under it, in a box given by its middle, direction and half sizes. */
   const canopy = (x, y, east, north, halfLength, halfWidth, brand, outline = null) => {
     const roof = outline ?? rectangle(x, y, east, north, halfLength, halfWidth);
     const closed = [...roof, roof[0]];
-    add(swollen(closed, 0.3), 5, 5.9, brand.band, 'canopy');
-    add(swollen(closed, 0.3), 5.9, 6.15, brand.accent ?? '#ffffff', 'canopy');
-    add(swollen(closed, -0.5), 6.15, 6.25, '#f1f1ee', 'canopy');
+    // (The band and the stripe above it run round the edge; the canopy itself fills the middle, a little proud of them.)
+    add(swollen(closed, 0.3), 5, 5.9, brand.band, 'canopy', true, swollen(closed, -0.5));
+    add(swollen(closed, 0.3), 5.9, 6.15, brand.accent ?? '#ffffff', 'canopy', true, swollen(closed, -0.5));
+    add(swollen(closed, -0.5), 5, 6.25, '#f1f1ee', 'canopy');
     for (const [along, across] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
       const [px, py] = [x + east * along * (halfLength - 1.6) - north * across * (halfWidth - 1.6), y + north * along * (halfLength - 1.6) + east * across * (halfWidth - 1.6)];
       add(rectangle(px, py, east, north, 0.25, 0.25), 0, 5, '#e6e6e2', 'canopy');
@@ -718,9 +739,9 @@ export function storeExtras(stores, buildings, facing = () => null, others = [],
       // Glass at the ground where people walk in; the wall; the chain's band right round the top; the roof inside it.
       if (open) add(closed.slice(0, -1), 0, 3.1, SHOP_GLASS, 'store');
       add(closed.slice(0, -1), open ? 3.1 : 0, height - 1.5, brand.wall ?? SHOP_WALL, 'store');
-      if (brand.accent) add(swollen(closed, 0.15), height - 1.9, height - 1.5, brand.accent, 'store');
-      add(swollen(closed, 0.3), height - 1.5, height + 0.4, brand.band, 'store');
-      add(swollen(closed, -0.9), height + 0.4, height + 0.5, SHOP_ROOF, 'store');
+      if (brand.accent) add(swollen(closed, 0.15), height - 1.9, height - 1.5, brand.accent, 'store', true);
+      add(swollen(closed, 0.3), height - 1.5, height + 0.4, brand.band, 'store', true, swollen(closed, -0.9));
+      add(swollen(closed, -0.9), height - 1.5, height + 0.5, SHOP_ROOF, 'store');
       roofs.set(outline.id, height + 0.5);
       if (!owner.within && owner.wall.distance > 3) pylon(owner.x, owner.y, brand, owner.wall.east, owner.wall.north);
       // Anyone else in the building has a front on its wall.
@@ -737,7 +758,7 @@ export function storeExtras(stores, buildings, facing = () => null, others = [],
       const at = outwards(closed, wall);
       add(rectangle(...at(0.12), wall.east, wall.north, half - 0.3, 0.14), 0, 3.1, SHOP_GLASS, 'front');
       add(rectangle(...at(0.6), wall.east, wall.north, half, 0.62), 3.1, 3.35, store.brand.accent ?? store.brand.band, 'front');
-      add(rectangle(...at(0.3), wall.east, wall.north, half, 0.32), 3.35, 4.85, store.brand.band, 'front');
+      add(rectangle(...at(0.3), wall.east, wall.north, half, 0.32), 3.35, 4.85, store.brand.band, 'front', true);
     }
   }
 
@@ -756,7 +777,7 @@ export function storeExtras(stores, buildings, facing = () => null, others = [],
     const sign = LOCAL_SIGNS[Math.abs(Math.round(shop.at[0] * 1e5) * 31 + Math.round(shop.at[1] * 1e5) * 17) % LOCAL_SIGNS.length];
     add(rectangle(...at(0.1), wall.east, wall.north, half - 0.25, 0.12), 0, 2.9, SHOP_GLASS, 'local');
     add(rectangle(...at(0.48), wall.east, wall.north, half, 0.5), 2.9, 3.12, LOCAL_AWNINGS[shop.kind] ?? LOCAL_AWNINGS.shop, 'local');
-    add(rectangle(...at(0.24), wall.east, wall.north, half, 0.26), 3.12, 4.05, sign, 'local');
+    add(rectangle(...at(0.24), wall.east, wall.north, half, 0.26), 3.12, 4.05, sign, 'local', true);
   }
 
   // A branch with no building on the map: a fuel station's canopy, or a coffee kiosk.
@@ -765,9 +786,9 @@ export function storeExtras(stores, buildings, facing = () => null, others = [],
     if (store.brand.kind === 'fuel') canopy(x, y, east, north, 10, 5.5, store.brand);
     else if (store.brand.kind === 'cafe' || store.brand.kind === 'food') {
       add(rectangle(x, y, east, north, 3.4, 2.1), 0, 2.7, SHOP_GLASS, 'kiosk');
-      add(rectangle(x, y, east, north, 3.7, 2.4), 2.7, 3.7, store.brand.band, 'kiosk');
-      if (store.brand.accent) add(rectangle(x, y, east, north, 3.55, 2.25), 2.45, 2.7, store.brand.accent, 'kiosk');
-      add(rectangle(x, y, east, north, 3.1, 1.8), 3.7, 3.8, SHOP_ROOF, 'kiosk');
+      add(rectangle(x, y, east, north, 3.7, 2.4), 2.7, 3.7, store.brand.band, 'kiosk', true, rectangle(x, y, east, north, 3.1, 1.8));
+      if (store.brand.accent) add(rectangle(x, y, east, north, 3.55, 2.25), 2.45, 2.7, store.brand.accent, 'kiosk', true);
+      add(rectangle(x, y, east, north, 3.1, 1.8), 2.7, 3.8, SHOP_ROOF, 'kiosk');
     }
   }
   return { features, dressed, roofs };

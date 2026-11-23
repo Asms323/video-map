@@ -12,9 +12,11 @@
 import {
   BUILDING_STORE,
   PHOTO_SURE_ZOOM,
+  RIYADH,
   buildingArchives,
   detailsQuery,
   distanceMeters,
+  inRiyadh,
   photoBlockOf,
   photoInBlock,
   photoTileOf,
@@ -201,17 +203,19 @@ function photonLanguage() {
   return PHOTON_LANGUAGES.includes(wanted) ? wanted : null;
 }
 
-/** Places matching what was typed, nearest to `near` first. */
+/**
+ * Places in Riyadh matching what was typed, nearest to `near` first (or to
+ * the middle of the city, if `near` is not in it). Nothing outside the city
+ * is looked for, and nothing outside it is given back.
+ */
 export async function searchPlaces(text, near, { signal } = {}) {
-  const params = new URLSearchParams({ q: text, limit: '8' });
-  if (near) {
-    params.set('lat', near.lat.toFixed(4));
-    params.set('lon', near.lng.toFixed(4));
-  }
+  const around = inRiyadh(near) ? near : RIYADH.centre;
+  const { west, south, east, north } = RIYADH.bounds;
+  const params = new URLSearchParams({ q: text, limit: '8', lat: around.lat.toFixed(4), lon: around.lng.toFixed(4), bbox: `${west},${south},${east},${north}` });
   const lang = photonLanguage();
   if (lang) params.set('lang', lang);
   const answer = await fetchJson(`${PHOTON_URL}/api/?${params}`, { signal, timeout: 10000 });
-  return (answer.features ?? []).map(photonPlace).filter(Boolean);
+  return (answer.features ?? []).map(photonPlace).filter((place) => place && inRiyadh(place));
 }
 
 /** What is at a point: the nearest named place or address, or null. */

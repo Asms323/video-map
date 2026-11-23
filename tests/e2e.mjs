@@ -105,7 +105,7 @@ const YOUTUBE_STUB =
 
 // ── Stand-ins for the data services ───────────────────────────────────────
 
-const asked = { overpass: [], weather: 0, route: 0, photoDay: 0, archive: 0, photoTiles: {}, photoMaps: {} };
+const asked = { overpass: [], weather: 0, weatherAt: [], route: 0, photoDay: 0, archive: 0, photoTiles: {}, photoMaps: {}, search: [] };
 // The sharpest level the stand-in for the photo service has: as in a town, one short of what a big city gets.
 const PHOTO_SHARPEST = 18;
 
@@ -139,7 +139,18 @@ function answerPhoton(route) {
     });
   }
   const text = url.searchParams.get('q');
+  asked.search.push(Object.fromEntries(url.searchParams));
   if (text === 'offline') return route.abort();
+  // (A place by that name in another city: the app is to leave it out.)
+  if (text === 'jeddah') {
+    return json(route, {
+      type: 'FeatureCollection',
+      features: [
+        { type: 'Feature', properties: { osm_type: 'N', osm_id: 5, osm_key: 'place', osm_value: 'city', name: 'Jeddah', country: 'Saudi Arabia' }, geometry: { type: 'Point', coordinates: [39.1925, 21.4858] } },
+        { type: 'Feature', properties: { osm_type: 'W', osm_id: 6, osm_key: 'highway', osm_value: 'primary', name: 'Jeddah Road', city: 'Riyadh', country: 'Saudi Arabia' }, geometry: { type: 'Point', coordinates: [46.62, 24.63] } },
+      ],
+    });
+  }
   if (text === 'zzzz') return json(route, { type: 'FeatureCollection', features: [] });
   return json(route, SEARCH_ANSWER);
 }
@@ -253,6 +264,8 @@ async function standIns(context, { recordMap = false, noMap = false, buildings =
   await context.route(/^https:\/\/photon\.komoot\.io\//, answerPhoton);
   await context.route(/^https:\/\/api\.open-meteo\.com\//, (route) => {
     asked.weather += 1;
+    const where = new URL(route.request().url()).searchParams;
+    asked.weatherAt.push([Number(where.get('latitude')), Number(where.get('longitude'))]);
     return json(route, { current: { time: '2026-11-21T12:00', temperature_2m: 23.4, weather_code: 0 } });
   });
   await context.route(/^https:\/\/router\.project-osrm\.org\//, (route) => {
@@ -507,6 +520,75 @@ const sceneCounts = (page) => page.evaluate(() => window.__map.getLayer('city-li
 /** How many triangle corners a named part of the 3D scene has. */
 const sceneCorners = (page, part) => page.evaluate((name) => window.__map.getLayer('city-life')?.implementation.parts.get(name)?.mesh?.count ?? 0, part);
 
+/**
+ * How the 3D city is lit right now: how dark it is and how far the lamps are
+ * on, as the app counts them; what the map itself draws for the dark; and
+ * what in the scene gives light.
+ */
+const lightNow = (page) =>
+  page.evaluate(() => {
+    const live = window.__map;
+    const sceneLayer = live.getLayer('city-life')?.implementation;
+    const corners = (name) => sceneLayer?.parts.get(name)?.mesh?.count ?? 0;
+    const last = (value) => (Array.isArray(value) ? value.at(-1) : value);
+    return {
+      ...(sceneLayer?.counts().night ?? {}),
+      scene: sceneLayer?.night,
+      day: sceneLayer?.day,
+      veil: live.getPaintProperty('city-night', 'background-opacity'),
+      glow: last(live.getPaintProperty('city-glow', 'line-opacity')),
+      dots: live.getPaintProperty('city-lamps', 'line-opacity')[6],
+      pools: live.getPaintProperty('city-night-pools', 'fill-opacity'),
+      block: live.getPaintProperty('city-buildings', 'fill-extrusion-color'),
+      names: live.getPaintProperty('vm-places', 'text-color'),
+      streetNames: live.getPaintProperty('highway-name-major', 'text-color'),
+      streetEdges: [live.getPaintProperty('highway-name-major', 'text-halo-color') ?? null, live.getPaintProperty('highway-name-major', 'text-halo-width') ?? null],
+      sky: live.getSky()?.['sky-color'],
+      anchor: live.getLight().anchor,
+      shadows: live.getSource('city-shade').serialize().data.features.length,
+      posts: corners('lampposts'),
+      lamplight: corners('lamplight'),
+      headlights: corners('lights'),
+      spill: corners('spill'),
+      glowing: [...(sceneLayer?.parts ?? [])].filter(([, part]) => part.glow).map(([name]) => name).sort(),
+    };
+  });
+
+/**
+ * What the map looks like as a picture: how bright it is on the whole (0 to
+ * 255), what share of it is dark, what share is bright, and what share has
+ * the amber of lamplight (lit, and with far more red in it than blue).
+ */
+const pictureOfMap = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const live = window.__map;
+        live.once('render', () => {
+          const gl = live.painter.context.gl;
+          const width = gl.drawingBufferWidth;
+          const height = gl.drawingBufferHeight;
+          const pixels = new Uint8Array(width * height * 4);
+          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+          let sum = 0;
+          let dark = 0;
+          let bright = 0;
+          let amber = 0;
+          let count = 0;
+          for (let i = 0; i < pixels.length; i += 4 * 7) {
+            const light = 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
+            sum += light;
+            count += 1;
+            if (light < 70) dark += 1;
+            if (light > 150) bright += 1;
+            if (pixels[i] >= 90 && pixels[i] >= 1.4 * pixels[i + 2]) amber += 1;
+          }
+          resolve({ mean: sum / count, dark: dark / count, bright: bright / count, amber: amber / count });
+        });
+        live.triggerRepaint();
+      }),
+  );
+
 /** Wait until the map shows a given layer: the sign that a map type has arrived. */
 const styleHas = (page, id) =>
   page.waitForFunction((layer) => (window.__map?.getStyle()?.layers ?? []).some((l) => l.id === layer), id, { timeout: 45000 });
@@ -546,7 +628,7 @@ function clockFrom(iso) {
   };
 }
 
-async function newPhone({ width = 390, height = 844, dark = false, location = true, recordMap = false, noMap = false, buildings = 'recorded', workers = 'block', time = MORNING } = {}) {
+async function newPhone({ width = 390, height = 844, dark = false, location = true, recordMap = false, noMap = false, buildings = 'recorded', workers = 'block', time = MORNING, route = ROUTE_LINE, kept = null } = {}) {
   const context = await browser.newContext({
     viewport: { width, height },
     deviceScaleFactor: 2,
@@ -559,7 +641,15 @@ async function newPhone({ width = 390, height = 844, dark = false, location = tr
   await standIns(context, { recordMap, noMap, buildings });
   await context.addInitScript(clockFrom, time);
   await context.addInitScript(keepMapHandle);
-  if (location) await context.addInitScript(gpsOnRoute, ROUTE_LINE);
+  if (location) await context.addInitScript(gpsOnRoute, route);
+  // What the app kept on this phone the last time it was open: { settings, mapView, … }.
+  if (kept) {
+    await context.addInitScript((values) => {
+      for (const [key, value] of Object.entries(values)) {
+        if (localStorage.getItem(`video-map:${key}`) === null) localStorage.setItem(`video-map:${key}`, JSON.stringify(value));
+      }
+    }, kept);
+  }
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(`page error: ${error.message}`));
@@ -1257,16 +1347,94 @@ try {
   light = await page.evaluate(() => window.__map.getLight());
   check('3D City: the sun and the shadows come back with it', light.anchor === 'map');
 
-  await pickType('auto');
-  await hasLayer('city-buildings');
-  check('Auto: the 3D city by day', await overlaysKept());
+  check('the 3D city is the look the app opens with, and the old "Auto" is gone', (await page.locator('input[name="mapType"]').count()) === 5 && (await page.locator('input[name="mapType"][value="auto"]').count()) === 0);
+  // A phone in dark mode gets the same map: the 3D city has a night of its own, which goes by the sun.
   await page.emulateMedia({ colorScheme: 'dark' });
-  await nightMapUp();
-  check('Auto: the night map when the phone goes dark', true);
+  await page.waitForTimeout(400);
+  check('the phone going dark does not change the map', (await layerIds(page)).includes('city-buildings'));
   await page.emulateMedia({ colorScheme: 'light' });
-  await hasLayer('city-buildings');
+  check('the map type is remembered', (await saved(page, 'settings')).mapType === 'city');
+
+  // ── The light of the 3D city ────────────────────────────────────────────
+  console.log('\nDay and night in the 3D city');
+  const pickLight = async (mode) => {
+    await page.click('.map-btn[data-open="map"]');
+    await page.locator(`input[name="light"][value="${mode}"]`).check({ force: true });
+    await page.click('#sheet-map [data-close]');
+  };
+  await page.click('.map-btn[data-open="map"]');
+  const lightNote = await text(page, '.setting:has(input[name="light"]) .setting-note');
+  check('the light can be left to the real sun over Riyadh, or set to day or to night', /sun over Riyadh/.test(lightNote) && /whatever the hour/.test(lightNote) && (await page.locator('input[name="light"]:checked').getAttribute('value')) === 'sun', lightNote);
+  await page.click('#sheet-map [data-close]');
   await mapAtRest(page);
-  check('the map type is remembered', (await saved(page, 'settings')).mapType === 'auto');
+  let lit = await lightNow(page);
+  let picture = await pictureOfMap(page);
+  check(
+    'by day: no dark over the city, no lamp lit, the sun and its shadows',
+    lit.mode === 'sun' && lit.night === 0 && lit.scene === 0 && lit.day === 1 && lit.veil === 0 && lit.glow === 0 && lit.dots === 0 && lit.pools === 0 && lit.anchor === 'map' && lit.shadows > 20 && lit.headlights === 0,
+    JSON.stringify(lit),
+  );
+  check('by day the lamp posts stand along the streets all the same, unlit', lit.streetLamps > 100 && lit.lampWays > 20 && lit.posts >= lit.streetLamps * 24 && lit.lamplight > 0, JSON.stringify({ lamps: lit.streetLamps, ways: lit.lampWays, posts: lit.posts, light: lit.lamplight }));
+  check('by day the picture is a bright one, with next to nothing in it the colour of lamplight', picture.mean > 140 && picture.dark < 0.2 && picture.amber < 0.04, JSON.stringify(picture));
+  const byDay = picture;
+  const namesByDay = [lit.streetNames, lit.streetEdges];
+
+  await pickLight('night');
+  await page.waitForFunction(() => window.__map.getLayer('city-life')?.implementation.night === 1 && window.__map.getPaintProperty('city-night', 'background-opacity') > 0.8 && window.__map.getSource('city-shade').serialize().data.features.length === 0, null, { timeout: 30000 });
+  await page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.parts.get('lights')?.mesh.count ?? 0) > 0, null, { timeout: 15000 });
+  await mapAtRest(page);
+  lit = await lightNow(page);
+  check(
+    'Night: in the middle of the morning the city is shown by night: a dark over the ground, the lamps\' light along the roads, no sun and no shadows',
+    lit.mode === 'night' && lit.night === 1 && lit.lamps === 1 && lit.styled === 1 && lit.scene === 1 && lit.day === 0 && lit.veil > 0.8 && lit.veil < 0.95 && lit.glow > 0.2 && lit.dots > 0.8 && lit.pools > 0.5 && lit.anchor === 'viewport' && lit.shadows === 0,
+    JSON.stringify(lit),
+  );
+  check(
+    'Night: street lamps with their pools of light, headlights, the light from shop windows and the lamps left on up on the roofs are drawn, over everything else',
+    lit.lamplight >= lit.streetLamps * 30 && lit.headlights > 200 && lit.spill > 0 && JSON.stringify(lit.glowing) === '["lamplight","lights","rooflights","spill"]' && lit.roofLamps > 20,
+    JSON.stringify({ lamps: lit.streetLamps, light: lit.lamplight, headlights: lit.headlights, spill: lit.spill, glowing: lit.glowing, roofLamps: lit.roofLamps }),
+  );
+  check('Night: the names are written light on dark, the app\'s own and the street map\'s', lit.names === '#ffffff' && lit.streetNames === '#ece8df' && lit.walls === 1, JSON.stringify({ names: lit.names, streets: lit.streetNames, walls: lit.walls }));
+  const brightOf = (hex) => Math.max(parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16));
+  check('Night: the blocks the map draws and the sky are dark', brightOf(lit.block) < 70 && brightOf(lit.sky) < 40, `${lit.block} ${lit.sky}`);
+  picture = await pictureOfMap(page);
+  check(
+    'Night: the picture is a dark one, its streets in the amber of lamplight, with points of bright light in it',
+    picture.mean < byDay.mean * 0.5 && picture.mean < 80 && picture.dark > 0.6 && picture.bright > 0.002 && picture.bright < 0.25 && picture.amber > 0.05 && picture.amber > byDay.amber * 3,
+    `${JSON.stringify(picture)} (by day ${JSON.stringify(byDay)})`,
+  );
+  check('Night: no errors', errors.length === 0, errors.join(' | '));
+  await shot(page, 'map-city-night.png');
+  // The lights of the traffic move with it.
+  const lightsBefore = await page.evaluate(() => Array.from(window.__map.getLayer('city-life').implementation.parts.get('lights').mesh.positions.subarray(0, 300)).map((value) => value.toFixed(1)).join(','));
+  await page.waitForTimeout(800);
+  const lightsAfter = await page.evaluate(() => Array.from(window.__map.getLayer('city-life').implementation.parts.get('lights').mesh.positions.subarray(0, 300)).map((value) => value.toFixed(1)).join(','));
+  check('Night: the headlights move with the traffic', lightsBefore !== lightsAfter);
+  check('Night: the choice is remembered', (await saved(page, 'settings')).light === 'night');
+  // Seen from across the city the lamps are dots of light along the roads, and the app's own are gone.
+  await page.evaluate(() => window.__map.jumpTo({ zoom: 14.2 }));
+  await mapAtRest(page);
+  const far = await page.evaluate(() => ({ dots: window.__map.queryRenderedFeatures({ layers: ['city-lamps'] }).length, glow: window.__map.queryRenderedFeatures({ layers: ['city-glow'] }).length, scene: window.__map.getLayer('city-life').implementation.opacity }));
+  picture = await pictureOfMap(page);
+  check('Night: from across the city the lamps are dots of light along the glowing roads', far.dots > 50 && far.glow > 50 && far.scene === 0 && picture.mean < 80 && picture.dark > 0.7 && picture.amber > 0.02, `${JSON.stringify(far)} ${JSON.stringify(picture)}`);
+  await shot(page, 'map-city-night-far.png');
+  await page.evaluate(() => window.__map.jumpTo({ zoom: 16.5 }));
+  await mapAtRest(page);
+
+  await pickLight('day');
+  await page.waitForFunction(() => window.__map.getLayer('city-life')?.implementation.night === 0 && window.__map.getPaintProperty('city-night', 'background-opacity') === 0 && window.__map.getSource('city-shade').serialize().data.features.length > 0, null, { timeout: 30000 });
+  await mapAtRest(page);
+  lit = await lightNow(page);
+  // (In the morning the real sun stands high enough to do for "day": the light is the same as by the clock.)
+  light = await page.evaluate(() => window.__map.getLight());
+  check('Day: the dark lifts, the lamps go out, the sun and its shadows are back', lit.mode === 'day' && lit.night === 0 && lit.veil === 0 && lit.glow === 0 && lit.anchor === 'map' && lit.shadows > 20 && lit.headlights === 0 && lit.names !== '#ffffff' && lit.walls === 0 && turn(light.position[1], sun.azimuth) < 3, JSON.stringify(lit));
+  check('Day: the names are written as they were before the night, dark with their light edge', JSON.stringify([lit.streetNames, lit.streetEdges]) === JSON.stringify(namesByDay) && lit.streetNames !== '#ece8df', `${JSON.stringify([lit.streetNames, lit.streetEdges])} against ${JSON.stringify(namesByDay)}`);
+  picture = await pictureOfMap(page);
+  check('Day: the picture is as bright as it was', Math.abs(picture.mean - byDay.mean) < 12, `${picture.mean} against ${byDay.mean}`);
+  await pickLight('sun');
+  await page.waitForFunction(() => window.__map.getLayer('city-life')?.implementation.counts().night.mode === 'sun');
+  await mapAtRest(page);
+  check('Real time: back to the light of the hour', (await saved(page, 'settings')).light === 'sun' && (await lightNow(page)).night === 0);
 
   // Switches.
   await page.click('.map-btn[data-open="map"]');
@@ -1593,12 +1761,75 @@ try {
     shadows: window.__map.getSource('city-shade').serialize().data.features.length,
   }));
   check('with the sun down the city has an even light and no shadows', dark.light.anchor === 'viewport' && dark.shadows === 0, JSON.stringify(dark));
+  // And it is night there: by the clock alone, with nothing chosen.
+  await late.page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.parts.get('lights')?.mesh.count ?? 0) > 0, null, { timeout: 15000 });
+  const lateLight = await lightNow(late.page);
+  check(
+    'at midnight the city is dark and lit by its lamps, of its own accord',
+    lateLight.mode === 'sun' && lateLight.night === 1 && lateLight.styled === 1 && lateLight.veil > 0.8 && lateLight.glow > 0.2 && lateLight.names === '#ffffff' && lateLight.walls === 1 && lateLight.streetLamps > 100 && lateLight.headlights > 0,
+    JSON.stringify(lateLight),
+  );
+  const latePicture = await pictureOfMap(late.page);
+  check('at midnight the picture is a dark one with the amber of lamplight in it', latePicture.mean < 80 && latePicture.dark > 0.6 && latePicture.bright > 0.002 && latePicture.amber > 0.05, JSON.stringify(latePicture));
+  // (It started that way: the city was never drawn by day first.)
+  check('a city opened by night starts by night', (await late.page.evaluate(() => window.__view?.busy?.night ?? window.__map.getLayer('city-life').implementation.counts().busy.night)) === 0, 'the dark was laid with the style, not after it');
+  await shot(late.page, 'city-midnight.png');
+  // Shown by day at midnight: a sun is put in the sky for it.
+  await late.page.click('.map-btn[data-open="map"]');
+  await late.page.locator('input[name="light"][value="day"]').check({ force: true });
+  await late.page.click('#sheet-map [data-close]');
+  await late.page.waitForFunction(() => window.__map.getLayer('city-life')?.implementation.night === 0 && window.__map.getSource('city-shade').serialize().data.features.length > 0, null, { timeout: 30000 });
+  await mapAtRest(late.page);
+  const shownByDay = await lightNow(late.page);
+  const shownSun = await late.page.evaluate(() => window.__map.getLight().position);
+  check('Day at midnight: the city is shown under a morning sun from the south-east', shownByDay.night === 0 && shownByDay.veil === 0 && shownByDay.anchor === 'map' && shownByDay.shadows > 20 && near(shownSun[1], 128, 0.5) && near(shownSun[2], 46, 0.5), JSON.stringify({ ...shownByDay, sun: shownSun }));
+  await late.page.click('.map-btn[data-open="map"]');
+  await late.page.locator('input[name="light"][value="sun"]').check({ force: true });
+  await late.page.click('#sheet-map [data-close]');
+  await late.page.waitForFunction(() => window.__map.getLayer('city-life')?.implementation.night === 1 && window.__map.getPaintProperty('city-night', 'background-opacity') > 0.8, null, { timeout: 30000 });
+  await mapAtRest(late.page);
   // Midnight in Riyadh: the last bus and the last train have gone, the cars have not.
   await late.page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.parts.get('traffic')?.mesh.count ?? 0) > 0, null, { timeout: 15000 });
   const night = (await sceneCounts(late.page)).life;
   check('after midnight no bus and no train is running', night.buses === 0 && night.trains === 0 && night.vehicles > 10 && night.busStops > 0, JSON.stringify(night));
   check('no errors in the page', late.errors.length === 0, late.errors.join(' | '));
   await late.context.close();
+
+  // Dusk: the sun on the horizon over Riyadh. (At the March equinox that is at six in the evening there, three by Greenwich.)
+  const dusk = await newPhone({ time: '2026-03-20T15:00:00Z' });
+  await dusk.page.goto(`${base}/`);
+  await dusk.page.waitForSelector('.me');
+  await styleHas(dusk.page, 'city-buildings');
+  await mapAtRest(dusk.page);
+  const half = await lightNow(dusk.page);
+  check(
+    'at dusk the light goes little by little: the city is half dark, and the lamps are coming on',
+    half.night > 0.15 && half.night < 0.5 && half.veil > 0.1 && half.veil < 0.5 && Math.abs(half.veil - 0.88 * half.styled) < 0.01 && half.lamps > 0.1 && half.lamps < 1 && half.glow > 0 && half.glow < 0.36 && half.names !== '#ffffff' && half.anchor === 'viewport' && half.shadows === 0,
+    JSON.stringify(half),
+  );
+  const duskPicture = await pictureOfMap(dusk.page);
+  check('at dusk the picture is neither a day\'s nor a night\'s', duskPicture.mean > 45 && duskPicture.mean < 150, JSON.stringify(duskPicture));
+  // A quarter of an hour on it is darker: the app follows the sun as it sinks.
+  await dusk.page.evaluate(() => {
+    const Shifted = window.Date;
+    const by = 15 * 60 * 1000;
+    window.Date = class extends Shifted {
+      constructor(...args) {
+        if (args.length === 0) super(Shifted.now() + by);
+        else super(...args);
+      }
+      static now() {
+        return Shifted.now() + by;
+      }
+    };
+    window.__map.fire('moveend'); // the app looks at the sun when the map comes to rest, and once a minute
+  });
+  await dusk.page.waitForFunction((before) => window.__map.getLayer('city-life').implementation.night > before + 0.2, half.night, { timeout: 15000 });
+  await mapAtRest(dusk.page);
+  const later = await lightNow(dusk.page);
+  check('a quarter of an hour later it is darker, the lamps are full on, and the map has followed: the names are light now', later.night > half.night + 0.2 && later.night < 1 && later.veil > half.veil + 0.15 && Math.abs(later.styled - later.night) < 0.05 && later.walls > half.walls && later.lamps === 1 && later.glow === 0.36 && later.names === '#ffffff' && later.streetNames === '#ece8df', JSON.stringify(later));
+  check('no errors in the page', dusk.errors.length === 0, dusk.errors.join(' | '));
+  await dusk.context.close();
 
   // ── The phone takes the graphics memory away ────────────────────────────
   console.log('\nBack from the background');
@@ -1678,14 +1909,12 @@ try {
   await gone.context.close();
 
   console.log('\nSmall phone, dark mode');
-  const small = await newPhone({ width: 320, height: 568, dark: true });
+  // (This phone still has "Auto" kept as its map type, from a version in which that was a look of its own.)
+  const small = await newPhone({ width: 320, height: 568, dark: true, kept: { settings: { mapType: 'auto' } } });
   await small.page.goto(`${base}/`);
   await small.page.waitForSelector('.me');
-  await small.page.waitForFunction(() => {
-    const layers = window.__map.getStyle()?.layers ?? [];
-    return layers.some((l) => l.id === 'vm-places') && !layers.some((l) => l.id === 'city-buildings' || l.id === 'building-3d');
-  });
-  check('Auto starts with the night map on a dark phone', true);
+  await styleHas(small.page, 'city-buildings');
+  check('a phone in dark mode that had "Auto" kept gets the 3D city, lit by the hour', (await small.page.evaluate(() => window.__map.getLayer('city-life')?.implementation.counts().night.mode)) === 'sun' && (await small.page.locator('input[name="mapType"]:checked').getAttribute('value')) === 'city');
   const smallFit = await small.page.evaluate(() => {
     const strip = document.getElementById('bar');
     const inside = [...strip.children].every((el) => {
@@ -1712,6 +1941,27 @@ try {
     (await denied.page.locator('#followBtn').isHidden()) && (await denied.page.locator('#speed').isHidden()) && (await denied.page.locator('#road').isHidden()),
   );
   check('the map and its buttons are there anyway', (await denied.page.locator('.map-btn[data-open="search"]').isVisible()) && (await denied.page.evaluate(() => Boolean(window.__map))));
+  // The map is of Riyadh: it opens on the city, close enough for the 3D city to be built, and keeps to it.
+  await styleHas(denied.page, 'city-buildings');
+  const opened = await camera(denied.page);
+  check('with nothing to go by the map opens on Riyadh, by Kingdom Centre, in the isometric view', near(opened.lat, 24.7136, 0.0005) && near(opened.lng, 46.6753, 0.0005) && near(opened.zoom, 15.6, 0.01) && isometric(opened), JSON.stringify(opened));
+  await denied.page.waitForSelector('#weather:not([hidden])');
+  check('the weather over Riyadh shows before the phone says where it is', (await text(denied.page, '#weather')) === '23° Clear' && near(asked.weatherAt.at(-1)[0], 24.714, 0.001) && near(asked.weatherAt.at(-1)[1], 46.675, 0.001), JSON.stringify(asked.weatherAt.at(-1)));
+  const kept = await denied.page.evaluate(() => {
+    const live = window.__map;
+    const out = {};
+    live.jumpTo({ center: [39.1925, 21.4858] }); // Jeddah
+    out.west = live.getCenter().toArray();
+    live.jumpTo({ center: [55.27, 25.2] }); // Dubai
+    out.east = live.getCenter().toArray();
+    live.jumpTo({ center: [46.6753, 24.7136], zoom: 1 });
+    out.drawnBack = live.getZoom();
+    out.bounds = live.getMaxBounds().toArray();
+    live.jumpTo({ center: [46.6753, 24.7136], zoom: 15.6 });
+    return out;
+  });
+  const inCity = ([lng, lat]) => lng >= 46.25 && lng <= 47.15 && lat >= 24.3 && lat <= 25.15;
+  check('the map cannot be moved off Riyadh, nor drawn back until the city is a dot', inCity(kept.west) && inCity(kept.east) && kept.drawnBack >= 8 && JSON.stringify(kept.bounds) === '[[46.25,24.3],[47.15,25.15]]', JSON.stringify(kept));
   await denied.page.click('#locButton');
   await denied.page.waitForFunction(() => document.getElementById('locButtonLabel').textContent === 'Try again');
   check('explains what to do when location is refused', (await text(denied.page, '#locPromptText')).startsWith('Location is turned off for this app.'));
@@ -1726,10 +1976,45 @@ try {
   await denied.page.click('li:first-child .result');
   await denied.page.waitForSelector('#place:not([hidden])');
   check('search works without location', (await text(denied.page, '#placeTitle')) === 'Kingdom Centre' && !(await text(denied.page, '#placeKind')).includes('away'));
+  // Places are looked for in Riyadh, and nowhere else: the question says so, and an answer from elsewhere is left out.
+  const question = asked.search.at(-1);
+  check('the search is for places in Riyadh, nearest the middle of the map first', question.q === 'kingdom' && question.bbox === '46.25,24.3,47.15,25.15' && near(Number(question.lat), 24.7136, 0.01) && near(Number(question.lon), 46.6753, 0.01), JSON.stringify(question));
+  check('the search says it is of Riyadh', (await text(denied.page, '#searchTitle')) === 'Find a place in Riyadh');
+  await denied.page.click('#placeClose');
+  await denied.page.click('.map-btn[data-open="search"]');
+  await denied.page.fill('#searchInput', 'jeddah');
+  await denied.page.click('#searchForm button[type="submit"]');
+  await denied.page.waitForFunction(() => document.querySelectorAll('.result').length === 1 && document.querySelector('.result-title').textContent === 'Jeddah Road');
+  check('a place in another city is not offered; a street in Riyadh by that name is', (await denied.page.locator('.result').count()) === 1);
+  await denied.page.click('li:first-child .result');
+  await denied.page.waitForSelector('#place:not([hidden])');
   await denied.page.click('#placeRoute');
   await denied.page.waitForFunction(() => document.getElementById('placeNote').textContent.startsWith('Turn on your location'));
   check('a route without location says what is missing', asked.route === routesBefore);
   await denied.context.close();
+
+  // ── Away from Riyadh ────────────────────────────────────────────────────
+  console.log('\nA phone far from Riyadh');
+  // On the road out of Jeddah. (And the map was last looked at in London, in a version that showed the world.)
+  const away = await newPhone({ route: [[39.1925, 21.4858], [39.2025, 21.4958], [39.2125, 21.5058]], kept: { locationOn: true, mapView: { lat: 51.5, lng: -0.12, zoom: 12 } } });
+  await away.page.goto(`${base}/`);
+  await away.page.waitForFunction(() => !document.getElementById('mapStatus').hidden && /outside Riyadh/.test(document.getElementById('mapStatus').textContent), null, { timeout: 30000 });
+  await styleHas(away.page, 'city-buildings');
+  const afar = await camera(away.page);
+  check('away from the city the map stays on Riyadh, and says so', near(afar.lat, 24.7136, 0.0005) && near(afar.lng, 46.6753, 0.0005) && (await text(away.page, '#mapStatus')) === 'You are outside Riyadh. The map covers Riyadh only.', JSON.stringify(afar));
+  check('there is nothing to follow anyone on: no follow button', (await away.page.locator('#followBtn').isHidden()) && (await away.page.getAttribute('#followBtn', 'aria-pressed')) !== 'true');
+  check('the speed still shows', (await text(away.page, '#speedValue')) === '50');
+  // The phone moves on; the map does not go after it.
+  await away.page.evaluate(() => {
+    window.__gps.travelled += 800;
+    window.__gps.emit();
+  });
+  await away.page.waitForTimeout(1500);
+  const still = await camera(away.page);
+  check('the map does not go after a phone outside the city', near(still.lat, afar.lat, 0.00001) && near(still.lng, afar.lng, 0.00001));
+  check('the weather shown is Riyadh\'s', near(asked.weatherAt.at(-1)[0], 24.714, 0.001), JSON.stringify(asked.weatherAt.at(-1)));
+  check('no errors in the page', away.errors.length === 0, away.errors.join(' | '));
+  await away.context.close();
 
   // ── 5. No connection ────────────────────────────────────────────────────
   console.log('\nNo connection');

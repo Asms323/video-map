@@ -154,6 +154,29 @@ export function defaultSplit(stageWidth, stageHeight, barSize, landscape) {
 // ── Distances and directions ──────────────────────────────────────────────
 // Positions are plain { lat, lng } objects, in degrees.
 
+// ── Riyadh ────────────────────────────────────────────────────────────────
+// The app is made for one city. The map opens on it and keeps to it, and places are looked for in it.
+
+/**
+ * Riyadh, as far as the app is concerned: where the map opens when it has
+ * nowhere else to open (Olaya, by Kingdom Centre) and how close; and the
+ * ground the city covers with what is growing round it, from Dir'iyah and the
+ * edge of the plateau in the west to beyond the airport in the north.
+ */
+export const RIYADH = {
+  name: 'Riyadh',
+  centre: { lat: 24.7136, lng: 46.6753 },
+  zoom: 15.6,
+  bounds: { west: 46.25, south: 24.3, east: 47.15, north: 25.15 },
+};
+
+/** Whether a place { lat, lng } lies in Riyadh. */
+export function inRiyadh(place) {
+  if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return false;
+  const { west, south, east, north } = RIYADH.bounds;
+  return place.lng >= west && place.lng <= east && place.lat >= south && place.lat <= north;
+}
+
 const EARTH_RADIUS_M = 6371008.8;
 const METERS_PER_DEGREE = (Math.PI / 180) * EARTH_RADIUS_M;
 const toRadians = (degrees) => (degrees * Math.PI) / 180;
@@ -742,6 +765,27 @@ export function shadowReach(sun) {
     bearing: (sun.azimuth + 180) % 360,
     factor: Math.min(1 / Math.tan(toRadians(sun.altitude)), LONGEST_SHADOW),
   };
+}
+
+// With the sun this far below the horizon it is night. Between sunset and then the light goes little by little.
+const NIGHT_DEGREES = -6;
+
+/**
+ * How dark it is for a sun position: 0 while the sun is up, 1 by night, and
+ * in between at dusk and at dawn.
+ */
+export function darkness(sun) {
+  if (!sun || !Number.isFinite(sun.altitude)) return 0;
+  return clamp((SUN_UP_DEGREES - sun.altitude) / (SUN_UP_DEGREES - NIGHT_DEGREES), 0, 1);
+}
+
+/**
+ * How far the lamps are on for a darkness of 0 (day) to 1 (night): they come
+ * on as the light goes, and are full on well before it is quite dark.
+ */
+export function lampsLit(night) {
+  const t = clamp(((Number(night) || 0) - 0.1) / 0.4, 0, 1);
+  return t * t * (3 - 2 * t);
 }
 
 const hexMix = (from, to, amount) => {
@@ -1395,12 +1439,50 @@ export const GROUND = {
   poolRim: '#f2efe8',
 };
 
+// ── The 3D city by night ──────────────────────────────────────────────────
+// The dark that is laid over the ground, and how much of the ground it leaves.
+const NIGHT_VEIL = '#070a13';
+const NIGHT_VEIL_MOST = 0.88;
+// What a block the map draws is left with by night: its own colour, most of the way to this.
+const NIGHT_BLOCK = '#080b16';
+const NIGHT_BLOCK_DEPTH = 0.86;
+const NIGHT_BLOCK_STEPS = 4;
+const NIGHT_ROOF_DEPTH = 0.88;
+const NIGHT_TEXT = '#ece8df';
+const NIGHT_TEXT_EDGE = 'rgba(7, 9, 15, 0.85)';
+/**
+ * The colour of the street lamps' light, by kind of road. Riyadh's great
+ * roads are lit white; its side streets still glow in the amber of sodium
+ * lamps, which is what gives the city its colour from the air by night.
+ */
+export const LAMP_LIGHT = { big: '#ffdcae', main: '#ffc682', side: '#ffb163' };
+// The roads that have lamps along them.
+const LAMP_CLASSES = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'busway'];
+const GLOW_SPILL_METERS = 4.5; // how far the lamps' light reaches past the edge of the road
+const GLOW_MOST = 0.36; // how strong it is from close by, where the lamps stand in it one by one
+const GLOW_FAR = 0.85; // and from across the city, where it is all there is to see of them
+
 /**
  * The city as a scale model: every building standing on its own outline on
  * drawn ground, with grey roads at their real widths. Meant to be looked at
  * tilted, from above.
+ *
+ * night: how dark it is, 0 (day) to 1 (night): see darkness(). By night a
+ * dark is laid over the ground, the street lamps light the roads, playing
+ * fields and pools are lit, and the names are written light on dark.
  */
-export function cityModelStyle(base, { buildings = null } = {}) {
+export function cityModelStyle(base, { buildings = null, night = 0 } = {}) {
+  // How dark it is, and how far the lamps are on. What can change little by little does (the dark over the
+  // ground, the lamps, the sky); what cannot (the colour of a block, of a name) changes over half-way through dusk.
+  const dark = clamp(Number(night) || 0, 0, 1);
+  const lamps = lampsLit(dark);
+  const byNight = dark >= 0.5;
+  // (The blocks go dark in four steps: each step has the map lay its buildings out afresh.)
+  const dusk = Math.round(dark * NIGHT_BLOCK_STEPS) / NIGHT_BLOCK_STEPS;
+  /** A colour that comes with each building, as the dark leaves it. */
+  const dimmed = (colour, by = NIGHT_BLOCK_DEPTH) => (dusk > 0 ? ['interpolate', ['linear'], by * dusk, 0, colour, 1, NIGHT_BLOCK] : colour);
+  /** A fixed colour, as the dark leaves it. */
+  const dimmedHex = (colour, by = NIGHT_BLOCK_DEPTH) => (dusk > 0 ? hexMix(colour, NIGHT_BLOCK, by * dusk) : colour);
   const isLine = ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false];
   const isArea = ['match', ['geometry-type'], ['MultiPolygon', 'Polygon'], true, false];
   // Roads in tunnels and on bridges are drawn apart from the ones on the ground.
@@ -1465,6 +1547,22 @@ export function cityModelStyle(base, { buildings = null } = {}) {
     ...more,
   });
   const isDriven = ['match', ['get', 'class'], driven, true, false];
+  // How wide the street lamps' light lies along a road, times a factor.
+  const glowMeters = ['+', metersOf, GLOW_SPILL_METERS * 2];
+  const glowThread = ['match', ['get', 'class'], ['motorway', 'trunk'], 2.6, ['primary'], 2, ['secondary', 'tertiary'], 1.3, 0.7];
+  const glowWidth = (factor) => [
+    'interpolate',
+    ['exponential', 2],
+    ['zoom'],
+    11,
+    ['*', glowThread, factor],
+    14,
+    ['*', ['max', ['/', glowMeters, 4.4], glowThread], factor],
+    16,
+    ['*', ['/', glowMeters, 1.1], factor],
+    20,
+    ['*', ['/', glowMeters, 1.1], 16 * factor],
+  ];
   const isRail = ['match', ['get', 'class'], ['rail', 'transit'], true, false];
   // On a bridge the wider road is drawn last, on top.
   const bridgeLayout = { ...round, 'line-sort-key': metersOf };
@@ -1501,7 +1599,7 @@ export function cityModelStyle(base, { buildings = null } = {}) {
     minzoom: 13,
     filter,
     paint: {
-      'fill-extrusion-color': WALL_KINDS[kind].colour,
+      'fill-extrusion-color': dimmedHex(WALL_KINDS[kind].colour),
       'fill-extrusion-pattern': wallPicture(kind),
       'fill-extrusion-base': floor,
       'fill-extrusion-height': height,
@@ -1518,7 +1616,7 @@ export function cityModelStyle(base, { buildings = null } = {}) {
     minzoom: 13,
     filter,
     paint: {
-      'fill-extrusion-color': ['to-color', colour, WALL_KINDS.low.colour],
+      'fill-extrusion-color': dimmed(['to-color', colour, WALL_KINDS.low.colour]),
       'fill-extrusion-base': floor,
       'fill-extrusion-height': height,
       'fill-extrusion-vertical-gradient': true,
@@ -1528,7 +1626,7 @@ export function cityModelStyle(base, { buildings = null } = {}) {
    * The windows would run across the roofs too. A plain slab on top of each
    * building covers them, and stands a little proud like a roof's parapet.
    */
-  const roofs = (id, source, layer, filter, height, colour = ROOF) => ({
+  const roofs = (id, source, layer, filter, height, colour = dimmedHex(ROOF, NIGHT_ROOF_DEPTH)) => ({
     id,
     type: 'fill-extrusion',
     source,
@@ -1552,7 +1650,8 @@ export function cityModelStyle(base, { buildings = null } = {}) {
     source,
     minzoom,
     paint: {
-      'fill-extrusion-color': ['get', 'c'],
+      // (By night: the colour it is lit in (n), if it is lit; else what the dark leaves of its own.)
+      'fill-extrusion-color': dusk > 0 ? ['case', ['has', 'n'], ['interpolate', ['linear'], dusk, 0, ['to-color', ['get', 'c']], 1, ['to-color', ['get', 'n']]], dimmed(['to-color', ['get', 'c']])] : ['get', 'c'],
       'fill-extrusion-base': ['get', 'b'],
       'fill-extrusion-height': ['get', 't'],
       'fill-extrusion-vertical-gradient': false,
@@ -1586,7 +1685,8 @@ export function cityModelStyle(base, { buildings = null } = {}) {
     const aboveGround = ['!=', ['get', 'is_underground'], true];
     const whole = ['all', aboveGround, ['!=', ['get', 'has_parts'], true]]; // one with parts is drawn as its parts
     const plain = ['all', ['!', ['has', 'facade_color']], ['!', isStation]];
-    const roofColour = ['case', ['has', 'roof_color'], ['to-color', ['get', 'roof_color'], ROOF], ROOF];
+    const roofByDay = ['case', ['has', 'roof_color'], ['to-color', ['get', 'roof_color'], ROOF], ROOF];
+    const roofColour = dimmed(roofByDay, NIGHT_ROOF_DEPTH);
     buildingLayers = [
       walls('city-buildings', 'low', BUILDING_SOURCE, 'building', ['all', whole, plain, ['<', recorded, TOWER_METERS]], height, floor),
       walls('city-towers', 'tall', BUILDING_SOURCE, 'building', ['all', whole, plain, ['>=', recorded, TOWER_METERS]], height, floor),
@@ -1619,10 +1719,11 @@ export function cityModelStyle(base, { buildings = null } = {}) {
     sprite: base.sprite,
     // The app replaces this with the real sun for the time and place (see sunLight).
     light: { anchor: 'viewport', position: [1.5, 215, 35], color: '#ffffff', intensity: 0.28 },
+    // (By night: dark overhead, and along the horizon the glow a city of lamps throws into the dust above it.)
     sky: {
-      'sky-color': '#dfe6ec',
-      'horizon-color': '#e9ecee',
-      'fog-color': '#e3e6e8',
+      'sky-color': hexMix('#dfe6ec', '#080c1a', dark),
+      'horizon-color': hexMix('#e9ecee', '#3a2c2a', dark),
+      'fog-color': hexMix('#e3e6e8', '#1b1a22', dark),
       'fog-ground-blend': 0.7,
       'horizon-fog-blend': 0.9,
       'sky-horizon-blend': 0.9,
@@ -1791,6 +1892,58 @@ export function cityModelStyle(base, { buildings = null } = {}) {
       ),
       lineLayer('city-bridge-edge', [onBridge, isDriven], { 'line-color': '#eceae4', 'line-width': widthOfAny(2.5), 'line-opacity': untilBuilt() }, { minzoom: 12, layout: bridgeLayout }),
       lineLayer('city-bridge', [onBridge, isDriven], { 'line-color': '#7c818b', 'line-width': widthOfAny(), 'line-opacity': untilBuilt() }, { minzoom: 12, layout: bridgeLayout }),
+      // ── By night ──
+      // The dark itself, laid over the ground and all that is painted on it. (The buildings, and what the app
+      // builds, are darkened where they are drawn.)
+      { id: 'city-night', type: 'background', paint: { 'background-color': NIGHT_VEIL, 'background-opacity': NIGHT_VEIL_MOST * dark } },
+      // Playing fields under their floodlights, and swimming pools lit from within.
+      {
+        id: 'city-night-pitch',
+        type: 'fill',
+        source: VECTOR_SOURCE,
+        'source-layer': 'landuse',
+        minzoom: 13,
+        filter: ['all', isArea, ['==', ['get', 'class'], 'pitch']],
+        paint: { 'fill-color': '#4c9a5c', 'fill-opacity': 0.8 * lamps },
+      },
+      {
+        id: 'city-night-pools',
+        type: 'fill',
+        source: VECTOR_SOURCE,
+        'source-layer': 'water',
+        minzoom: 14,
+        filter: ['==', ['get', 'class'], 'swimming_pool'],
+        paint: { 'fill-color': '#3cc8e2', 'fill-opacity': 0.9 * lamps },
+      },
+      // The street lamps, as they show from above: their light lying along every street, widest and whitest
+      // on the great roads, the amber of sodium lamps on the side streets; ...
+      lineLayer(
+        'city-glow',
+        [['!', inTunnel], isDriven],
+        {
+          'line-color': ['match', ['get', 'class'], ['motorway', 'trunk'], LAMP_LIGHT.big, ['primary', 'secondary'], LAMP_LIGHT.main, LAMP_LIGHT.side],
+          // (From across the city a street's light is a thread, thicker for the great roads; from close by it
+          // is as wide as the road and what the lamps reach beyond it. Soft from the middle outwards.)
+          'line-width': glowWidth(1),
+          'line-blur': glowWidth(0.5),
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, GLOW_FAR * lamps, 14, 0.55 * lamps, 16, GLOW_MOST * lamps],
+        },
+        { minzoom: 9, layout: round },
+      ),
+      // ... and the lamps themselves, a point of light every so many metres, until from close by the app
+      // stands them along the streets one by one (see lights.js).
+      lineLayer(
+        'city-lamps',
+        [['!', inTunnel], ['match', ['get', 'class'], LAMP_CLASSES, true, false]],
+        {
+          'line-color': '#ffe9c4',
+          'line-width': widthOfAny(0, ['match', ['get', 'class'], ['motorway', 'trunk'], 4.2, ['primary'], 3.8, ['secondary', 'tertiary'], 3.4, 3]),
+          // (A dash of no length with a round end is a dot: one to every ten widths of the line.)
+          'line-dasharray': [0, 10],
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0.5 * lamps, 14, 0.95 * lamps, 15.1, 0.95 * lamps, 15.6, 0],
+        },
+        { minzoom: 12, layout: round },
+      ),
       // A soft dark rim on the ground where each building stands, the way corners
       // gather shade even on the sunny side.
       {
@@ -1826,9 +1979,17 @@ export function cityModelStyle(base, { buildings = null } = {}) {
       slabLayer('city-landmarks', 'city-landmarks', 11),
       slabLayer('city-extras', 'city-extras', 14),
       // The names and icons of the street map, without the route-number badges
-      // that repeat along every main road.
-      ...base.layers.filter((layer) => layer.type === 'symbol' && !layer.id.includes('shield')),
+      // that repeat along every main road. (By night the names are written light on dark.)
+      ...base.layers.filter((layer) => layer.type === 'symbol' && !layer.id.includes('shield')).map((layer) => (byNight ? nightLabel(layer) : layer)),
     ],
+  };
+}
+
+/** A layer of names as it is written by night: light letters with a dark edge. */
+function nightLabel(layer) {
+  return {
+    ...layer,
+    paint: { ...layer.paint, 'text-color': NIGHT_TEXT, 'text-halo-color': NIGHT_TEXT_EDGE, 'text-halo-width': layer.paint?.['text-halo-width'] ?? 1.2 },
   };
 }
 

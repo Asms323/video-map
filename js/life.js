@@ -12,19 +12,93 @@ const METERS_PER_DEGREE = 111320;
 const LANE_METERS = 3.4;
 const NARROW_LANE_METERS = 2; // on a residential street, where cars are parked along both sides
 
-// Bridges. The map says which stretches are on a bridge and on which level
-// (1 over the ground, 2 over another bridge); how high that is, it does not
-// say. A road deck is taken to be 6.5 m up and a railway viaduct 8.5 m, each
-// level above the first another 5.5 m, and where a bridge meets the ground it
-// comes down in a ramp.
+// Bridges. The map says which stretches are on a bridge, and gives each a
+// number for its level; how high that is, it does not say. The numbers only
+// tell which of two bridges passes over the other (a viaduct numbered 3 from
+// end to end is not three bridges up), so a bridge is taken to be on the
+// first level unless it passes over another bridge: see stackBridges(). A
+// road deck on the first level is taken to be 6.5 m up and a railway viaduct
+// 8.5 m, each level above the first another 5.5 m, and where a bridge meets
+// the ground it comes down in a ramp.
 const ROAD_DECK_METERS = 6.5;
 const RAIL_DECK_METERS = 8.5;
 const DECK_ABOVE_DECK_METERS = 5.5;
 const BRIDGE_RAMP_METERS = 90;
 const DECK_THICK_METERS = 1.4;
-const PARAPET_METERS = 0.9;
+export const PARAPET_METERS = 0.9;
 const RAIL_DECK_HALF_METERS = 2.7;
 const PIER_EVERY_METERS = 30;
+const BRIDGE_SQUARE_METERS = 96; // bridges are filed under squares of ground this wide, to find which pass over which
+const BRIDGES_MEET_METERS = 3; // decks whose middle lines come this close share ground: one is over the other
+const TRACK_BED_HALF_METERS = 2.3; // a track on the ground: its bed of ballast, and the rails down its middle
+const TRACK_UP_METERS = 0.16; // just clear of the shadows the map lays on the ground
+
+/** How far apart two stretches of line come at their nearest: 0 where they cross. Each is [x0, y0, x1, y1]. */
+function stretchesApart(a, b) {
+  const side = (px, py, qx, qy, rx, ry) => (qx - px) * (ry - py) - (qy - py) * (rx - px);
+  const d1 = side(b[0], b[1], b[2], b[3], a[0], a[1]);
+  const d2 = side(b[0], b[1], b[2], b[3], a[2], a[3]);
+  const d3 = side(a[0], a[1], a[2], a[3], b[0], b[1]);
+  const d4 = side(a[0], a[1], a[2], a[3], b[2], b[3]);
+  if (d1 * d2 < 0 && d3 * d4 < 0) return 0;
+  const toStretch = (px, py, [x0, y0, x1, y1]) => {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const t = Math.min(Math.max(((px - x0) * dx + (py - y0) * dy) / (dx * dx + dy * dy || 1), 0), 1);
+    return Math.hypot(px - (x0 + dx * t), py - (y0 + dy * t));
+  };
+  return Math.min(toStretch(a[0], a[1], b), toStretch(a[2], a[3], b), toStretch(b[0], b[1], a), toStretch(b[2], b[3], a));
+}
+
+/**
+ * Work out on which level each bridge really is, and put that in place of
+ * the number the map gave it. A bridge is on the first level, unless it
+ * passes over another bridge: one it crosses, or runs along above, and has
+ * the higher number of the two. Then it is one level above that one.
+ */
+function stackBridges(drafts) {
+  const bridges = drafts.filter((draft) => draft.level > 0);
+  if (bridges.length === 0) return;
+  // Every stretch of every bridge, filed under the squares of ground it passes through.
+  const squares = new Map();
+  const squareOf = (cellX, cellY) => (cellX + 32768) * 65536 + (cellY + 32768);
+  const stretchesOf = (draft) => {
+    const out = [];
+    for (let k = 1; k < draft.xy.length / 2; k += 1) out.push([draft.xy[k * 2 - 2], draft.xy[k * 2 - 1], draft.xy[k * 2], draft.xy[k * 2 + 1]]);
+    return out;
+  };
+  const squaresOf = (stretch, visit) => {
+    const reach = BRIDGES_MEET_METERS;
+    for (let cellX = Math.floor((Math.min(stretch[0], stretch[2]) - reach) / BRIDGE_SQUARE_METERS); cellX <= Math.floor((Math.max(stretch[0], stretch[2]) + reach) / BRIDGE_SQUARE_METERS); cellX += 1) {
+      for (let cellY = Math.floor((Math.min(stretch[1], stretch[3]) - reach) / BRIDGE_SQUARE_METERS); cellY <= Math.floor((Math.max(stretch[1], stretch[3]) + reach) / BRIDGE_SQUARE_METERS); cellY += 1) visit(squareOf(cellX, cellY));
+    }
+  };
+  bridges.forEach((draft, index) => {
+    for (const stretch of stretchesOf(draft)) {
+      squaresOf(stretch, (key) => {
+        if (!squares.has(key)) squares.set(key, []);
+        squares.get(key).push({ index, stretch });
+      });
+    }
+  });
+  // From the lowest number up: by the time a bridge is looked at, all that it could pass over have their level.
+  const numbered = bridges.map((draft) => draft.level);
+  const level = new Array(bridges.length).fill(1);
+  const order = bridges.map((_, index) => index).sort((a, b) => numbered[a] - numbered[b]);
+  for (const index of order) {
+    for (const stretch of stretchesOf(bridges[index])) {
+      squaresOf(stretch, (key) => {
+        for (const other of squares.get(key) ?? []) {
+          if (numbered[other.index] >= numbered[index] || level[other.index] < level[index]) continue;
+          if (stretchesApart(stretch, other.stretch) <= BRIDGES_MEET_METERS) level[index] = level[other.index] + 1;
+        }
+      });
+    }
+  }
+  bridges.forEach((draft, index) => {
+    draft.level = level[index];
+  });
+}
 
 /** How high above the ground a way runs at a distance along it, in metres: 0 except on a bridge. */
 export function heightAlong(way, distance) {
@@ -103,8 +177,6 @@ export const VEHICLES = {
   truck: { length: 9, width: 2.5, boxes: [[0, 0.74, 1, 0.9, 3.4, 'cargo'], [0.78, 1, 0.96, 0.5, 2.6, 'body'], [0.9, 1.0, 0.97, 1.5, 2.3, 'glass']] },
   bus: { length: 12, width: 2.55, boxes: [[0, 1, 1, 0.35, 1.3, 'body'], [0.01, 0.99, 0.97, 1.3, 2.5, 'glass'], [0, 1, 1, 2.5, 3.1, 'body']] },
   coach: { length: 20, width: 2.9, boxes: [[0, 1, 1, 0.5, 1.6, 'body'], [0.02, 0.98, 0.97, 1.6, 2.9, 'glass'], [0, 1, 1, 2.9, 3.6, 'body'], [0.08, 0.92, 0.42, 3.6, 3.9, 'cargo']] },
-  // A train car in a tunnel: only its outline, flat on the ground above.
-  under: { length: 20, width: 2.9, flat: true, boxes: [] },
 };
 
 // Paint, as [red, green, blue]. Cars: what is common on the road, most common first.
@@ -119,8 +191,7 @@ export const GLASS = [48, 62, 82];
 const TYRE = [30, 31, 35];
 const HEADLIGHTS = [250, 244, 226];
 const TAIL_LIGHTS = [150, 30, 30];
-const UNDERGROUND = [44, 78, 168]; // a blue shadow of the train, not to be taken for a building's shade
-const UNDER_METERS = 0.16;
+const VEHICLE_SHADE_LONGEST = 2.5; // a vehicle's shadow is drawn no longer than this many times its height
 
 const TRAIN_CAR_METERS = 21; // a 20 m car and the gap to the next
 const TRAIL_STEP_METERS = 2;
@@ -147,7 +218,7 @@ export function trafficLevel(date, lng) {
 // minutes in the rush hours and every seven and a half otherwise; buses from
 // 05:00 to midnight, about one every ten minutes each way along a street.
 // Which minute a train or bus passes is therefore right in rhythm, not to the
-// clock. Other cities are given the same hours, without the late Friday start.
+// clock.
 
 /** The hour of the day and the day of the week at a longitude, to the nearest hour of time zone: { hour: 0–24, day: 0 (Sunday) – 6 }. */
 export function localTime(date, lng) {
@@ -208,7 +279,7 @@ export function streetDirection(network, x, y, reach = 60) {
 }
 
 /** Where on a way is nearest to a point: { along, distance }, both in metres. */
-function nearestOn(way, x, y) {
+export function nearestOn(way, x, y) {
   const { xy, along } = way;
   let best = Infinity;
   let at = 0;
@@ -367,7 +438,7 @@ function piecesOf(draft) {
 /**
  * Turn map lines into ways that can be driven.
  *
- * lines: [{ class, oneway (1, -1 or 0), tunnel, bridge, layer, service (the kind of service lane), width (metres, as drawn), coordinates: [[lng, lat], …] }]
+ * lines: [{ class, subclass, oneway (1, -1 or 0), tunnel, bridge, layer (the map's number for a bridge's level), service (the kind of service lane), width (metres, as drawn), coordinates: [[lng, lat], …] }]
  * origin: { lng, lat }
  * busStops, stations: [[lng, lat], …], the stops and stations on the map
  * Returns { ways, joins, roadKm, railKm, busKm }. A way runs from one junction
@@ -397,10 +468,12 @@ export function buildNetwork(lines, origin, { busStops = [], stations = [] } = {
       xy[i * 2] = (coordinates[i][0] - origin.lng) * squeeze;
       xy[i * 2 + 1] = (coordinates[i][1] - origin.lat) * METERS_PER_DEGREE;
     }
-    // Its level: 0 on the ground, 1 or more on a bridge, below 0 in a tunnel.
+    // Its level: 0 on the ground, 1 or more on a bridge, below 0 in a tunnel. (For a bridge: the number
+    // the map gives it for now, and the level it is really on once all the bridges are known.)
     const storey = Math.max(Math.abs(Math.round(Number(line.layer) || 0)), 1);
     drafts.push({ line, rail, road, xy, hidden: Boolean(line.tunnel), level: line.tunnel ? -storey : line.bridge ? storey : 0, cuts: [] });
   }
+  stackBridges(drafts);
   cutAtJunctions(drafts);
 
   // Two map tiles can put the same junction a metre apart, so line ends are
@@ -457,6 +530,7 @@ export function buildNetwork(lines, origin, { busStops = [], stations = [] } = {
         rail,
         class: line.class,
         service: line.service ?? null, // what kind of service lane it is, if it is one: the lane of a car park, a driveway…
+        idle: rail && (line.class === 'rail' || line.subclass === 'monorail'), // a track the trains here do not use: the main-line railway, a monorail
         oneway: rail ? 0 : Number(line.oneway) || 0,
         hidden: draft.hidden,
         deck: draft.level > 0 ? (rail ? RAIL_DECK_METERS : ROAD_DECK_METERS) + (draft.level - 1) * DECK_ABOVE_DECK_METERS : 0, // how high its bridge carries it
@@ -590,12 +664,14 @@ function unitFrom(text) {
  * of what the map has loaded. Of a pair of tracks side by side (or of tunnels
  * side by side) a train takes the right-hand one. Where the map draws both
  * tracks as one line, trains run each way along it, each a little to its own right.
+ * No train comes onto a track that is marked idle: the trains here are the
+ * metro's, which do not run on the main-line railway or on a monorail.
  * Returns [{ way, atStart, key, offset }].
  */
 export function railEntries(network) {
   const rails = [];
   network.ways.forEach((way, index) => {
-    if (way.rail) rails.push({ way, index });
+    if (way.rail && !way.idle) rails.push({ way, index });
   });
   const entries = [];
   for (const { way, index } of rails) {
@@ -1191,8 +1267,9 @@ export class Traffic {
 
   /**
    * Call back with each vehicle that can be seen: (type, x, y, east, north,
-   * paint, cargo, shown, lift). A train's cars come as 'coach', or as 'under'
-   * while they are in a tunnel. lift: how high the road is there, on a bridge.
+   * paint, cargo, shown, lift). A train's cars come as 'coach'; those in a
+   * tunnel are not seen, and do not come. lift: how high the road is there,
+   * on a bridge.
    */
   eachVehicle(draw) {
     const ways = this.network.ways;
@@ -1220,8 +1297,9 @@ export class Traffic {
         const b = trail[i];
         const span = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
         const t = (back - a[2]) / (b[2] - a[2] || 1);
-        // In a tunnel a car is only a faint mark on the ground above it.
-        draw(b[3] ? 'under' : 'coach', a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, (b[0] - a[0]) / span, (b[1] - a[1]) / span, train.paint, train.stripe, train.shown, a[4] + (b[4] - a[4]) * t);
+        // (In a tunnel a car is out of sight: the train comes into view car by car at the tunnel's mouth.)
+        if (b[3]) continue;
+        draw('coach', a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, (b[0] - a[0]) / span, (b[1] - a[1]) / span, train.paint, train.stripe, train.shown, a[4] + (b[4] - a[4]) * t);
       }
     }
   }
@@ -1275,6 +1353,24 @@ export class Mesh {
     this.count += 1;
   }
 
+  /**
+   * A corner of light: its colour is added to whatever lies behind it, as
+   * strongly as told (0 to 1), and it covers nothing. For the parts of the
+   * scene that give light (see "glow" in scene.js).
+   */
+  glow(x, y, z, r, g, b, strength) {
+    const p = this.count * 3;
+    const c = this.count * 4;
+    this.positions[p] = x;
+    this.positions[p + 1] = y;
+    this.positions[p + 2] = z;
+    this.colours[c] = Math.min(r * strength, 255);
+    this.colours[c + 1] = Math.min(g * strength, 255);
+    this.colours[c + 2] = Math.min(b * strength, 255);
+    this.colours[c + 3] = 0;
+    this.count += 1;
+  }
+
   /** A flat four-cornered face, corners given in order round its edge. */
   face(a, b, c, d, r, g, bl, alpha) {
     this.room(6);
@@ -1306,10 +1402,10 @@ export function lightFrom(sun) {
 }
 
 /**
- * Add one vehicle to a mesh: its boxes, and the shade it throws on the road.
- * (x, y) is its middle, (east, north) the way it points. reach: what
- * shadowReach() gives, or null. scale: 1 is life size. lift: how high the
- * road is under it, on a bridge.
+ * Add one vehicle to a mesh: its boxes, and the shade it throws on the road
+ * (twelve corners, when the sun is up). (x, y) is its middle, (east, north)
+ * the way it points. reach: what shadowReach() gives, or null. scale: 1 is
+ * life size. lift: how high the road is under it, on a bridge.
  */
 export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, light, reach, scale = 1, lift = 0) {
   const shape = VEHICLES[type];
@@ -1320,21 +1416,21 @@ export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, 
   const rightEast = north;
   const rightNorth = -east;
 
-  if (shape.flat) {
-    // Just above the shadows the buildings cast, or a train under a shaded street would not show.
-    const corner = (along, across) => [x + east * along + rightEast * across, y + north * along + rightNorth * across, UNDER_METERS];
-    mesh.face(corner(-halfLength, -halfWidth), corner(halfLength, -halfWidth), corner(halfLength, halfWidth), corner(-halfLength, halfWidth), UNDERGROUND[0], UNDERGROUND[1], UNDERGROUND[2], 0.42 * shown);
-    return;
-  }
-
   if (reach) {
-    // A dark patch under and beside the vehicle, pulled out the way shadows fall.
+    // The shade it throws on the road: from under the vehicle out to where the shadow of its roof falls,
+    // all of a piece. (A patch of shade lying apart from the vehicle would make it seem to hover.)
     const direction = (reach.bearing * Math.PI) / 180;
-    const pull = Math.min(reach.factor, 2) * 1.2 * scale;
-    const sx = x + Math.sin(direction) * pull;
-    const sy = y + Math.cos(direction) * pull;
-    const corner = (along, across) => [sx + east * along + rightEast * across, sy + north * along + rightNorth * across, lift + 0.06];
-    mesh.face(corner(-halfLength, -halfWidth), corner(halfLength, -halfWidth), corner(halfLength, halfWidth), corner(-halfLength, halfWidth), 16, 20, 32, 0.3 * shown);
+    const tall = shape.boxes.reduce((most, box) => Math.max(most, box[4]), 0) * scale;
+    const far = Math.min(reach.factor, VEHICLE_SHADE_LONGEST) * tall;
+    const dx = Math.sin(direction) * far;
+    const dy = Math.cos(direction) * far;
+    const foot = [[-halfLength, -halfWidth], [halfLength, -halfWidth], [halfLength, halfWidth], [-halfLength, halfWidth]].map(([along, across]) => [x + east * along + rightEast * across, y + north * along + rightNorth * across]);
+    const outline = hullOf(foot.concat(foot.map(([fx, fy]) => [fx + dx, fy + dy])));
+    // (Always four triangles, so that a vehicle is as many corners wherever the sun stands.)
+    mesh.room(12);
+    for (let i = 1; i <= 4; i += 1) {
+      for (const [sx, sy] of [outline[0], outline[Math.min(i, outline.length - 1)], outline[Math.min(i + 1, outline.length - 1)]]) mesh.corner(sx, sy, lift + 0.06, 16, 20, 32, 0.3 * shown);
+    }
   }
 
   let bodies = 0;
@@ -1709,7 +1805,8 @@ const MARK_PAINT = [236, 236, 232];
  * Fill a mesh with the bridges of a network: for every stretch of road or
  * track on a bridge a deck at its height, with parapets along both edges, a
  * line down the middle of a road and rails on a viaduct, standing on piers.
- * Returns the number of stretches drawn.
+ * A track on the ground gets its bed and its rails here too, for the trains
+ * to be seen to run on. Returns the number of stretches of bridge drawn.
  */
 export function drawBridges(mesh, network, light, stayed = []) {
   mesh.clear();
@@ -1728,7 +1825,27 @@ export function drawBridges(mesh, network, light, stayed = []) {
   });
   for (const frame of hung) drawStays(mesh, network, frame, shade);
   for (const way of network.ways) {
-    if (!(way.deck > 0) || way.hidden) continue;
+    if (way.hidden) continue;
+    if (way.rail && !(way.deck > 0)) {
+      // A track on the ground: a bed of ballast, with the rails as a dark band down its middle.
+      const bed = shade(RAIL_BED_PAINT, 0, 0, 1);
+      const rails = shade(RAIL_PAINT, 0, 0, 1);
+      const steps = Math.max(Math.ceil(way.length / 9), 1);
+      let before = null;
+      for (let i = 0; i <= steps; i += 1) {
+        pointAlong(way, (way.length * i) / steps, spot);
+        const here = { x: spot[0], y: spot[1], east: spot[2], north: spot[3] };
+        if (before) {
+          const edge = (cut, across) => [cut.x - cut.north * across, cut.y + cut.east * across, TRACK_UP_METERS];
+          for (const [from, to, paint] of [[TRACK_BED_HALF_METERS, 0.9, bed], [0.9, -0.9, rails], [-0.9, -TRACK_BED_HALF_METERS, bed]]) {
+            mesh.face(edge(before, from), edge(before, to), edge(here, to), edge(here, from), paint[0], paint[1], paint[2], 1);
+          }
+        }
+        before = here;
+      }
+      continue;
+    }
+    if (!(way.deck > 0)) continue;
     const half = way.rail ? RAIL_DECK_HALF_METERS : way.width / 2 + 0.7;
     const steps = Math.max(Math.ceil(way.length / 9), 1);
     // The deck's two edges at each step along it, and how high it is there.
@@ -1959,6 +2076,7 @@ const AWNING_PAINT = [224, 208, 178];
 const POST_PAINT = [150, 142, 128];
 const MAST_PAINT_ROOF = [210, 210, 214];
 const ROOF_SHADE_UP = 0.05; // how far above the roof the shade of what stands on it is laid
+const ROOF_LAMP_UP = 0.12; // and how far above it the light of a lamp lies
 const ROOF_SHADE_LONGEST = 8;
 // By night the light is even, and a box of one colour all round is a flat patch on its roof. What stands on
 // the roofs is given a little form then: lit as if from above and a touch from the south-west, and dimmed
@@ -1997,13 +2115,17 @@ export function hullOf(points) {
  * ridge, in place of furniture.
  * fall: how far a shadow falls for each metre of height, [east, north], or
  * null by night; shade: a Mesh the shade of each thing on its roof is added
- * to (it is not emptied first).
+ * to (it is not emptied first). beacons: a list the top of each mast is
+ * added to, as [x, y, height]: where the red lamp of a tall tower goes.
+ * lamps: a list the lamps left on up on the roofs are added to, the same
+ * way: by the door at the head of the stairs on three roofs in ten, and
+ * under every awning.
  *
  * Nobody maps these things, so they are made up: placed by chance, but the
  * same way every time for the same building. Returns the number of roofs
  * furnished.
  */
-export function drawRoofs(mesh, buildings, sunlight, { fall = null, shade = null } = {}) {
+export function drawRoofs(mesh, buildings, sunlight, { fall = null, shade = null, beacons = null, lamps = null } = {}) {
   mesh.clear();
   let furnished = 0;
   const light = sunlight ?? NIGHT_FORM;
@@ -2129,7 +2251,12 @@ export function drawRoofs(mesh, buildings, sunlight, { fall = null, shade = null
       place(3.2, 2.6, (x, y) => box(x, y, 3.2, 2.6, 3.4, wall), 6, 0, 0.35);
       row(2 + Math.floor(random() * 3), 1.8, 1.2, 0.9, (x, y) => box(x, y, 1.8, 1.2, 1.6, PLANT_PAINT, PLANT_LID));
       row(2 + Math.floor(random() * 3), 1.8, 1.2, 0.9, (x, y) => box(x, y, 1.8, 1.2, 1.6, PLANT_PAINT, PLANT_LID));
-      if (top >= 90) place(0.2, 0.2, (x, y) => box(x, y, 0.16, 0.16, 11, MAST_PAINT_ROOF), 10, 0, 0.5);
+      if (top >= 90) {
+        place(0.2, 0.2, (x, y) => {
+          box(x, y, 0.16, 0.16, 11, MAST_PAINT_ROOF);
+          beacons?.push([x, y, top + 11.3]);
+        }, 10, 0, 0.5);
+      }
     } else if (large) {
       // A large roof: rows of cooling plant, the head of the stairs, tanks.
       const units = Math.min(Math.max(Math.round(area / 300), 2), 10);
@@ -2140,10 +2267,15 @@ export function drawRoofs(mesh, buildings, sunlight, { fall = null, shade = null
     } else {
       // A house or a block: the stair head, and beside it a water tank; the air conditioners in a row by the parapet.
       const small = building.kind === 'house' || area < 260;
+      // (Which roofs have a lamp left on goes by the building's own number, not by chance: by day nothing is to change for it.)
+      const lampOn = (Number.isFinite(building.seed) ? Math.abs(Math.round(building.seed)) : Math.round(area)) % 10 < 3;
       place(2.2, 1.6, (x, y) => {
         box(x, y, 2.2, 1.6, 2.5, wall);
         const tankAt = [x + east * 3.3, y + north * 3.3];
         if (fits(tankAt[0], tankAt[1], 0.7, 0.7)) tank(tankAt[0], tankAt[1], 0.7, 1.4);
+        // The lamp by the door, on the side away from the tank.
+        const doorAt = [x - east * 3, y - north * 3];
+        if (lamps && lampOn && insideRing(ring, doorAt[0], doorAt[1])) lamps.push([doorAt[0], doorAt[1], top + ROOF_LAMP_UP]);
       });
       if (!small || random() < 0.5) place(0.75, 0.75, (x, y) => tank(x, y, 0.75, 1.5), 3);
       row(small ? 1 + Math.floor(random() * 3) : 3 + Math.floor(random() * 4), 0.45, 0.24, 0.5, (x, y) => box(x, y, 0.45, 0.24, 0.75, UNIT_PAINT, UNIT_LID), 0.55, 0.85);
@@ -2155,6 +2287,8 @@ export function drawRoofs(mesh, buildings, sunlight, { fall = null, shade = null
           for (const [px, py] of cornersOf(x, y, 2.05, 1.55)) drawBox(mesh, px, py, east, north, 0.06, 0.06, top, top + 2.3, toned(POST_PAINT), light);
           shadeOf(cornersOf(x, y, 2.2, 1.7), 2.4);
           taken.push([x, y, 2.8]);
+          // (Where people sit of an evening there is a lamp.)
+          lamps?.push([x, y, top + ROOF_LAMP_UP]);
         }, 4);
       } else if (extra < 0.27) {
         // Solar panels, flat and dark, a few in a row.

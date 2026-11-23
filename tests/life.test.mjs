@@ -434,7 +434,7 @@ test('of two tracks side by side a train takes the right-hand one', () => {
   assert.deepEqual(railEntries(tubes).map((entry) => [entry.way, entry.atStart]), [[0, true], [1, false]]);
 });
 
-test('a train runs on through a tunnel, where it is only a mark on the ground', () => {
+test('a train runs on through a tunnel, where it is out of sight', () => {
   const network = buildNetwork([line('transit', [[0, 0], [1000, 0]]), line('transit', [[1000, 0], [2000, 0]], { tunnel: true }), line('transit', [[2000, 0], [3000, 0]])], ORIGIN);
   const traffic = new Traffic({ now: () => MORNING });
   traffic.setNetwork(network, [0, 0], ORIGIN);
@@ -449,19 +449,20 @@ test('a train runs on through a tunnel, where it is only a mark on the ground', 
   };
   // Twenty seconds in at 22 m/s: in the open. A minute in: under ground. Two minutes in: out the far side.
   assert.deepEqual(seen(20), [['coach', 430], ['coach', 409], ['coach', 388]]);
-  assert.deepEqual(seen(60), [['under', 1310], ['under', 1289], ['under', 1268]]);
-  assert.deepEqual(seen(47).map(([type]) => type), ['under', 'under', 'coach'], 'the front is in the tunnel, the tail not yet');
+  assert.deepEqual(seen(60), [], 'nothing of it is drawn: no train glides over the streets above its tunnel');
+  assert.deepEqual(seen(47), [['coach', 982]], 'the front is in the tunnel, the last car not yet');
   assert.deepEqual(seen(120).map(([type]) => type), ['coach', 'coach', 'coach']);
   assert.equal(traffic.startTrain(traffic.entries[0], 140, MORNING / 1000), false, 'after 3 km it has left the map');
-  // Under ground a car is drawn as one flat, see-through patch; above ground as its boxes with a shade.
+  // Under ground nothing is drawn; above ground a car is its boxes, and its shade when the sun is out.
   seen(60);
   const mesh = new Mesh();
-  assert.equal(drawTraffic(mesh, traffic, lightFrom({ azimuth: 180, altitude: 50 }), { bearing: 0, factor: 1 }), 3);
-  assert.equal(mesh.count, 3 * 6);
-  assert.ok(near(mesh.positions[2], 0.16, 1e-6) && mesh.colours[3] < 110, 'just above the shadows on the street, and see-through');
+  assert.equal(drawTraffic(mesh, traffic, lightFrom({ azimuth: 180, altitude: 50 }), { bearing: 0, factor: 1 }), 0);
+  assert.equal(mesh.count, 0);
   seen(20);
   drawTraffic(mesh, traffic, null, null);
   assert.equal(mesh.count, 3 * 4 * 30, 'four boxes to a car: body, windows, roof and the plant on it');
+  drawTraffic(mesh, traffic, lightFrom({ azimuth: 180, altitude: 50 }), { bearing: 0, factor: 1 });
+  assert.equal(mesh.count, 3 * (4 * 30 + 12), 'and its shade');
   // A train that is already running where a new one would be is the same train.
   assert.equal(traffic.startTrain(traffic.entries[0], 25, MORNING / 1000), true);
   assert.equal(traffic.trains.length, 1);
@@ -531,7 +532,7 @@ test('the trains keep their rhythm when the map moves along the line', () => {
   assert.ok(closest > 4000, `two trains ${closest} m apart on one track`);
 });
 
-test('a vehicle is drawn as lit boxes with a shade beside it', () => {
+test('a vehicle is drawn as lit boxes, with its shade on the road joined to it', () => {
   const mesh = new Mesh(8);
   const light = lightFrom({ azimuth: 180, altitude: 50 });
   assert.ok(near(light.north, -Math.cos((50 * Math.PI) / 180), 1e-9) && near(light.up, Math.sin((50 * Math.PI) / 180), 1e-9) && near(light.east, 0, 1e-9));
@@ -541,15 +542,16 @@ test('a vehicle is drawn as lit boxes with a shade beside it', () => {
   assert.equal(faceLight(light, 0, 1, 0), 0.65, 'a face turned away keeps 65%');
   assert.equal(faceLight(null, 0, 0, 1), 0.8, 'even light at night');
 
-  // A car at (10, 20) pointing north, with the sun in the south: 3 boxes of 5 faces (its tyres, its body, its
-  // cabin), and a shade.
+  // A car at (10, 20) pointing north, with the sun in the south: its shade (four triangles), and 3 boxes of 5
+  // faces (its tyres, its body, its cabin).
   drawVehicle(mesh, 'car', 10, 20, 0, 1, [200, 100, 50], [200, 100, 50], 1, light, { bearing: 0, factor: 1 });
-  assert.equal(mesh.count, 6 + 3 * 5 * 6);
+  const SHADE = 12;
+  assert.equal(mesh.count, SHADE + 3 * 5 * 6);
   assert.deepEqual(VEHICLES.car.boxes.map((box) => box[5]), ['tyre', 'body', 'glass']);
   const xs = [];
   const ys = [];
   const zs = [];
-  for (let i = 6; i < mesh.count; i += 1) {
+  for (let i = SHADE; i < mesh.count; i += 1) {
     xs.push(mesh.positions[i * 3]);
     ys.push(mesh.positions[i * 3 + 1]);
     zs.push(mesh.positions[i * 3 + 2]);
@@ -557,13 +559,28 @@ test('a vehicle is drawn as lit boxes with a shade beside it', () => {
   assert.ok(near(Math.min(...xs), 10 - 0.9, 1e-4) && near(Math.max(...xs), 10 + 0.9, 1e-4), 'as wide as a car');
   assert.ok(near(Math.min(...ys), 20 - 2.25, 1e-4) && near(Math.max(...ys), 20 + 2.25, 1e-4), 'as long as a car, along the way it points');
   assert.ok(near(Math.max(...zs), 1.42, 1e-4) && near(Math.min(...zs), 0.02, 1e-4), 'from the road under its tyres to its roof');
-  // The shade lies on the road, north of the car, away from the sun.
-  assert.ok(near(mesh.positions[2], 0.06, 1e-6) && mesh.positions[1] > 20 - 2.25);
+  // The shade lies on the road: from under the car itself out to the north, away from the sun, as far as the
+  // shadow of its roof falls (1.42 m, with the sun at this height). All of a piece: a patch of shade lying apart
+  // from the car would make it seem to hover.
+  const shade = Array.from({ length: SHADE }, (_, i) => [mesh.positions[i * 3], mesh.positions[i * 3 + 1], mesh.positions[i * 3 + 2]]);
+  assert.ok(shade.every(([, , z]) => near(z, 0.06, 1e-6)));
+  assert.ok(near(Math.min(...shade.map(([, y]) => y)), 20 - 2.25, 1e-4) && near(Math.max(...shade.map(([, y]) => y)), 20 + 2.25 + 1.42, 1e-4), 'from the car\'s tail to the end of its shadow');
+  assert.ok(near(Math.min(...shade.map(([x]) => x)), 10 - 0.9, 1e-4) && near(Math.max(...shade.map(([x]) => x)), 10 + 0.9, 1e-4));
+  let shadeArea = 0;
+  for (let i = 0; i < SHADE; i += 3) shadeArea += Math.abs((shade[i + 1][0] - shade[i][0]) * (shade[i + 2][1] - shade[i][1]) - (shade[i + 2][0] - shade[i][0]) * (shade[i + 1][1] - shade[i][1])) / 2;
+  assert.ok(near(shadeArea, 1.8 * (4.5 + 1.42), 1e-3), `${shadeArea}`);
   assert.deepEqual(Array.from(mesh.colours.subarray(0, 4)), [Math.floor(16 * 0.3), Math.floor(20 * 0.3), Math.floor(32 * 0.3), Math.floor(255 * 0.3)]);
+  // With the sun low and to one side the shade is longer, but no longer than two and a half times the car's height; still it starts under the car.
+  const evening = new Mesh();
+  drawVehicle(evening, 'car', 10, 20, 0, 1, [200, 100, 50], [200, 100, 50], 1, light, { bearing: 90, factor: 3.4 });
+  assert.equal(evening.count, SHADE + 3 * 5 * 6);
+  const eastmost = Math.max(...Array.from({ length: SHADE }, (_, i) => evening.positions[i * 3]));
+  const westmost = Math.min(...Array.from({ length: SHADE }, (_, i) => evening.positions[i * 3]));
+  assert.ok(near(eastmost, 10 + 0.9 + 2.5 * 1.42, 1e-4) && near(westmost, 10 - 0.9, 1e-4), `${westmost} to ${eastmost}`);
   // Under the car, its tyres: dark. The top of the body (the first face of the second box) is fully lit paint.
   const top = faceLight(light, 0, 0, 1);
-  assert.ok(mesh.colours[6 * 4] < 40 && mesh.colours[6 * 4 + 1] < 40, 'tyres');
-  const bodyTop = 6 + 30;
+  assert.ok(mesh.colours[SHADE * 4] < 40 && mesh.colours[SHADE * 4 + 1] < 40, 'tyres');
+  const bodyTop = SHADE + 30;
   assert.deepEqual(Array.from(mesh.colours.subarray(bodyTop * 4, bodyTop * 4 + 4)), [Math.floor(200 * top), Math.floor(100 * top), Math.floor(50 * top), 255]);
   // Its front is paler than its paint (the headlights), its rear redder (the tail lights).
   const face = (index) => Array.from(mesh.colours.subarray((bodyTop + index * 6) * 4, (bodyTop + index * 6) * 4 + 3));
@@ -571,7 +588,7 @@ test('a vehicle is drawn as lit boxes with a shade beside it', () => {
   assert.ok(front[2] / front[0] > side[2] / side[0] * 1.5, `paler ahead: ${front} against ${side}`);
   assert.ok(rear[1] / rear[0] < side[1] / side[0] * 0.9, `redder behind: ${rear} against ${side}`);
   // The cabin: glass all round, under a roof in the body's paint, and drawn in towards the roof.
-  const cabin = 6 + 60;
+  const cabin = SHADE + 60;
   assert.deepEqual(Array.from(mesh.colours.subarray(cabin * 4, cabin * 4 + 3)), [Math.floor(200 * top), Math.floor(100 * top), Math.floor(50 * top)]);
   const pane = Array.from(mesh.colours.subarray((cabin + 6) * 4, (cabin + 6) * 4 + 3));
   assert.ok(pane[2] > pane[0] && pane[0] < 70, `glass: ${pane}`);
@@ -740,7 +757,7 @@ test('cars are parked along residential streets, the same way every time, and ev
   assert.deepEqual(Array.from(again.positions.subarray(0, again.count * 3)), Array.from(mesh.positions.subarray(0, mesh.count * 3)));
   // With the sun out every car has a shade as well; and the cars can be capped.
   drawStreet(again, network, lightFrom({ azimuth: 180, altitude: 50 }), { bearing: 0, factor: 1 });
-  assert.equal(again.count, made.parked * 96 + 2 * 4 * 30);
+  assert.equal(again.count, made.parked * 102 + 2 * 4 * 30);
   assert.deepEqual(drawStreet(again, network, null, null, 5), { parked: 5, shelters: 2, bays: 0 });
   assert.deepEqual(drawStreet(again, buildNetwork([], ORIGIN), null, null), { parked: 0, shelters: 0, bays: 0 });
   assert.equal(again.count, 0);
@@ -836,7 +853,7 @@ test('in a car park cars stand in bays beside the lanes, wherever there is room 
   // The cars can be capped, and each has its shade when the sun is out.
   assert.equal(drawStreet(again, network, null, null, 7, { built, within }).bays, 7);
   drawStreet(again, network, lightFrom({ azimuth: 180, altitude: 50 }), { bearing: 0, factor: 1 }, 2500, { built, within });
-  assert.equal(again.count, made.bays * 96 + lineCorners);
+  assert.equal(again.count, made.bays * 102 + lineCorners);
 });
 
 test('on a residential street the moving cars keep clear of the parked ones', () => {
@@ -954,8 +971,8 @@ test('a bridge carries its road over the ground, with a ramp at either end, and 
     line('primary', [[300, 0], [700, 0]], { oneway: 1, bridge: true, layer: 1, width: 12 }), // a flyover
     line('primary', [[700, 0], [1000, 0]], { oneway: 1, width: 12 }),
     line('minor', [[500, -100], [500, 100]], { width: 7 }), // the street it crosses, underneath
-    line('trunk', [[300, 50], [500, 50]], { oneway: 1, bridge: true, layer: 2, width: 14 }), // a higher bridge, in two stretches
-    line('trunk', [[500, 50], [700, 50]], { oneway: 1, bridge: true, layer: 2, width: 14 }),
+    line('trunk', [[300, 60], [500, 0]], { oneway: 1, bridge: true, layer: 2, width: 14 }), // a higher bridge, in two stretches, which crosses over the flyover
+    line('trunk', [[500, 0], [700, -60]], { oneway: 1, bridge: true, layer: 2, width: 14 }),
     line('transit', [[0, 200], [400, 200]], { bridge: true }), // a metro viaduct
     line('minor', [[0, 300], [400, 300]], { bridge: true, width: 7 }), // a small bridge with a bus stop marked beside it
   ];
@@ -1000,6 +1017,75 @@ test('a bridge carries its road over the ground, with a ramp at either end, and 
   const coaches = [];
   traffic.eachVehicle((type, x, y, east, north, paint, cargo, shown, lift) => type === 'coach' && coaches.push(lift));
   assert.ok(coaches.length === 3 && coaches.every((lift) => lift > 7.5 && lift <= 8.5), String(coaches));
+});
+
+test('a bridge is as high as what it passes over, whatever number the map gives it', () => {
+  const lines = [
+    line('transit', [[0, 0], [2000, 0]], { bridge: true, layer: 3 }), // a long viaduct that mappers numbered 3: it crosses nothing
+    line('transit', [[0, 500], [2000, 500]], { bridge: true, layer: 3 }), // another, which crosses over a flyover
+    line('primary', [[1000, 300], [1000, 700]], { bridge: true, layer: 1, width: 12, oneway: 1 }), // the flyover
+    line('trunk', [[1200, 300], [1200, 700]], { bridge: true, layer: 5, width: 14, oneway: 1 }), // a road that crosses over that viaduct in turn
+    line('primary', [[0, 1000], [400, 1000]], { bridge: true, layer: 2, width: 12, oneway: 1 }), // two bridges numbered alike that meet: a junction up on a bridge
+    line('primary', [[200, 900], [200, 1100]], { bridge: true, layer: 2, width: 12, oneway: 1 }),
+    line('transit', [[0, 1500], [2000, 1500]], { tunnel: true, layer: -3 }), // a tunnel keeps out of it
+    line('minor', [[1000, 1400], [1000, 1600]], { bridge: true, layer: 1, width: 7 }),
+  ];
+  const network = buildNetwork(lines, ORIGIN);
+  const deckAt = (x, y) => {
+    const found = network.ways.filter((way) => !way.hidden && x >= way.box[0] - 0.5 && x <= way.box[2] + 0.5 && y >= way.box[1] - 0.5 && y <= way.box[3] + 0.5);
+    assert.equal(found.length, 1, `${found.length} ways at ${x}, ${y}`);
+    return found[0].deck;
+  };
+  // Numbered 3, over nothing: a viaduct of the usual height, 8.5 m. Not 19.5 m, up among the rooftops.
+  assert.equal(deckAt(500, 0), 8.5);
+  // Over a flyover: a level above it. The flyover itself is on the first level.
+  assert.equal(deckAt(1000, 320), 6.5);
+  assert.equal(deckAt(500, 500), 8.5 + 5.5);
+  // And the road that passes over that viaduct, a level higher still: the third.
+  assert.equal(deckAt(1200, 320), 6.5 + 2 * 5.5);
+  // Bridges numbered alike that cross are one bridge with a junction on it: both on the first level.
+  assert.ok(network.ways.filter((way) => way.box[1] >= 899 && way.box[3] <= 1101).every((way) => way.deck === 6.5));
+  // What passes over a tunnel passes over nothing.
+  assert.equal(deckAt(1000, 1420), 6.5);
+  assert.ok(network.ways.some((way) => way.hidden && way.deck === 0));
+});
+
+test('trains come only onto the tracks of the metro: not the main-line railway, not a monorail', () => {
+  const lines = [
+    line('transit', [[0, 0], [1000, 0]], { subclass: 'subway' }),
+    line('rail', [[0, 100], [1000, 100]], { subclass: 'rail' }),
+    line('transit', [[0, 200], [1000, 200]], { subclass: 'monorail', bridge: true }),
+  ];
+  const network = buildNetwork(lines, ORIGIN);
+  assert.deepEqual(network.ways.map((way) => [way.class, way.idle]), [['transit', false], ['rail', true], ['transit', true]]);
+  assert.deepEqual(railEntries(network).map((entry) => entry.way), [0, 0], 'either end of the metro line, and nothing else');
+  // An idle track is still a track: it is there to be drawn, and no road is joined to it.
+  assert.ok(network.ways.every((way) => way.rail));
+});
+
+test('a track on the ground has a bed and rails for the trains to run on', () => {
+  const network = buildNetwork([line('transit', [[0, 0], [90, 0]]), line('transit', [[0, 100], [90, 100]], { tunnel: true }), line('primary', [[0, 200], [90, 200]])], ORIGIN);
+  const mesh = new Mesh();
+  assert.equal(drawBridges(mesh, network, null), 0, 'no bridge among them');
+  // Ten steps of 9 m, three strips across: ballast, rails, ballast. Nothing for the tunnel, nothing for the road.
+  assert.equal(mesh.count, 10 * 3 * 6);
+  const strips = { bed: 0, rails: 0 };
+  for (let i = 0; i < mesh.count; i += 6) {
+    const ys = Array.from({ length: 6 }, (_, k) => mesh.positions[(i + k) * 3 + 1]);
+    const zs = Array.from({ length: 6 }, (_, k) => mesh.positions[(i + k) * 3 + 2]);
+    assert.ok(zs.every((z) => near(z, 0.16, 1e-6)), 'flat on the ground, just clear of the shadows laid on it');
+    assert.ok(Math.min(...ys) >= -2.3 - 1e-6 && Math.max(...ys) <= 2.3 + 1e-6, 'a bed 4.6 m wide');
+    const middle = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const dark = mesh.colours[i * 4] < 100;
+    assert.equal(dark, near(middle, 0, 1e-6), 'the rails are the dark band down the middle');
+    strips[dark ? 'rails' : 'bed'] += 1;
+  }
+  assert.deepEqual(strips, { bed: 20, rails: 10 });
+  // A train's car on it stands on the rails: its shade starts under it.
+  const car = new Mesh();
+  drawVehicle(car, 'coach', 45, 0, 1, 0, [240, 242, 244], [132, 142, 156], 1, lightFrom({ azimuth: 180, altitude: 50 }), { bearing: 0, factor: 1 });
+  const shadeYs = Array.from({ length: 12 }, (_, i) => car.positions[i * 3 + 1]);
+  assert.ok(near(Math.min(...shadeYs), -VEHICLES.coach.width / 2, 1e-4) && Math.max(...shadeYs) > VEHICLES.coach.width / 2 + 3);
 });
 
 test('drawBridges builds a deck with parapets and piers under every bridge', () => {

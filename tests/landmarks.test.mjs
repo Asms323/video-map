@@ -23,7 +23,7 @@ function cut(id, z) {
       const points = feature.geometry.coordinates[0].map((corner) => along(one, from(one, corner)));
       const us = points.map((point) => point[0]);
       const vs = points.map((point) => point[1]);
-      return { from: Math.min(...us), to: Math.max(...us), wide: Math.max(...vs) - Math.min(...vs), paint: feature.properties.c };
+      return { from: Math.min(...us), to: Math.max(...us), wide: Math.max(...vs) - Math.min(...vs), paint: feature.properties.c, night: feature.properties.n };
     })
     .sort((a, b) => a.from - b.from);
 }
@@ -46,6 +46,7 @@ test('every landmark is a stack of slabs standing where the building stands', ()
       assert.ok(ring.length >= 4 && ring[0][0] === ring.at(-1)[0] && ring[0][1] === ring.at(-1)[1], 'a closed outline');
       assert.ok(properties.t > properties.b && properties.b >= 0, `${one.id}: from ${properties.b} to ${properties.t}`);
       assert.match(properties.c, /^#[0-9a-f]{6}$/);
+      if (properties.n !== undefined) assert.match(properties.n, /^#[0-9a-f]{6}$/);
       top = Math.max(top, properties.t);
       lowest = Math.min(lowest, properties.b);
       for (const corner of ring) furthest = Math.max(furthest, Math.hypot(...from(one, corner)));
@@ -70,8 +71,10 @@ test('Kingdom Centre: a lens in plan, parted at the top by its arch and joined b
   assert.deepEqual(cut('kingdom-centre', 8).map((slab) => slab.paint).sort(), ['#a7bccd', '#e3ddd2']);
   assert.equal(cut('kingdom-centre', 17).length, 1);
   // Above it two legs, and the gap between them widens with height the way a parabola does.
+  // (Along the edge of the gap each leg carries the band of light that shows the arch by night.)
+  const glass = (slab) => slab.paint === '#a7bccd' || slab.paint === '#b8cad8';
   const gapAt = (z) => {
-    const legs = cut('kingdom-centre', z);
+    const legs = cut('kingdom-centre', z).filter(glass);
     assert.equal(legs.length, 2, `two legs at ${z} m`);
     assert.ok(near(legs[0].from, -39.6, 0.5) && near(legs[1].to, 39.6, 0.5), 'the legs keep the tower\'s outer line');
     return legs[1].from - legs[0].to;
@@ -84,6 +87,38 @@ test('Kingdom Centre: a lens in plan, parted at the top by its arch and joined b
   assert.equal(top.length, 3);
   assert.ok(top[1].to - top[1].from > gapAt(289) && top[1].wide < 14, JSON.stringify(top[1]));
   assert.equal(cut('kingdom-centre', 300.5).length, 2, 'the two points stand a little above it');
+  // The arch's light: a thin band on each face of each leg where it meets the gap, a pale trim by day,
+  // and by night brighter than anything else on the tower but the bridge.
+  for (const z of [200, 230, 260, 285]) {
+    const all = cut('kingdom-centre', z);
+    const legs = all.filter(glass);
+    const bands = all.filter((slab) => !glass(slab));
+    assert.equal(bands.length, 4, `a band on each face of each leg at ${z} m`);
+    for (const band of bands) {
+      assert.ok(band.to - band.from <= 2.01 && band.wide <= 1.81 && band.night === '#9fe9ff', JSON.stringify(band));
+      assert.ok(Math.min(...legs.map((leg) => Math.min(Math.abs(leg.to - band.to), Math.abs(leg.from - band.from)))) < 1.5, 'at the inner edge of a leg');
+    }
+    for (const leg of legs) assert.ok(/^#[12][0-9a-f]{5}$/.test(leg.night), `the glass is dark by night: ${leg.night}`);
+  }
+  assert.equal(top[1].night, '#eef8ff', 'the bridge is lit');
+});
+
+test('by night the landmarks are lit, each in its own way', () => {
+  const nights = (id) => new Map(slabsOf(id).map((feature) => [feature.properties.c, feature.properties.n]));
+  const bright = (hex) => Math.max(parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16));
+  // Every landmark has something that shows by night, and every night colour belongs to a slab that is there.
+  for (const one of LANDMARKS) {
+    const lit = slabsOf(one.id).filter((feature) => feature.properties.n);
+    assert.ok(lit.length > 10, `${one.id}: ${lit.length} lit slabs`);
+    const paints = new Set(slabsOf(one.id).map((feature) => feature.properties.c));
+    for (const paint of Object.keys(one.nights ?? {})) assert.ok(paints.has(paint), `${one.id}: no slab is painted ${paint}`);
+  }
+  // Al Faisaliah's golden ball glows; the glass under its sunshades is dark.
+  const faisaliah = nights('al-faisaliah');
+  assert.ok(bright(faisaliah.get('#d9a23c')) === 255 && bright(faisaliah.get('#56677a')) < 70);
+  // The TV tower's lantern is lit like a lamp, and the KAFD station shines through its shell.
+  assert.ok(bright(nights('tv-tower').get('#3f566c')) === 255);
+  assert.ok(bright(nights('kafd-station').get('#8fa7b8')) === 255 && bright(nights('kafd-station').get('#e6d9bb')) > 230);
 });
 
 test('Al Faisaliah: a square that narrows to a point, with its golden globe near the top', () => {

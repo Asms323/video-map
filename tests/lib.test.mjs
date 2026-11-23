@@ -1271,3 +1271,153 @@ test('cityModelStyle lays a pavement along both sides of every street people wal
   assert.deepEqual([paving.layout['line-cap'], paving.layout['line-join'], paving.minzoom], ['round', 'round', 15]);
   assert.deepEqual(paving.paint['line-opacity'], ['interpolate', ['linear'], ['zoom'], 15, 0, 15.5, 1]);
 });
+
+// ── By night, and Riyadh ─────────────────────────────────────────────────
+
+import { darkness, inRiyadh, LAMP_LIGHT, lampsLit, RIYADH as CITY } from '../js/lib.js';
+
+test('darkness: none while the sun is up, all of it by night, and in between at dusk and dawn', () => {
+  const at = (altitude) => darkness({ azimuth: 250, altitude });
+  assert.equal(at(40), 0);
+  assert.equal(at(3), 0, 'as long as the sun throws shadows it is day');
+  assert.equal(at(-6), 1);
+  assert.equal(at(-40), 1);
+  assert.ok(Math.abs(at(-1.5) - 0.5) < 1e-9, 'half-way through dusk');
+  assert.ok(at(2) > 0 && at(2) < at(0) && at(0) < at(-3) && at(-3) < 1);
+  assert.equal(darkness(null), 0);
+  assert.equal(darkness({ azimuth: 0, altitude: NaN }), 0);
+  // Riyadh on 22 November: day at noon, night at half past eight in the evening, dusk a quarter past five.
+  const riyadh = (iso) => darkness(sunPosition(new Date(iso), CITY.centre.lat, CITY.centre.lng));
+  assert.equal(riyadh('2026-11-22T09:00:00Z'), 0);
+  assert.equal(riyadh('2026-11-22T17:30:00Z'), 1);
+  const dusk = riyadh('2026-11-22T14:15:00Z');
+  assert.ok(dusk > 0.2 && dusk < 0.9, String(dusk));
+});
+
+test('lampsLit: the lamps come on as the light goes, and are full on well before it is quite dark', () => {
+  assert.equal(lampsLit(0), 0);
+  assert.equal(lampsLit(0.1), 0);
+  assert.equal(lampsLit(0.5), 1);
+  assert.equal(lampsLit(1), 1);
+  assert.ok(lampsLit(0.2) > 0 && lampsLit(0.2) < lampsLit(0.3) && lampsLit(0.3) < lampsLit(0.4) && lampsLit(0.4) < 1);
+  assert.equal(lampsLit(undefined), 0);
+  assert.equal(lampsLit(7), 1);
+});
+
+test('cityModelStyle by night: a dark over the ground, the lamps along the roads, names light on dark', () => {
+  const day = cityModelStyle(BASE_STYLE);
+  const night = cityModelStyle(BASE_STYLE, { night: 1 });
+  const ids = night.layers.map((layer) => layer.id);
+  const of = (style, id) => style.layers.find((layer) => layer.id === id);
+  const at = (id) => ids.indexOf(id);
+
+  // The dark lies over the ground and everything painted on it, and under everything that gives light or stands up.
+  assert.equal(of(night, 'city-night').type, 'background');
+  assert.ok(of(night, 'city-night').paint['background-opacity'] > 0.8 && of(night, 'city-night').paint['background-opacity'] < 0.95);
+  assert.equal(of(day, 'city-night').paint['background-opacity'], 0, 'by day it is not there');
+  for (const under of ['background', 'city-land', 'city-grass', 'city-water', 'city-pools', 'city-pavement', 'city-road-big', 'city-paths', 'city-rail', 'city-bridge']) assert.ok(at(under) < at('city-night'), under);
+  for (const over of ['city-night-pitch', 'city-night-pools', 'city-glow', 'city-lamps', 'city-contact', 'city-buildings', 'city-landmarks', 'poi_r1']) assert.ok(at(over) > at('city-night'), over);
+
+  // The lamps' light lies along every road that is not in a tunnel, wider than the road, soft at its edges,
+  // whiter on the great roads and amber on the side streets.
+  const glow = of(night, 'city-glow');
+  assert.equal(glow.type, 'line');
+  // (Strongest from across the city, where it is all there is to see of the lamps; fainter from close by, where they stand in it one by one.)
+  const strengths = (paint) => paint['line-opacity'].filter((part, i) => i > 2 && i % 2 === 0);
+  assert.deepEqual(glow.paint['line-opacity'].slice(0, 3), ['interpolate', ['linear'], ['zoom']]);
+  assert.ok(strengths(glow.paint)[0] > 0.7 && strengths(glow.paint)[0] > strengths(glow.paint)[1] && strengths(glow.paint)[1] > strengths(glow.paint)[2] && strengths(glow.paint)[2] > 0.2, String(strengths(glow.paint)));
+  assert.deepEqual(strengths(of(day, 'city-glow').paint), [0, 0, 0]);
+  assert.deepEqual(glow.paint['line-color'], ['match', ['get', 'class'], ['motorway', 'trunk'], LAMP_LIGHT.big, ['primary', 'secondary'], LAMP_LIGHT.main, LAMP_LIGHT.side]);
+  assert.ok(JSON.stringify(glow.filter).includes('["!",["==",["get","brunnel"],"tunnel"]]'));
+  // From close by: as wide as the road and 4.5 m to either side. From across the city: a thread, thicker for the great roads.
+  const wide = glow.paint['line-width'];
+  assert.deepEqual(wide.slice(0, 4), ['interpolate', ['exponential', 2], ['zoom'], 11]);
+  assert.deepEqual(wide[4], ['*', ['match', ['get', 'class'], ['motorway', 'trunk'], 2.6, ['primary'], 2, ['secondary', 'tertiary'], 1.3, 0.7], 1]);
+  assert.ok(JSON.stringify(wide[8]).includes('["+",["match",["get","class"]') && JSON.stringify(wide[8]).includes(',9],1.1]'), JSON.stringify(wide[8]));
+  assert.deepEqual(glow.paint['line-blur'][4].at(-1), 0.5, 'soft from the middle outwards');
+  assert.deepEqual(glow.paint['line-blur'][8].at(-1), 0.5);
+  // And the lamps themselves: points of light along the streets, a dot to every ten widths, which give way
+  // to the lamps the app stands along the streets from close by.
+  const lamps = of(night, 'city-lamps');
+  assert.deepEqual(lamps.paint['line-dasharray'], [0, 10]);
+  assert.equal(lamps.layout['line-cap'], 'round', 'a dash of no length with round ends is a dot');
+  assert.deepEqual(lamps.paint['line-opacity'].slice(0, 3), ['interpolate', ['linear'], ['zoom']]);
+  assert.equal(lamps.paint['line-opacity'].at(-1), 0);
+  assert.equal(lamps.paint['line-opacity'].at(-2), 15.6);
+  assert.ok(lamps.paint['line-opacity'][6] > 0.8, 'bright at zoom 14');
+  assert.deepEqual(of(day, 'city-lamps').paint['line-opacity'].filter((part, i) => i > 2 && i % 2 === 0), [0, 0, 0, 0], 'by day there is no light in them');
+  assert.ok(JSON.stringify(lamps.filter).includes('"motorway","trunk","primary","secondary","tertiary","minor","busway"') && !JSON.stringify(lamps.filter).includes('service'));
+  // Playing fields are floodlit and swimming pools lit from within.
+  assert.ok(of(night, 'city-night-pitch').paint['fill-opacity'] > 0.5 && of(day, 'city-night-pitch').paint['fill-opacity'] === 0);
+  assert.ok(of(night, 'city-night-pools').paint['fill-opacity'] > 0.5 && of(day, 'city-night-pools').paint['fill-opacity'] === 0);
+  assert.deepEqual(of(night, 'city-night-pools').filter, ['==', ['get', 'class'], 'swimming_pool']);
+
+  // The blocks the map draws go dark; the names are written light with a dark edge.
+  const bright = (hex) => Math.max(parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16));
+  assert.ok(bright(of(night, 'city-buildings').paint['fill-extrusion-color']) < 70 && bright(of(day, 'city-buildings').paint['fill-extrusion-color']) > 230);
+  assert.ok(bright(of(night, 'city-roofs').paint['fill-extrusion-color']) < 60);
+  assert.deepEqual(of(night, 'city-painted').paint['fill-extrusion-color'].slice(0, 3), ['interpolate', ['linear'], 0.86]);
+  assert.deepEqual(of(night, 'city-painted').paint['fill-extrusion-color'][4], ['to-color', ['get', 'colour'], '#f3f1ec']);
+  // A landmark's slab that is lit shows in the colour of its light (n); any other is left what the dark leaves of its own (c).
+  const slabs = of(night, 'city-landmarks').paint['fill-extrusion-color'];
+  assert.deepEqual(slabs.slice(0, 3), ['case', ['has', 'n'], ['interpolate', ['linear'], 1, 0, ['to-color', ['get', 'c']], 1, ['to-color', ['get', 'n']]]]);
+  assert.deepEqual(slabs[3].slice(0, 5), ['interpolate', ['linear'], 0.86, 0, ['to-color', ['get', 'c']]]);
+  assert.deepEqual(of(day, 'city-landmarks').paint['fill-extrusion-color'], ['get', 'c']);
+  assert.equal(of(night, 'poi_r1').paint['text-color'], '#ece8df');
+  assert.match(of(night, 'poi_r1').paint['text-halo-color'], /^rgba\(7, 9, 15/);
+  assert.ok(of(night, 'road-name').paint['text-halo-width'] >= 1);
+  assert.equal(of(day, 'poi_r1').paint['text-color'], '#333');
+  assert.equal(BASE_STYLE.layers[2].paint['text-color'], '#333', 'the style it was built on is left as it was');
+  // The sky is dark overhead, with the glow of the city along the horizon.
+  assert.ok(bright(night.sky['sky-color']) < 40 && bright(night.sky['horizon-color']) > bright(night.sky['sky-color']) && bright(day.sky['sky-color']) > 200);
+});
+
+test('cityModelStyle changes nothing but colours and strengths between day and night', () => {
+  // The app brings the map on screen into line with the dark by changing what is painted how, layer by
+  // layer (see applyNight in map.js): that only works if day and night have the same layers in the same
+  // order, drawing the same things.
+  const withoutPaint = (style) => style.layers.map(({ paint: _paint, ...rest }) => rest);
+  const day = cityModelStyle(BASE_STYLE, { buildings: 'https://example.com/buildings.pmtiles' });
+  for (const night of [0.2, 0.49, 0.5, 0.8, 1]) {
+    const style = cityModelStyle(BASE_STYLE, { buildings: 'https://example.com/buildings.pmtiles', night });
+    assert.deepEqual(withoutPaint(style), withoutPaint(day), `at ${night}`);
+    assert.deepEqual(style.sources, day.sources);
+    for (const [i, layer] of style.layers.entries()) assert.deepEqual(Object.keys(layer.paint ?? {}).filter((name) => !name.startsWith('text-')), Object.keys(day.layers[i].paint ?? {}).filter((name) => !name.startsWith('text-')), layer.id);
+  }
+  // Little by little: the dark over the ground, the lamps, the sky. All at once, half-way: the blocks and the names.
+  const at = (night, id) => cityModelStyle(BASE_STYLE, { night }).layers.find((layer) => layer.id === id).paint;
+  assert.ok(at(0.2, 'city-night')['background-opacity'] > 0 && at(0.2, 'city-night')['background-opacity'] < at(0.49, 'city-night')['background-opacity']);
+  assert.ok(at(0.3, 'city-glow')['line-opacity'].at(-1) > 0 && at(0.3, 'city-glow')['line-opacity'].at(-1) < at(1, 'city-glow')['line-opacity'].at(-1));
+  // In four steps: the colours of the blocks. (Each step has the map lay its buildings out afresh.)
+  const block = (night) => at(night, 'city-buildings')['fill-extrusion-color'];
+  assert.equal(block(0.12), block(0));
+  assert.equal(block(0.13), block(0.37));
+  assert.equal(block(0.38), block(0.62));
+  assert.equal(block(0.88), block(1));
+  assert.equal(new Set([0, 0.25, 0.5, 0.75, 1].map(block)).size, 5);
+  assert.deepEqual(at(0.5, 'city-landmarks')['fill-extrusion-color'][2].slice(0, 3), ['interpolate', ['linear'], 0.5], 'a lit slab is half-way to the colour of its light');
+  assert.deepEqual(at(0.5, 'city-painted')['fill-extrusion-color'].slice(0, 3), ['interpolate', ['linear'], 0.43]);
+  // All at once, half-way: the names.
+  assert.equal(at(0.49, 'poi_r1')['text-color'], '#333');
+  assert.equal(at(0.5, 'poi_r1')['text-color'], '#ece8df');
+  // (What is not a number counts as day.)
+  assert.deepEqual(cityModelStyle(BASE_STYLE, { night: undefined }), cityModelStyle(BASE_STYLE));
+  assert.deepEqual(cityModelStyle(BASE_STYLE, { night: 5 }), cityModelStyle(BASE_STYLE, { night: 1 }));
+});
+
+test('the app is made for Riyadh: where the city is, and what lies in it', () => {
+  const { west, south, east, north } = CITY.bounds;
+  assert.ok(inRiyadh(CITY.centre));
+  assert.ok(west < CITY.centre.lng && CITY.centre.lng < east && south < CITY.centre.lat && CITY.centre.lat < north);
+  assert.ok(CITY.zoom >= 15 && CITY.zoom <= 17, 'opens close enough for the 3D city to be built');
+  // Kingdom Centre, the airport, Dir'iyah, the industrial south: all in.
+  for (const [lng, lat] of [[46.67441, 24.711346], [46.6988, 24.9578], [46.5756, 24.7343], [46.82, 24.52], [46.58268, 24.616195]]) assert.ok(inRiyadh({ lat, lng }), `${lng}, ${lat}`);
+  // Al Kharj, Jeddah, Dubai, London, nowhere: not.
+  for (const [lng, lat] of [[47.31, 24.15], [39.19, 21.49], [55.27, 25.2], [-0.12, 51.5], [0, 0]]) assert.ok(!inRiyadh({ lat, lng }), `${lng}, ${lat}`);
+  assert.ok(!inRiyadh(null) && !inRiyadh({}) && !inRiyadh({ lat: NaN, lng: 46.7 }));
+  // On the edge counts as in.
+  assert.ok(inRiyadh({ lat: south, lng: west }) && inRiyadh({ lat: north, lng: east }));
+  // The city is some 90 km across as the app takes it: room for what is growing round it, but one city.
+  const across = (east - west) * 111320 * Math.cos((CITY.centre.lat * Math.PI) / 180);
+  assert.ok(across > 70000 && across < 110000, String(across));
+});

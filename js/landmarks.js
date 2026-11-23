@@ -99,13 +99,24 @@ function kingdomCentre() {
       return side === 1 ? lens(inner, halfLength, 6) : lens(-halfLength, -inner, 6);
     }, glass);
   }
+  // Along the edge of the opening, on both faces of the tower, runs a band of light: by day a pale trim
+  // on each leg, by night the arch the whole city knows the tower by.
+  for (let base = archFoot + 4; base < bridge[0]; base += 4) {
+    const inner = Math.min(opening(base + 2), halfLength - 2.5);
+    for (const side of [1, -1]) {
+      for (const face of [1, -1]) slabs.push({ outline: block(1, 0.9, side * (inner - 0.2), face * (thick(inner) - 0.5)), base, top: base + 4, paint: '#c3d1dc', night: ARCH_LIGHT });
+    }
+  }
   // The sky bridge: a slim span from leg to leg, not the full depth of the tower.
-  slabs.push({ outline: block(openAtTop + 2, 5.5), base: bridge[0], top: bridge[1], paint: '#cdd8e1' });
+  slabs.push({ outline: block(openAtTop + 2, 5.5), base: bridge[0], top: bridge[1], paint: '#cdd8e1', night: '#eef8ff' });
   // The podium that the tower rises from: the shopping centre and the hotel's wings, four storeys.
   // (Low and wide: its roof is laid and furnished like any other building's.)
   slabs.push({ outline: KINGDOM_PODIUM, base: 0, top: 16, paint: '#e3ddd2', north: true, roof: true });
   return slabs;
 }
+
+// The light along Kingdom Centre's arch. (The real one changes colour from night to night.)
+const ARCH_LIGHT = '#9fe9ff';
 
 // The outline of the Kingdom Centre complex, in metres east and north of the tower's middle.
 const KINGDOM_PODIUM = [
@@ -352,14 +363,45 @@ function kafdStation() {
  * shade: a footprint and height for its shadow, where the map data has none.
  */
 export const LANDMARKS = [
-  { id: 'kingdom-centre', name: 'Kingdom Centre', at: [46.67441, 24.711346], bearing: 63.4, height: 302, clear: 48, build: kingdomCentre },
-  { id: 'al-faisaliah', name: 'Al Faisaliah Tower', at: [46.68501, 24.6902], bearing: 113.8, height: 267, clear: 30, build: faisaliah },
-  { id: 'pif-tower', name: 'PIF Tower', at: [46.641519, 24.763678], bearing: 90, height: 385, clear: 34, build: pifTower },
-  { id: 'burj-rafal', name: 'Burj Rafal', at: [46.632342, 24.792398], bearing: 81.6, height: 308, clear: 32, build: burjRafal },
-  { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20, height: 232, clear: 30, build: majdoul },
-  { id: 'tv-tower', name: 'Riyadh TV Tower', at: [46.69601, 24.64322], bearing: 0, height: 170, clear: 0, build: tvTower, shade: { radius: 5, height: 150 } },
-  { id: 'water-tower', name: 'Riyadh Water Tower', at: [46.712275, 24.645119], bearing: 0, height: 61, clear: 30, build: waterTower, shade: { radius: 12, height: 58 } },
-  { id: 'kafd-station', name: 'KAFD Metro Station', at: [46.642994, 24.767531], bearing: 155.8, height: 34, clear: 70, build: kafdStation },
+  { id: 'kingdom-centre', name: 'Kingdom Centre', at: [46.67441, 24.711346], bearing: 63.4, height: 302, clear: 48, build: kingdomCentre, nights: { '#a7bccd': '#1d2a42', '#b8cad8': '#24334e', '#e3ddd2': '#4a3f2e' } },
+  {
+    id: 'al-faisaliah',
+    name: 'Al Faisaliah Tower',
+    at: [46.68501, 24.6902],
+    bearing: 113.8,
+    height: 267,
+    clear: 30,
+    build: faisaliah,
+    // Floodlit bands over dark glass; and the golden ball, lit from within.
+    nights: { '#e4e7e9': '#5d6670', '#56677a': '#232c3a', '#f5f5f3': '#bcc6d1', '#f1f2f1': '#bcc6d1', '#eceeed': '#909ca8', '#d9a23c': '#ffc45a', '#e7b955': '#ffdb84', '#eef0ef': '#c9d4de', '#dfe3e4': '#b4c0cb', '#d9dcdd': '#aab4be' },
+  },
+  { id: 'pif-tower', name: 'PIF Tower', at: [46.641519, 24.763678], bearing: 90, height: 385, clear: 34, build: pifTower, nights: { '#3d5b58': '#15262a', '#456662': '#1b3033', '#6a8a85': '#4f8f88' } },
+  { id: 'burj-rafal', name: 'Burj Rafal', at: [46.632342, 24.792398], bearing: 81.6, height: 308, clear: 32, build: burjRafal, nights: { '#84b4c9': '#1a3340', '#96c2d4': '#27485a', '#dfe5e8': '#95a5af' } },
+  { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20, height: 232, clear: 30, build: majdoul, nights: { '#eef0f1': '#7b8793', '#4f6478': '#1b2532', '#dfe4e7': '#6d7985' } },
+  {
+    id: 'tv-tower',
+    name: 'Riyadh TV Tower',
+    at: [46.69601, 24.64322],
+    bearing: 0,
+    height: 170,
+    clear: 0,
+    build: tvTower,
+    shade: { radius: 5, height: 150 },
+    // A floodlit shaft, and the lantern lit like a lamp.
+    nights: { '#d9c9a9': '#75684f', '#d1c09d': '#6c6048', '#3f566c': '#ffe9ad', '#c9a24c': '#ffce63', '#bfa770': '#8f7d54', '#d5d7d8': '#b0b6ba' },
+  },
+  { id: 'water-tower', name: 'Riyadh Water Tower', at: [46.712275, 24.645119], bearing: 0, height: 61, clear: 30, build: waterTower, shade: { radius: 12, height: 58 }, nights: { '#2d5ea6': '#2a5aa6', '#f0ede2': '#aeaba1', '#e6e2d6': '#56544f' } },
+  {
+    id: 'kafd-station',
+    name: 'KAFD Metro Station',
+    at: [46.642994, 24.767531],
+    bearing: 155.8,
+    height: 34,
+    clear: 70,
+    build: kafdStation,
+    // Lit from within: light through the glass at its foot and through the bands where the shell is pierced.
+    nights: { '#8fa7b8': '#ffe7b3', '#f5f3ee': '#8b8984', '#e6d9bb': '#f1c36c', '#efe9dc': '#a09a8c', '#ebe5d6': '#6a6861' },
+  },
 ];
 
 /** [lng, lat] of a point given in a landmark's own measure: u along its axis and v to the left, or east and north. */
@@ -376,6 +418,8 @@ let made = null;
 /**
  * Every landmark as map data: one feature per slab, with where it starts
  * (b), where it ends (t) and its colour (c), ready for a layer of 3D blocks.
+ * A slab that is lit by night has the colour it shows in then as well (n):
+ * its own, or the one its landmark gives for its paint (nights).
  */
 export function landmarkSlabs() {
   if (made) return made;
@@ -384,15 +428,35 @@ export function landmarkSlabs() {
     for (const slab of landmark.build()) {
       const ring = slab.outline.map(([u, v]) => place(landmark, u, v, slab.north));
       ring.push(ring[0]);
-      features.push({
-        type: 'Feature',
-        properties: { landmark: landmark.id, b: Math.round(slab.base * 100) / 100, t: Math.round(slab.top * 100) / 100, c: slab.paint },
-        geometry: { type: 'Polygon', coordinates: [ring] },
-      });
+      const properties = { landmark: landmark.id, b: Math.round(slab.base * 100) / 100, t: Math.round(slab.top * 100) / 100, c: slab.paint };
+      const night = slab.night ?? landmark.nights?.[slab.paint];
+      if (night) properties.n = night;
+      features.push({ type: 'Feature', properties, geometry: { type: 'Polygon', coordinates: [ring] } });
     }
   }
   made = { type: 'FeatureCollection', features };
   return made;
+}
+
+/**
+ * Where the red lamps on top of the tall landmarks are: one on each of a
+ * landmark's highest slabs (the two points of Kingdom Centre, a mast), as
+ * [lng, lat, height]. Those under 60 m have none.
+ */
+export function landmarkBeacons() {
+  const beacons = [];
+  for (const landmark of LANDMARKS) {
+    if (!(landmark.height >= 60)) continue;
+    const slabs = landmark.build();
+    const top = Math.max(...slabs.map((slab) => slab.top));
+    for (const slab of slabs) {
+      if (slab.top < top - 0.01) continue;
+      const u = slab.outline.reduce((sum, corner) => sum + corner[0], 0) / slab.outline.length;
+      const v = slab.outline.reduce((sum, corner) => sum + corner[1], 0) / slab.outline.length;
+      beacons.push([...place(landmark, u, v, slab.north), top + 0.6]);
+    }
+  }
+  return beacons;
 }
 
 /**

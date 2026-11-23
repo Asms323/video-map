@@ -1,7 +1,11 @@
 # Video Map
 
-Video and a live, detailed map of where you are, on one screen. A web app for
-the phone: no App Store, no Apple developer account, no Mac.
+Video and a live, detailed 3D map of **Riyadh**, by day and by night, on one
+screen. A web app for the phone: no App Store, no Apple developer account, no
+Mac.
+
+The app is made for Riyadh, Saudi Arabia, and for now for Riyadh only: the
+map opens on the city and keeps to it, and places are looked for in it.
 
 ## What it does
 
@@ -12,8 +16,11 @@ the phone: no App Store, no Apple developer account, no Mac.
 
 **Map**
 
-- A real map of the whole world, with street and place names in the local
-  script and in Latin letters.
+- A real map of Riyadh, from Dir'iyah and the edge of the plateau in the west
+  to beyond the airport in the north, with street and place names in Arabic
+  and in Latin letters. It opens on Olaya, by Kingdom Centre, until it knows
+  where you are; it cannot be moved off the city. Away from Riyadh the map
+  stays on the city and says so; the speed still shows.
 - **3D City**, the look it opens with: the city as an **isometric** scale
   model. It is seen corner-on from the classic isometric angle, through a lens
   so long that parallel streets stay parallel. **Every building stands on its
@@ -42,7 +49,40 @@ the phone: no App Store, no Apple developer account, no Mac.
 - **Sun, sky and shadow on every wall.** A wall that faces the sun is bright
   and warm, the warmer the lower the sun; one that faces away is lit by the
   sky alone; and every wall darkens towards its foot, where the street
-  gathers shade. After sunset the light is even and windows are lit.
+  gathers shade.
+- **Riyadh by night.** As the sun sets over the city the model goes dark,
+  little by little, and its lights come on. The streets glow the way they do
+  from the air: white along the great roads, the amber of sodium lamps on the
+  side streets. One room in three has a lamp on, each a little different in
+  colour and brightness; offices are white, and now and then a whole floor of
+  a tower is lit. Shops are lit from end to end under their signboards, and
+  their light falls on the pavement. The foot of every wall catches the light
+  of the street lamps. Round the top of many a tower runs a band of light in
+  a colour of its own, and its glass gives back the glow of the streets
+  below. Up on some roofs a lamp is left on by the door at the head of the
+  stairs, and under every awning where people sit of an evening. Playing
+  fields lie under floodlights and swimming pools are lit from within. The
+  names on the map are written light on dark.
+- **Street lamps.** Along every street stand lamp posts, by day as well: tall
+  ones with long arms along the great roads, in the median where the two
+  carriageways are mapped apart; by turns on either side of a wide street;
+  down one side of a residential street; on the parapets of bridges; and in
+  car parks. By night each has a point of light at its head and throws a pool
+  of light on the road. From across the city the lamps are dots of light
+  along the streets.
+- **Lit landmarks.** By night Kingdom Centre shows the band of light along
+  its arch and its lit sky bridge, Al Faisaliah its glowing golden ball, the
+  TV Tower its lantern, the KAFD station the light through its pierced shell.
+  Mosques are floodlit, with green lamps on the balcony and cap of each
+  minaret; metro stations and their footbridges glow gold; the bands and
+  signs of chain stores and fuel stations are lit in their own colours. A red
+  lamp stands on the mast of every tall tower.
+- **Headlights.** By night every vehicle has two white lamps ahead, their
+  beam on the road, and two red lamps behind; buses and trains have their
+  windows lit.
+- **Day or night whenever you like.** Under the map options the light can be
+  left to the real sun over Riyadh ("Real time"), or the city can be shown by
+  day or by night whatever the hour.
 - **Buildings shade each other.** A tower's shadow does not stop at the next
   wall: it runs up it, across the roof, and on down the other side, on over
   the cars and trees in the street, in step with the shadows on the ground.
@@ -69,7 +109,10 @@ the phone: no App Store, no Apple developer account, no Mac.
   photos on the building's real outline, in place of a plain block.
 - **Bridges you can drive over.** Flyovers, interchange ramps and metro
   viaducts are built in 3D: a deck with parapets on piers, with the traffic
-  and the trains up on it. The Wadi Laban Bridge on the Western Ring Road has
+  and the trains up on it. A bridge is as high as what it passes over: one
+  that crosses nothing stands at the usual height of a flyover or a viaduct,
+  and one that crosses another bridge stands a level above it, whatever level
+  number the map gives it. The Wadi Laban Bridge on the Western Ring Road has
   its two masts and fans of cables.
 - **Metro stations that look like stations.** A station building wears the
   golden screen and vaulted roof of the Riyadh Metro, with covered footbridges
@@ -96,8 +139,9 @@ the phone: no App Store, no Apple developer account, no Mac.
 - **Traffic on the real streets.** Cars, vans and lorries drive the streets:
   they keep to the lanes, drive on the right, obey one-way streets, queue
   behind each other, turn at junctions, disappear into tunnels, and are busier
-  in the rush hours than at night. Cars stand parked along the kerbs of
-  residential streets. This is a simulation to bring the model to life, **not
+  in the rush hours than at night. Each stands in its own shade, which lies
+  on the road from under it. Cars stand parked along the kerbs of residential
+  streets. This is a simulation to bring the model to life, **not
   live traffic**: where each vehicle is, is made up. It can be switched off
   under the map options.
 - **Buses where buses run.** A bus only drives along a street that has a bus
@@ -107,10 +151,13 @@ the phone: no App Store, no Apple developer account, no Mac.
   midnight, and none at night.
 - **The metro on its lines, by its timetable's rhythm.** Trains run on the
   metro tracks the map shows: every four minutes in the rush hours and every
-  seven and a half otherwise, from 05:30 to midnight (in Riyadh from 10:00 on
-  Fridays), keeping to the right-hand track and standing at each station.
-  Under ground a train is a faint blue mark that moves along the tunnel's
-  trace. See the limits below for what this is and is not.
+  seven and a half otherwise, from 05:30 to midnight (from 10:00 on Fridays),
+  keeping to the right-hand track and standing at each station. A train
+  always has track under it: on a viaduct its deck and rails, on the ground a
+  bed of ballast with the rails down its middle. Under ground a train is out
+  of sight, and comes into view car by car at the tunnel's mouth. No trains
+  are put on the main-line railway or on the monorail of the financial
+  district. See the limits below for what this is and is not.
 - **Trees where they really stand.** The app reads the satellite photo under
   the city for dark green crowns and stands a tree at each one, sized to its
   crown, with its shade on the ground: a tree with a round crown in bands of
@@ -128,22 +175,25 @@ the phone: no App Store, no Apple developer account, no Mac.
   shops, paved squares, playing fields and running tracks, ponds, the
   swimming pools in the gardens; and tunnels as a faint trace, metro and
   railway lines, footpaths.
-- **Real sunlight.** The model is lit from where the sun actually is at that
-  place and time, and every building casts the shadow it casts right now:
-  long in the morning and evening, short at noon, none after sunset.
+- **Real sunlight.** The model is lit from where the sun actually is over
+  Riyadh at that hour, and every building casts the shadow it casts right
+  now: long in the morning and evening, short at noon, none after sunset,
+  when the city goes over to its night (see above).
 - Drawing the walls window by window and working out the shadows on them is
   more work for the phone with every picture. If the map moves slowly, both
   can be switched off under the map options ("Detailed walls and shadows");
   the walls are then plain, with a simple pattern of windows, and the roofs
   stay. (On a computer that draws without a graphics chip, at a phone's
-  sharpness, a picture takes 6 to 33 per cent longer with them. What they
-  cost on a phone's own graphics chip has not been measured.)
-- Four more looks: **Streets** (colours and icons), **Night**, **Satellite**
-  (real photos with the names on top) and **Detailed** (the classic
-  OpenStreetMap picture). **Auto** shows 3D City by day and Night when the
-  phone is in dark mode. In the Satellite look the photo is fetched as sharp
-  as the phone's screen can show it (in a city like Riyadh down to about
-  30 cm to a pixel), with a coarse copy under it that is there at once; that
+  sharpness, a picture takes 6 to 33 per cent longer with them. By night a
+  picture takes about as long as by day, within a tenth either way: there are
+  no shadows to work out then, and the lamps' light costs about as much. What
+  any of it costs on a phone's own graphics chip has not been measured.)
+- Four more looks: **Streets** (colours and icons), **Dark** (a flat map in
+  dark colours), **Satellite** (real photos with the names on top) and
+  **Detailed** (the classic OpenStreetMap picture). In the Satellite look the
+  photo is fetched as sharp
+  as the phone's screen can show it (in Riyadh down to about 30 cm to a
+  pixel), with a coarse copy under it that is there at once; that
   takes several times the download, and can be switched off under the map
   options.
 - Your position, direction of travel and speed. The round button switches
@@ -155,12 +205,14 @@ the phone: no App Store, no Apple developer account, no Mac.
   mosques and other places of worship, health, banks and ATMs, shopping, hotels.
 - **Tap any place** for what is known about it: opening hours, phone, website,
   address, fuel types, charging plugs, parking fee and more.
-- **Search** by name or address. **Press and hold** the map to drop a pin.
+- **Search** Riyadh by name or address; nothing outside the city is looked
+  for. **Press and hold** the map to drop a pin.
 - **Route** to a place: the line on the map, the distance and the driving
   time. "Open in Maps" hands the place to the phone's own maps app for
   turn-by-turn directions.
-- The **weather** where you are. Tap your own dot for your coordinates,
-  altitude and the nearest address.
+- The **weather** where you are in the city (over the middle of Riyadh until
+  that is known). Tap your own dot for your coordinates, altitude and the
+  nearest address.
 
 **Screen**
 
@@ -208,11 +260,18 @@ one is no longer online). So the app keeps to what is published:
 - A given end of a line sends its trains at the same minutes past the hour
   every time you look, so the picture is steady, but those are not the minutes
   of the real trains. Do not catch a train by it.
-- Other cities get the same hours, without the late Friday start.
 
-The map is only as complete as its sources are where you are. Speed limits in
-particular are missing on many roads. Bus stops are shown where OpenStreetMap
-has them, which in Riyadh is many but not all.
+The map is only as complete as its sources are. Speed limits in particular
+are missing on many roads. Bus stops are shown where OpenStreetMap has them,
+which in Riyadh is many but not all.
+
+Street lamps and the night. No open source says where a lamp post stands or
+which lamp is lit. The lamps are stood by rule along the streets the map has
+(every 30 to 42 m by the kind of road, 7 to 12 m tall), and their light takes
+the colour usual for that kind of road in Riyadh. Which windows are lit, the
+colour of a tower's band of light and the colour of Kingdom Centre's arch
+(the real one changes from night to night) are set out by rule or by chance,
+the same every night.
 
 Buildings. Their outlines are real: recorded by mappers, or traced from
 satellite photos by machine, which is why a few are a little off. What the
@@ -227,8 +286,9 @@ outlines do not say is made up to look right:
   every time. Which kind a building is goes by what the data says it is for
   and by its height: a low building is taken for a house, one of 60 m and
   more for a glass tower, one the data calls commercial is given shops along
-  its foot. Blinds, lit rooms and the colours of the signboards are picked by
-  chance. None of this is what the real front looks like.
+  its foot. Blinds, the rooms that are lit by night and the colours of the
+  signboards are picked by chance. None of this is what the real front looks
+  like.
 - Wall colour. Worked out from the colour of the building's own roof in the
   satellite photo: the roof's hue, much calmed, at the brightness of a wall in
   daylight. A guess that is right in kind more often than not (a sand-coloured
@@ -352,8 +412,9 @@ The same goes for car parks. Their lanes are on the map; the bays beside
 them are laid by rule (2.7 m wide, 5 m deep, on both sides of a lane
 wherever no building, road, pavement or tree is in the way), and about six
 in ten are filled, three in ten beside a service lane that is not marked as
-a car park's. A real car park may have its bays elsewhere, at an angle, or
-under a roof.
+a car park's, and beside such a lane only within 45 m of a building: nobody
+parks along a track through open ground. A real car park may have its bays
+elsewhere, at an angle, or under a roof.
 
 The sunlight is worked out on the phone from the date, the time and the place;
 nothing is downloaded for it. Shadows are those of flat-roofed blocks on level
@@ -442,6 +503,11 @@ Watch video only when parked, or let a passenger watch.
 - Speed and direction come from the phone's GPS. Indoors, or standing still,
   the speed shows a dash.
 - The route is an overview, not navigation: it does not follow you or re-plan.
+- The map covers Riyadh only. Other cities are not drawn, and cannot be
+  searched.
+- The night is a picture of how Riyadh looks after dark, not a record of it:
+  which rooms are lit, where each lamp post stands and what colour a tower's
+  lights are is set out by rule, the same every night.
 
 ## For developers
 
@@ -454,6 +520,8 @@ js/app.js               the app: layout, video, location, search, place details
 js/map.js               the map: styles, markers, following, taps
 js/life.js              the simulated traffic: street network, vehicles, trains,
                         and the bridges they cross
+js/lights.js            the lights of the night: street lamps and their pools of
+                        light, headlights, the light from shop windows
 js/scene.js             the layer that draws into the 3D scene: the walls, the
                         roofs, the traffic, and the picture the shadows are
                         read from
@@ -468,8 +536,9 @@ js/sight.js             reading the satellite photo: shadows to heights, trees,
                         the colours of roofs
 js/services.js          the open data services
 js/lib.js               everything that needs no browser: parsing, distances,
-                        road matching, place categories, map styles, the
-                        sun's position and the shadows it casts
+                        road matching, place categories, map styles by day
+                        and by night, the sun's position and the shadows it
+                        casts, where Riyadh is
 sw.js                   offline start
 manifest.webmanifest    Home Screen name and icons
 icons/                  made by tools/make_icons.py

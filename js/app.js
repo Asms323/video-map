@@ -1,5 +1,6 @@
 import {
   PLACE_CATEGORIES,
+  RIYADH,
   SPLIT_MAX,
   SPLIT_MIN,
   addRecent,
@@ -13,16 +14,17 @@ import {
   formatDuration,
   formatSpeed,
   formatSpeedLimit,
+  inRiyadh,
   isOverLimit,
   linkLabel,
   nearestRoad,
   parseVideoLink,
   youtubeEmbedUrl,
 } from './lib.js';
-import { MAP_TYPES, MapView } from './map.js';
+import { LIGHT_MODES, MAP_TYPES, MapView } from './map.js';
 import { drivingRoute, placeAt, placeDetails, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
 
-const VERSION = '1.12.0';
+const VERSION = '1.13.0';
 const STORE_PREFIX = 'video-map:';
 
 const $ = (id) => document.getElementById(id);
@@ -52,7 +54,8 @@ const DEFAULT_SETTINGS = {
   swap: false, // map first
   keepAwake: true,
   unit: 'kmh', // 'kmh' | 'mph'
-  mapType: 'auto', // 'auto' | one of MAP_TYPES
+  mapType: 'city', // one of MAP_TYPES
+  light: 'sun', // how the 3D city is lit: by the sun as it stands over Riyadh ('sun'), or as by 'day' or by 'night' whatever the hour
   places: ['fuel', 'parking'], // place categories shown on the map
   roadInfo: true, // road name and speed limit
   weather: true,
@@ -72,10 +75,13 @@ function sanitizeSettings(saved) {
   if (!saved || typeof saved !== 'object') return out;
   if (['both', 'video', 'map'].includes(saved.layout)) out.layout = saved.layout;
   if (['kmh', 'mph'].includes(saved.unit)) out.unit = saved.unit;
-  if (saved.mapType === 'auto' || MAP_TYPES.includes(saved.mapType)) out.mapType = saved.mapType;
+  // ("auto" was a look of its own once: the 3D city by day and a flat dark map by night. The 3D city now has its own night.)
+  if (MAP_TYPES.includes(saved.mapType)) out.mapType = saved.mapType;
+  else if (saved.mapType === 'auto') out.mapType = 'city';
+  if (LIGHT_MODES.includes(saved.light)) out.light = saved.light;
   if (Array.isArray(saved.places)) out.places = cleanCategories(saved.places);
   if (['north', 'heading'].includes(saved.follow)) out.follow = saved.follow;
-  for (const key of ['swap', 'keepAwake', 'roadInfo', 'weather', 'traffic', 'photo']) {
+  for (const key of ['swap', 'keepAwake', 'roadInfo', 'weather', 'traffic', 'photo', 'sharp', 'detail']) {
     if (typeof saved[key] === 'boolean') out[key] = saved[key];
   }
   for (const key of ['splitPortrait', 'splitLandscape']) {
@@ -472,7 +478,6 @@ for (const sheet of Object.values(sheets)) {
 
 // ── Map ───────────────────────────────────────────────────────────────────
 
-const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 let mapView = null;
 let lastFix = null; // { lat, lng, accuracy, heading, speed, altitude, moving }
 let followMode = 'off'; // 'off' | 'north' | 'heading'
@@ -484,16 +489,21 @@ function setStatus(text) {
   mapStatus.hidden = !text;
 }
 
-/** The map type actually drawn: "auto" follows the phone's light or dark mode. */
+/** The map type that is drawn. */
 function activeMapType() {
-  if (settings.mapType !== 'auto') return settings.mapType;
-  return darkQuery.matches ? 'night' : 'city';
+  return settings.mapType;
+}
+
+/** What there is to say about where the phone is: nothing once it is found in the city. */
+function locationStatus() {
+  if (lastFix) return inRiyadh(lastFix) ? null : 'You are outside Riyadh. The map covers Riyadh only.';
+  return locationWanted ? 'Finding your location…' : null;
 }
 
 async function applyMapType() {
   if (!mapView) return;
   const shown = await mapView.setType(activeMapType());
-  if (shown) setStatus(lastFix || !locationWanted ? null : 'Finding your location…');
+  if (shown) setStatus(locationStatus());
   labelFollow();
 }
 
@@ -593,11 +603,12 @@ function renderWeather(summary) {
 let weatherShown = null;
 
 function updateWeather() {
-  if (!lastFix || !settings.weather) {
+  if (!settings.weather) {
     renderWeather(null);
     return;
   }
-  weatherAt(lastFix).then((summary) => {
+  // The weather where you are in the city; until that is known, or away from it, the weather over the middle of it.
+  weatherAt(lastFix && inRiyadh(lastFix) ? lastFix : RIYADH.centre).then((summary) => {
     weatherShown = summary;
     renderWeather(summary);
   });
@@ -611,10 +622,11 @@ function showLocationPrompt(text, buttonLabel) {
   locPrompt.hidden = false;
 }
 
+let followedYet = false; // whether the map has gone to the phone's position once
+
 function onPosition(position) {
   if (!mapView) return;
   const { latitude, longitude, accuracy, heading, speed, altitude } = position.coords;
-  const first = lastFix === null;
   lastFix = {
     lat: latitude,
     lng: longitude,
@@ -625,12 +637,20 @@ function onPosition(position) {
     moving: typeof speed === 'number' && speed > 0.8,
   };
 
-  if (first) setFollow(settings.follow);
+  // The map keeps to Riyadh. Away from the city there is nothing to follow you on: it stays where it is, and says so.
+  const here = inRiyadh(lastFix);
+  if (here && !followedYet) {
+    // The first time the phone is found in the city, the map goes to it.
+    followedYet = true;
+    setFollow(settings.follow);
+  } else if (!here && followMode !== 'off') {
+    setFollow('off');
+  }
   mapView.setPosition(lastFix);
 
-  setStatus(null);
+  setStatus(locationStatus());
   locPrompt.hidden = true;
-  followBtn.hidden = false;
+  followBtn.hidden = !here;
   speedEl.hidden = false;
   renderSpeed();
   updateRoadInfo();
@@ -988,14 +1008,20 @@ optDetail.addEventListener('change', () => {
   if (mapView) mapView.setDetail(settings.detail);
 });
 
-darkQuery.addEventListener('change', () => {
-  if (settings.mapType === 'auto') applyMapType();
-});
+for (const radio of document.querySelectorAll('input[name="light"]')) {
+  radio.addEventListener('change', () => {
+    if (!radio.checked) return;
+    settings.light = radio.value;
+    saveSettings();
+    if (mapView) mapView.setLightMode(settings.light);
+  });
+}
 
 function initMap() {
+  // (A view kept from before the map kept to Riyadh may lie anywhere: only one in the city is gone back to.)
   const saved = store.get('mapView', null);
   const hasSaved =
-    saved && [saved.lat, saved.lng, saved.zoom].every((n) => typeof n === 'number' && Number.isFinite(n));
+    saved && [saved.lat, saved.lng, saved.zoom].every((n) => typeof n === 'number' && Number.isFinite(n)) && inRiyadh(saved);
 
   try {
     mapView = new MapView(mapEl, {
@@ -1019,7 +1045,9 @@ function initMap() {
   mapView.setPhoto(settings.photo);
   mapView.setSharp(settings.sharp);
   mapView.setDetail(settings.detail);
+  mapView.setLightMode(settings.light);
   applyMapType();
+  updateWeather();
 
   followBtn.addEventListener('click', () => {
     if (!lastFix) return;
@@ -1111,6 +1139,9 @@ function syncForms() {
   optDetail.checked = settings.detail;
   for (const radio of document.querySelectorAll('input[name="unit"]')) {
     radio.checked = radio.value === settings.unit;
+  }
+  for (const radio of document.querySelectorAll('input[name="light"]')) {
+    radio.checked = radio.value === settings.light;
   }
   for (const radio of document.querySelectorAll('input[name="mapType"]')) {
     radio.checked = radio.value === settings.mapType;

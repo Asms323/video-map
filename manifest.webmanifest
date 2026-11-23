@@ -1,7 +1,7 @@
 {
   "name": "Video Map",
   "short_name": "Video Map",
-  "description": "Video and a live map of where you are, on one screen.",
+  "description": "Video and a live 3D map of Riyadh, by day and by night, on one screen.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

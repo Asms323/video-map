@@ -15,7 +15,14 @@ const span = (feature) => {
   const points = feature.geometry.coordinates[0].map(metres);
   const xs = points.map((point) => point[0]);
   const ys = points.map((point) => point[1]);
-  return { west: Math.min(...xs), east: Math.max(...xs), south: Math.min(...ys), north: Math.max(...ys), base: feature.properties.b, top: feature.properties.t, paint: feature.properties.c, kind: feature.properties.kind };
+  return { west: Math.min(...xs), east: Math.max(...xs), south: Math.min(...ys), north: Math.max(...ys), base: feature.properties.b, top: feature.properties.t, paint: feature.properties.c, kind: feature.properties.kind, night: feature.properties.n, hole: feature.geometry.coordinates[1] ? holeOf(feature) : null };
+};
+/** The box of the hole cut out of a slab that is a band, in metres. */
+const holeOf = (feature) => {
+  const points = feature.geometry.coordinates[1].map(metres);
+  const xs = points.map((point) => point[0]);
+  const ys = points.map((point) => point[1]);
+  return { west: Math.min(...xs), east: Math.max(...xs), south: Math.min(...ys), north: Math.max(...ys) };
 };
 const building = (id, east, north, width, depth, height = 6) => ({ id, height, base: 0, known: false, polygons: [[rect(east, north, width, depth)]] });
 const store = (name, kind, east, north) => ({ at: at(east, north), brand: brandOf({ name, class: kind }) });
@@ -136,9 +143,15 @@ test('a branch with a building to itself is dressed all round; one in a larger b
 
   // The restaurant: glass at the ground, its wall, the chain's yellow line and red band round the top, and the roof inside the band.
   const mc = of('store').filter((one) => one.east < 30);
-  assert.deepEqual(mc.map((one) => [one.base, one.top, one.paint]), [[0, 3.1, '#7f96a8'], [3.1, 4.5, '#f2efe8'], [4.1, 4.5, '#ffbc0d'], [4.5, 6.4, '#db0007'], [6.4, 6.5, '#e4e1d9']]);
+  assert.deepEqual(mc.map((one) => [one.base, one.top, one.paint]), [[0, 3.1, '#7f96a8'], [3.1, 4.5, '#f2efe8'], [4.1, 4.5, '#ffbc0d'], [4.5, 6.4, '#db0007'], [4.5, 6.5, '#e4e1d9']]);
   assert.ok(near(mc[0].west, 0) && near(mc[0].east, 20) && near(mc[0].north, 15), 'on its own outline');
   assert.ok(mc[3].west < -0.2 && mc[3].east > 20.2 && mc[4].west > 0.5, 'the band stands a little proud, the roof lies inside it');
+  // (The band is a band and no more: the roof fills its middle exactly, with nothing of the band under
+  // it to show through from afar.)
+  assert.deepEqual(mc.map((one) => Boolean(one.hole)), [false, false, false, true, false]);
+  for (const side of ['west', 'east', 'south', 'north']) assert.ok(near(mc[3].hole[side], mc[4][side], 0.001), side);
+  // By night the glass is lit from behind, and the band and the line under it keep their colours: a sign with a light of its own.
+  assert.deepEqual(mc.map((one) => one.night), ['#ffe3ad', undefined, '#ffbc0d', '#db0007', undefined]);
   // The supermarket: no glass, a white hall with the green band; the café by its door has a front on the hall's wall.
   const panda = of('store').filter((one) => one.west > 290);
   assert.deepEqual(panda.map((one) => one.paint), ['#f2efe8', '#ffffff', '#6a8038', '#e4e1d9']);
@@ -148,6 +161,7 @@ test('a branch with a building to itself is dressed all round; one in a larger b
   assert.equal(fronts.length, 4 * 3, 'the café in the row, the café in the hall, the restaurant among other shops, the bank in the tower: three slabs each');
   const cafe = fronts.filter((one) => one.west > 130 && one.east < 150);
   assert.deepEqual(cafe.map((one) => [one.base, one.top, one.paint]), [[0, 3.1, '#7f96a8'], [3.1, 3.35, '#d4e9e2'], [3.35, 4.85, '#00754a']]);
+  assert.deepEqual(cafe.map((one) => one.night), ['#ffe3ad', undefined, '#00754a'], 'lit glass under a lit band');
   assert.ok(cafe.every((one) => one.north <= 0.3 && one.south >= -1.3), 'on the outside of the south wall');
   assert.ok(near(cafe[2].east - cafe[2].west, 9.6), 'a front 9.6 m wide');
   assert.ok(fronts.some((one) => one.paint === '#221bff' && one.west > 600 && one.east < 640), 'the bank at the foot of the tower');
@@ -156,6 +170,8 @@ test('a branch with a building to itself is dressed all round; one in a larger b
   const kiosk = of('kiosk');
   assert.deepEqual(kiosk.map((one) => one.paint), ['#7f96a8', '#ef6a00', '#c63663', '#e4e1d9']);
   assert.ok(kiosk.every((one) => one.west > 890 && one.east < 910));
+  assert.deepEqual(kiosk.map((one) => [Boolean(one.hole), one.night]), [[false, '#ffe3ad'], [true, '#ef6a00'], [false, '#c63663'], [false, undefined]]);
+  assert.ok(near(kiosk[1].hole.west, kiosk[3].west, 0.001) && kiosk[3].base === kiosk[1].base && kiosk[3].top > kiosk[1].top, 'its roof fills the band and stands a little proud of it');
 
   assert.deepEqual(storeExtras([], buildings), { features: [], dressed: new Set(), roofs: new Map() });
 });
@@ -168,8 +184,11 @@ test('a fuel station is a canopy over its pumps, in the chain\'s colours, with i
   assert.deepEqual([...dressed], [1]);
   const canopy = features.filter((feature) => feature.properties.kind === 'canopy').map(span);
   const first = canopy.filter((one) => one.east < 40);
-  assert.deepEqual(first.slice(0, 3).map((one) => [one.base, one.top, one.paint]), [[5, 5.9, '#00a5e5'], [5.9, 6.15, '#001b66'], [6.15, 6.25, '#f1f1ee']]);
-  assert.equal(first.length, 3 + 4, 'the roof in three layers, on four posts');
+  assert.deepEqual(first.slice(0, 3).map((one) => [one.base, one.top, one.paint]), [[5, 5.9, '#00a5e5'], [5.9, 6.15, '#001b66'], [5, 6.25, '#f1f1ee']]);
+  assert.equal(first.length, 3 + 4, 'the roof in three parts, on four posts');
+  // (The band and the stripe over it run round the edge; the canopy itself fills the middle. By night band and stripe are lit, the canopy's top is not.)
+  assert.deepEqual(first.slice(0, 3).map((one) => [Boolean(one.hole), one.night]), [[true, '#00a5e5'], [true, '#001b66'], [false, undefined]]);
+  for (const side of ['west', 'east', 'south', 'north']) assert.ok(near(first[0].hole[side], first[2][side], 0.001) && near(first[1].hole[side], first[2][side], 0.001), side);
   assert.ok(first.slice(3).every((post) => post.base === 0 && post.top === 5 && post.east - post.west < 1));
   // Pumps stand under it, and the sign beside it.
   const pumps = features.filter((feature) => feature.properties.kind === 'pump').map(span).filter((one) => one.east < 40);
@@ -290,6 +309,10 @@ test('a mosque gets a dome on its roof and a minaret at a corner; a large one a 
   assert.ok(near(Math.abs(middle[0] - 15), 15 - 1.9, 0.05) && near(Math.abs(middle[1] - 12), 12 - 1.9, 0.05), `${middle}`);
   const balcony = minaret[2];
   assert.ok(balcony.east - balcony.west > minaret[1].east - minaret[1].west && balcony.top < top - 5, 'a balcony wider than the shaft');
+  // By night a mosque is lit: the green lamps of the minaret's balcony and cap, its shaft and the dome in white light, the finials gilt.
+  const lit = (list) => list.map((one) => one.night);
+  assert.deepEqual(lit(minaret), [undefined, '#b0a488', '#62f08e', '#b0a488', '#62f08e', '#62f08e', '#62f08e', '#62f08e', '#ffd873']);
+  assert.deepEqual(lit(dome), ['#85775c', '#b9b29c', '#b9b29c', '#b9b29c', '#b9b29c', '#b9b29c', '#b9b29c', '#ffd873']);
   // It throws a shadow of its own.
   assert.equal(shades.length, 1);
   assert.ok(near(shades[0].height, top - 1.4, 0.01) && shades[0].base === 0 && shades[0].polygons[0][0].length === 5);
@@ -318,4 +341,13 @@ test('a shop\'s own building keeps its usual height, whatever a shadow in the ph
   const tower = storeExtras([store("McDonald's", 'fast_food', 10, 7)], [building(1, 0, 0, 20, 15, 31)], () => [1, 0]);
   assert.equal(tower.dressed.size, 0);
   assert.ok(tower.features.every((feature) => feature.properties.kind === 'front'));
+});
+
+test('by night the metro shows its lights: glass lit from behind, the gold screens from within; concrete stays dark', () => {
+  const features = stationExtras([rect(0, 0, 120, 20)], [at(60, 70), at(400, 400)]);
+  const by = (paint) => features.filter((feature) => feature.properties.c === paint);
+  assert.ok(by(STATION_GOLD).length >= 3 && by(STATION_GOLD).every((feature) => feature.properties.n === '#e2b45c'));
+  assert.ok(by('#9db4c6').length >= 2 && by('#9db4c6').every((feature) => feature.properties.n === '#ffe7b8'));
+  for (const paint of ['#d9dcde', '#d6d1c6', '#22324d']) assert.ok(by(paint).every((feature) => feature.properties.n === undefined), paint);
+  assert.ok(features.every((feature) => feature.geometry.coordinates.length === 1), 'none of them is a band');
 });

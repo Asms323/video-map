@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Video Map</title>
-  <meta name="description" content="Video and a live map of where you are, on one screen.">
+  <meta name="description" content="Video and a live 3D map of Riyadh, by day and by night, on one screen.">
   <meta name="theme-color" content="#0b0d10">
   <meta name="color-scheme" content="dark">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -75,7 +75,7 @@
       <div id="map" class="map"></div>
 
       <div class="map-tools">
-        <button class="map-btn" type="button" data-open="search" aria-label="Find a place" title="Find a place">
+        <button class="map-btn" type="button" data-open="search" aria-label="Find a place in Riyadh" title="Find a place in Riyadh">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.6-4.6"/></svg>
         </button>
         <button class="map-btn" type="button" data-open="map" aria-label="Map type and places" title="Map type and places">
@@ -170,7 +170,7 @@
   <dialog id="sheet-search" class="sheet" aria-labelledby="searchTitle">
     <div class="sheet-body">
       <header class="sheet-head">
-        <h2 id="searchTitle">Find a place</h2>
+        <h2 id="searchTitle">Find a place in Riyadh</h2>
         <button class="icon-btn" type="button" data-close aria-label="Close">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
         </button>
@@ -195,12 +195,23 @@
       </header>
 
       <div class="tiles" role="radiogroup" aria-label="Map type">
-        <label><input type="radio" name="mapType" value="auto"><span><b>Auto</b><small>Day and night</small></span></label>
-        <label><input type="radio" name="mapType" value="city"><span><b>3D City</b><small>Isometric model</small></span></label>
+        <label><input type="radio" name="mapType" value="city"><span><b>3D City</b><small>Riyadh by day and by night</small></span></label>
         <label><input type="radio" name="mapType" value="streets"><span><b>Streets</b><small>Colors and icons</small></span></label>
-        <label><input type="radio" name="mapType" value="night"><span><b>Night</b><small>Dark colors</small></span></label>
+        <label><input type="radio" name="mapType" value="night"><span><b>Dark</b><small>Flat, dark colors</small></span></label>
         <label><input type="radio" name="mapType" value="satellite"><span><b>Satellite</b><small>Real photos</small></span></label>
         <label><input type="radio" name="mapType" value="detailed"><span><b>Detailed</b><small>Every feature</small></span></label>
+      </div>
+
+      <div class="setting setting-choice" role="radiogroup" aria-labelledby="lightName">
+        <span class="setting-text">
+          <span id="lightName" class="setting-name">Light in the 3D city</span>
+          <span class="setting-note">Real time follows the sun over Riyadh: by day it throws the shadows, and as it sets the city goes dark and the street lamps, windows, shop fronts and headlights come on. Day and Night show the city that way whatever the hour.</span>
+        </span>
+        <div class="choice">
+          <label><input type="radio" name="light" value="sun"><span>Real time</span></label>
+          <label><input type="radio" name="light" value="day"><span>Day</span></label>
+          <label><input type="radio" name="light" value="night"><span>Night</span></label>
+        </div>
       </div>
 
       <section aria-labelledby="placesTitle">
@@ -313,8 +324,12 @@
           Map drawn with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre</a>.
         </p>
         <p>
+          Video Map is made for Riyadh: the map opens on the city and keeps to it, and places are looked for in it.
+        </p>
+        <p>
           In the 3D city everything is drawn; no satellite photo is shown. The landmarks, bridges, metro stations, mosques and shop fronts are simplified models made for this app, not surveys;
           windows, shop floors, pavements, road markings, crossings, what stands on the roofs and the cars in the car parks are set out by rule to look right, and the colours of roofs and walls are worked out from the photo. A chain's colours are its own; no logos are shown.
+          By night the street lamps, the lit windows and the lights on the landmarks are set out by rule too: they show how Riyadh looks after dark, not which lamp is on.
         </p>
         <p class="version">Video Map <span id="version"></span></p>
       </footer>

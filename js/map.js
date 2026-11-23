@@ -4,6 +4,7 @@
 import {
   BUILDING_SOURCE,
   PLACE_CATEGORIES,
+  RIYADH,
   VECTOR_SOURCE,
   WALL_DETAILS,
   WALL_KINDS,
@@ -16,10 +17,13 @@ import {
   cityModelStyle,
   cleanCategories,
   clipLine,
+  darkness,
   detailedStyle,
   displayName,
   footprintsIn,
   groundWidth,
+  inRiyadh,
+  lampsLit,
   linesFromGeometry,
   nearestRoad,
   osmRefFromTileId,
@@ -34,7 +38,8 @@ import {
   withOverlays,
 } from './lib.js';
 import { PLAIN_FUEL, brandOf, localKind, mosqueExtras, mosquesAmong, stationExtras, storeExtras } from './dress.js';
-import { STAYED_BRIDGES, landmarkRoofs, landmarkShades, replacedByLandmarks } from './landmarks.js';
+import { STAYED_BRIDGES, landmarkBeacons, landmarkRoofs, landmarkShades, replacedByLandmarks } from './landmarks.js';
+import { drawBeacons, drawLamps, drawRoofLights, drawTrafficLights, shopSpill } from './lights.js';
 import { Mesh, Traffic, buildNetwork, drawBridges, drawMarks, drawRoofs, drawStreet, drawTraffic, drawTrees, faceLight, lightFrom, stayedHere, streetDirection, streetNear, trafficLevel } from './life.js';
 import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
 import { SceneLayer } from './scene.js';
@@ -44,6 +49,19 @@ import { CasterMesh, shadowCasters, shadowFall, shadowMapSize } from './shade.js
 import { PARAPET_METERS, PARAPET_THICK_METERS, WallMesh, colourOf, facadeOf, footShade, parapetTops, tilePieces, wallTone, wallsOf } from './walls.js';
 
 export const MAP_TYPES = ['city', 'streets', 'night', 'satellite', 'detailed'];
+
+// How the 3D city is lit: by the sun as it really stands over the city at this hour ('sun'), or as by
+// day or as by night whatever the hour.
+export const LIGHT_MODES = ['sun', 'day', 'night'];
+// The sun put in the sky to show the city by day when the real one is low or down: a morning sun from
+// the south-east. And the one that shows it by night when the real one is up: well below the horizon.
+const SHOWN_DAY_SUN = { azimuth: 128, altitude: 44 };
+const SHOWN_NIGHT_SUN = { azimuth: 300, altitude: -30 };
+const SHOWN_DAY_FROM_DEGREES = 12; // the real sun does for "day" once it stands this high
+// The map's own drawing follows the dark in steps this fine, and the pictures of the walls in coarser ones.
+const NIGHT_STEP = 0.04;
+const WALL_NIGHT_STEPS = 8;
+const LAMPS_MOST = 3000;
 
 // Styles drawn on a dark ground need light text on the app's own markers.
 const DARK_TYPES = new Set(['night', 'satellite']);
@@ -203,46 +221,96 @@ function drawMarker(color, path) {
   return ctx.getImageData(0, 0, size, size);
 }
 
+// A wall's picture holds this many windows each way: by night some of them are lit and some dark.
+const WALL_PICTURE_WINDOWS = 4;
+// What the dark leaves of a wall's colour, and the light in a window with a lamp on behind it.
+const WALL_NIGHT_TINT = [0.175, 0.195, 0.275];
+const WINDOW_LIGHT = { low: [255, 204, 128], tall: [236, 242, 255], station: [255, 206, 118] };
+// Of the sixteen windows of a picture, the ones with a lamp on: about one in three, fewer in a tower.
+const WINDOWS_LIT = { low: [1, 4, 6, 11, 14], tall: [2, 9, 15], station: [] };
+
 /**
- * A patch of wall to repeat along and up a building: one window, drawn at twice
- * the size it is shown at. Without a layout the wall is plain.
+ * A patch of wall to repeat along and up a building: four windows by four,
+ * drawn at twice the size they are shown at. Without a layout the wall is
+ * plain. night: how dark it is, 0 to 1: the wall goes dark and blue, and
+ * some of the windows light up. own: a number that shifts which ones.
  */
-function drawWall(kind, layout) {
-  const width = (layout?.bay ?? 2) * 2 * (layout ? (kind.scale ?? 1) : 1);
-  const height = (layout?.floor ?? 2) * 2 * (layout ? (kind.scale ?? 1) : 1);
+function drawWall(kind, layout, night = 0, own = 0, name = 'low') {
+  const scale = layout ? (kind.scale ?? 1) : 1;
+  const bay = (layout?.bay ?? 2) * 2 * scale;
+  const floor = (layout?.floor ?? 2) * 2 * scale;
+  const each = layout ? WALL_PICTURE_WINDOWS : 1;
+  const width = bay * each;
+  const height = floor * each;
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = kind.colour;
+  const lamps = lampsLit(night);
+  const base = colourOf(kind.colour) ?? [240, 238, 232];
+  const wall = base.map((part, i) => Math.round(part * (1 + (WALL_NIGHT_TINT[i] - 1) * night)));
+  const light = WINDOW_LIGHT[name] ?? WINDOW_LIGHT.low;
+  ctx.fillStyle = `rgb(${wall[0]}, ${wall[1]}, ${wall[2]})`;
   ctx.fillRect(0, 0, width, height);
-  if (layout && kind.lattice) {
-    // A screen pierced in triangles: the two diagonals of every bay, and a line where the bays meet.
-    ctx.strokeStyle = kind.glass;
-    ctx.lineWidth = Math.max(1, width / 9);
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(width, height);
-    ctx.moveTo(width, 0);
-    ctx.lineTo(0, height);
-    ctx.moveTo(0, height - 0.5);
-    ctx.lineTo(width, height - 0.5);
-    ctx.stroke();
-  } else if (layout) {
-    // Glass in the middle of the bay, with wall left at the sides and above and below.
-    const paneWidth = Math.round(width * kind.across);
-    const paneHeight = Math.round(height * kind.up);
-    const left = Math.round((width - paneWidth) / 2);
-    const top = Math.round((height - paneHeight) / 2);
-    ctx.fillStyle = kind.glass;
-    ctx.fillRect(left, top, paneWidth, paneHeight);
-    if (layout.floor >= 6) {
-      // Close enough to see the shade under the top of the window opening.
-      ctx.fillStyle = 'rgba(30, 40, 60, 0.22)';
-      ctx.fillRect(left, top, paneWidth, Math.max(1, Math.round(height * 0.08)));
+  if (!layout) {
+    // Too far off for windows: by night the wall has a little of the light of them all.
+    if (lamps > 0) {
+      ctx.fillStyle = `rgba(${light[0]}, ${light[1]}, ${light[2]}, ${0.09 * lamps})`;
+      ctx.fillRect(0, 0, width, height);
+    }
+    return ctx.getImageData(0, 0, width, height);
+  }
+  const lit = new Set((WINDOWS_LIT[name] ?? WINDOWS_LIT.low).map((index) => (index + own * 5) % (each * each)));
+  for (let row = 0; row < each; row += 1) {
+    for (let column = 0; column < each; column += 1) {
+      const x = column * bay;
+      const y = row * floor;
+      if (kind.lattice) {
+        // A screen pierced in triangles: the two diagonals of every bay, and a line where the bays meet.
+        // (By night the light of the station shows through it.)
+        ctx.strokeStyle = kind.glass;
+        ctx.lineWidth = Math.max(1, bay / 9);
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + bay, y + floor);
+        ctx.moveTo(x + bay, y);
+        ctx.lineTo(x, y + floor);
+        ctx.moveTo(x, y + floor - 0.5);
+        ctx.lineTo(x + bay, y + floor - 0.5);
+        ctx.stroke();
+        if (lamps > 0) {
+          ctx.strokeStyle = `rgba(${light[0]}, ${light[1]}, ${light[2]}, ${0.85 * lamps})`;
+          ctx.stroke();
+        }
+        continue;
+      }
+      // Glass in the middle of the bay, with wall left at the sides and above and below.
+      const paneWidth = Math.round(bay * kind.across);
+      const paneHeight = Math.round(floor * kind.up);
+      const left = x + Math.round((bay - paneWidth) / 2);
+      const top = y + Math.round((floor - paneHeight) / 2);
+      ctx.fillStyle = kind.glass;
+      ctx.fillRect(left, top, paneWidth, paneHeight);
+      if (layout.floor >= 6) {
+        // Close enough to see the shade under the top of the window opening.
+        ctx.fillStyle = 'rgba(30, 40, 60, 0.22)';
+        ctx.fillRect(left, top, paneWidth, Math.max(1, Math.round(floor * 0.08)));
+      }
+      if (night > 0) {
+        // By night the glass is dark, but for the rooms with a lamp on.
+        const on = lit.has(row * each + column);
+        ctx.fillStyle = on ? `rgba(${light[0]}, ${light[1]}, ${light[2]}, ${0.95 * lamps})` : `rgba(8, 11, 20, ${0.6 * night})`;
+        ctx.fillRect(left, top, paneWidth, paneHeight);
+      }
     }
   }
   return ctx.getImageData(0, 0, width, height);
+}
+
+/** The picture for a wall, by what its name stands for (see wallImage in lib.js), as it shows at a darkness. */
+function wallPicture(wall, night) {
+  const kind = wall.tint === null ? WALL_KINDS[wall.kind] : { ...WALL_KINDS[wall.kind], colour: WALL_TINTS[wall.tint] };
+  return drawWall(kind, WALL_DETAILS[wall.detail], night, wall.tint ?? 0, wall.kind);
 }
 
 let rtlRequested = false;
@@ -351,17 +419,36 @@ export class MapView {
     this.roofShadeMesh = new Mesh(); // the shade on the roofs: of their parapets and of what stands on them
     this.sharpOn = true; // the photo of the Satellite look as sharp as the screen can show it
     this.detailOn = true; // walls drawn window by window, and shadows on walls and roofs
+    this.lightMode = 'sun'; // one of LIGHT_MODES
+    this.night = 0; // how dark the 3D city is right now: 0 by day, 1 by night
+    this.cityBase = null; // the street map's style the 3D city on screen was built on
+    this.cityStyle = null; // the 3D city's style as it was last brought into line with the dark
+    this.wallNight = 0; // the dark the walls' pictures were last drawn for
+    this.lampPostMesh = new Mesh(); // the street lamps: posts, arms and heads
+    this.lampLightMesh = new Mesh(); // their light: the lit heads, and the pools on the ground
+    this.lampsMade = null;
+    this.lightMesh = new Mesh(); // the lights of the traffic
+    this.spillMesh = new Mesh(); // the light from shop windows on the pavement, and the red lamps on what is tall
+    this.roofLightMesh = new Mesh(); // the lamps left on up on the roofs
+    this.spillMade = null;
+    this.groundMade = null; // where the buildings stand, as last worked out (see builtGround)
     this.scene = new SceneLayer(LIFE_LAYER, { onFrame: () => this.moveLife() });
     // For anyone looking at the scene from outside (the tests do): what it holds.
-    this.scene.counts = () => ({ life: this.lifeCounts(), photo: this.photoCounts(), buildings: this.buildingCounts(), detail: this.detailCounts(), busy: { ...this.busy } });
+    this.scene.counts = () => ({ life: this.lifeCounts(), photo: this.photoCounts(), buildings: this.buildingCounts(), detail: this.detailCounts(), night: this.nightCounts(), busy: { ...this.busy } });
     // How often each piece of work has been done, for anyone wondering what keeps the map from coming to rest.
-    this.busy = { shade: 0, roofs: 0, extras: 0, photo: 0, filters: 0, tiles: 0 };
+    this.busy = { shade: 0, roofs: 0, extras: 0, photo: 0, filters: 0, tiles: 0, night: 0 };
 
+    // The map opens on Riyadh, and keeps to it: it cannot be moved off the city, nor drawn back until
+    // the city is a dot.
+    const { west, south, east, north } = RIYADH.bounds;
+    const start = view && inRiyadh(view) ? view : { ...RIYADH.centre, zoom: RIYADH.zoom };
     this.map = new maplibregl.Map({
       container,
       style: BLANK_STYLE,
-      center: view ? [view.lng, view.lat] : [0, 20],
-      zoom: view ? view.zoom : 1.6,
+      center: [start.lng, start.lat],
+      zoom: start.zoom,
+      maxBounds: [[west, south], [east, north]],
+      minZoom: 8,
       maxZoom: 19,
       maxPitch: 70,
       // Photo tiles that have left the screen are kept for coming back to, but not many: sharp ones are small and there are a lot of them.
@@ -449,6 +536,107 @@ export class MapView {
     this.map.triggerRepaint();
   }
 
+  /**
+   * Light the 3D city by the sun as it really stands ('sun'), or show it as
+   * by day or as by night whatever the hour.
+   */
+  setLightMode(mode) {
+    const wanted = LIGHT_MODES.includes(mode) ? mode : 'sun';
+    if (this.lightMode === wanted) return;
+    this.lightMode = wanted;
+    this.followSun();
+    this.map.triggerRepaint();
+  }
+
+  /**
+   * The sun the 3D city is lit by at a place { lat, lng }: the real one for
+   * this hour, unless the city is being shown by day or by night and the real
+   * one does not do for that.
+   */
+  sunAt(place) {
+    const real = sunPosition(new Date(), place.lat, place.lng);
+    if (this.lightMode === 'day' && !(real.altitude >= SHOWN_DAY_FROM_DEGREES)) return SHOWN_DAY_SUN;
+    if (this.lightMode === 'night' && darkness(real) < 1) return SHOWN_NIGHT_SUN;
+    return real;
+  }
+
+  /** The 3D city's style for a darkness, with the app's own drawings on top. */
+  cityStyleFor(night) {
+    return withOverlays(cityModelStyle(this.cityBase, { buildings: this.buildings, night }), {
+      categories: this.categories,
+      dark: night >= 0.5,
+      accuracy: this.accuracyData(),
+      pin: this.pinData(),
+      route: this.routeData(),
+    });
+  }
+
+  /**
+   * Bring the map's own drawing of the 3D city into line with how dark it is:
+   * the dark over the ground, the lamps along the roads, the sky, the colours
+   * of the blocks and the names, the pictures of the walls. Only what differs
+   * from what is on screen is changed.
+   */
+  applyNight(night) {
+    if (this.type !== 'city' || !this.cityBase || !this.cityStyle) return;
+    const made = this.cityStyle.night;
+    const ends = (night === 0 || night === 1) && night !== made; // day and night themselves are always reached exactly
+    if (Math.abs(night - made) < NIGHT_STEP && night >= 0.5 === made >= 0.5 && !ends) return;
+    this.whenStyled((map) => {
+      if (!map.getLayer('city-night')) return; // the style is still on its way
+      const next = this.cityStyleFor(night);
+      const before = new Map(this.cityStyle.layers.map((layer) => [layer.id, layer.paint ?? {}]));
+      for (const layer of next.layers) {
+        const old = before.get(layer.id);
+        if (!old || !map.getLayer(layer.id)) continue;
+        const paint = layer.paint ?? {};
+        // (What was said before and is not said now goes back to what it is when nothing is said: a name's dark edge by day.)
+        for (const name of new Set([...Object.keys(paint), ...Object.keys(old)])) {
+          if (JSON.stringify(paint[name]) !== JSON.stringify(old[name])) map.setPaintProperty(layer.id, name, paint[name]);
+        }
+      }
+      map.setSky(next.sky);
+      next.night = night;
+      this.cityStyle = next;
+      this.busy.night += 1;
+    });
+    this.repaintWalls(night);
+  }
+
+  /** Draw the pictures of the walls afresh for a darkness, if it has changed by a step since they were drawn. */
+  repaintWalls(night) {
+    const step = Math.round(night * WALL_NIGHT_STEPS) / WALL_NIGHT_STEPS;
+    if (step === this.wallNight) return;
+    this.wallNight = step;
+    for (const id of [...this.images.keys()]) {
+      const wall = wallImage(id);
+      if (!wall) continue;
+      const image = wallPicture(wall, step);
+      this.images.set(id, image);
+      this.whenStyled((map) => {
+        if (map.hasImage(id)) map.updateImage(id, image);
+      });
+    }
+  }
+
+  /** How dark the 3D city is and what is lit in it, for anyone who wants to know. */
+  nightCounts() {
+    return {
+      mode: this.lightMode,
+      night: this.night,
+      lamps: lampsLit(this.night),
+      styled: this.cityStyle?.night ?? null,
+      walls: this.wallNight,
+      streetLamps: this.lampsMade?.lamps ?? 0,
+      lampWays: this.lampsMade?.ways ?? 0,
+      glow: this.lampLightMesh.count,
+      vehicleLights: this.lightMesh.count,
+      spill: this.spillMade?.strips ?? 0,
+      beacons: this.spillMade?.beacons ?? 0,
+      roofLamps: this.spillMade?.roofLamps ?? 0,
+    };
+  }
+
   /** Show the photo of the Satellite look as sharp as the screen can show it (which takes more of it to fetch), or not. */
   setSharp(on) {
     if (this.sharpOn === Boolean(on)) return;
@@ -461,6 +649,10 @@ export class MapView {
     const request = ++this.styleRequest;
     let base;
     let buildings = null;
+    let cityBase = null;
+    // (The 3D city starts in the light it is to be shown in: by night it is not first drawn by day.)
+    const centre = this.map.getCenter();
+    const night = type === 'city' ? darkness(this.sunAt(centre)) : 0;
     try {
       if (type === 'night') {
         base = await loadStyle('fiord');
@@ -468,7 +660,8 @@ export class MapView {
         const archive = this.archiveFailed || !window.pmtiles ? Promise.resolve(null) : buildingArchive();
         const [streets, found] = await Promise.all([loadStyle('liberty'), Promise.race([archive, wait(ARCHIVE_WAIT_MS, undefined)])]);
         buildings = found ?? null;
-        base = cityModelStyle(streets, { buildings });
+        cityBase = streets;
+        base = cityModelStyle(streets, { buildings, night });
         if (found === undefined) {
           // Still looking. Once the address is known the city is drawn again, a house at a time.
           archive.then((late) => {
@@ -505,17 +698,27 @@ export class MapView {
     this.archiveTiles = 0;
     const style = withOverlays(base, {
       categories: this.categories,
-      dark: DARK_TYPES.has(type),
+      dark: DARK_TYPES.has(type) || night >= 0.5,
       accuracy: this.accuracyData(),
       pin: this.pinData(),
       route: this.routeData(),
     });
+    this.cityBase = cityBase;
+    this.cityStyle = cityBase ? { ...style, night } : null;
+    if (cityBase) this.repaintWalls(night);
     this.placeLayers = placeLayerIds(style);
     this.map.setStyle(style, { diff: false });
     // Each map type has its own lens and camera angle.
     this.map.setVerticalFieldOfView(type === 'city' ? ISO_LENS : NORMAL_LENS);
     this.cameraTarget = null;
-    this.moveCamera(false);
+    if (this.followMode === 'off' || !this.position || !inRiyadh(this.position)) {
+      // Not following anyone: the map stays where it is, seen the way this type is seen when it does
+      // not turn (the 3D city isometric, the others from straight above with north up).
+      const { pitch, bearing } = cameraOf(type).north;
+      this.map.jumpTo({ pitch, bearing });
+    } else {
+      this.moveCamera(false);
+    }
     return true;
   }
 
@@ -527,7 +730,7 @@ export class MapView {
       let image;
       if (category) image = drawMarker(category.color, ICON_PATHS[category.id]);
       else if (id === 'vm-other') image = drawMarker('#868e96', null);
-      else if (wall) image = drawWall(wall.tint === null ? WALL_KINDS[wall.kind] : { ...WALL_KINDS[wall.kind], colour: WALL_TINTS[wall.tint] }, WALL_DETAILS[wall.detail]);
+      else if (wall) image = wallPicture(wall, this.wallNight);
       // A base style sometimes names a picture its sprite sheet lacks; draw nothing for it.
       else image = { width: 1, height: 1, data: new Uint8Array(4) };
       this.images.set(id, image);
@@ -815,7 +1018,7 @@ export class MapView {
   followSun() {
     if (this.type !== 'city') return;
     const centre = this.map.getCenter();
-    const sun = sunPosition(new Date(), centre.lat, centre.lng);
+    const sun = this.sunAt(centre);
     const moved =
       !this.sun ||
       Math.abs(sun.altitude - this.sun.altitude) > 0.2 ||
@@ -832,8 +1035,12 @@ export class MapView {
         const light = lightFrom(sun);
         this.scene.sun = light ? [light.east, light.north, light.up] : [0.3, -0.5, 0.8];
         this.scene.day = light ? 1 : 0;
+        // And as the sun goes down the city goes dark, and its lamps come on.
+        this.night = darkness(sun);
+        this.scene.night = this.night;
       }
     }
+    if (this.sun) this.applyNight(this.night);
     const lit = this.treesLit;
     if (!lit || Math.abs(lit.altitude - this.sun?.altitude) > 1.5 || Math.abs(((lit.azimuth - this.sun?.azimuth + 540) % 360) - 180) > 1.5) {
       // What stands still is lit by the sun too: drawn afresh once it has moved on.
@@ -841,6 +1048,7 @@ export class MapView {
       this.layStreet();
       this.layRoofs();
       this.layBridges();
+      this.layLamps();
       this.treesLit = this.sun;
     }
     this.queueShade(false);
@@ -933,8 +1141,9 @@ export class MapView {
     this.roofs = this.buildings ? buildings : [];
     if (!this.scene.origin) this.scene.setOrigin({ lng: centre.lng, lat: centre.lat });
     this.layRoofs();
-    // (And the car parks are filled where these buildings leave room.)
+    // (And the car parks are filled where these buildings leave room; and no lamp post stands in one of them.)
     if (this.streetMade && this.streetMade.roofs !== this.roofs) this.layStreet();
+    if (this.lampsMade && this.lampsMade.roofs !== this.roofs) this.layLamps();
   }
 
   /**
@@ -996,6 +1205,13 @@ export class MapView {
         this.scene.setWalls(this.wallMesh);
         this.scene.setShadows(this.casterMesh, null);
       }
+      if (this.spillMesh.count > 0 || this.roofLightMesh.count > 0) {
+        this.spillMesh.clear();
+        this.roofLightMesh.clear();
+        this.scene.set('spill', this.spillMesh, { glow: true });
+        this.scene.set('rooflights', this.roofLightMesh, { glow: true, lifted: 2 });
+      }
+      this.spillMade = null;
       this.roofsMade = null;
       this.wallsMade = null;
       this.shadowsMade = null;
@@ -1069,10 +1285,23 @@ export class MapView {
         });
       });
     }
-    const furnished = drawRoofs(this.roofMesh, local, lightFrom(this.sun), { fall: sunFall, shade: this.roofShadeMesh });
+    const beacons = [];
+    const roofLamps = [];
+    const furnished = drawRoofs(this.roofMesh, local, lightFrom(this.sun), { fall: sunFall, shade: this.roofShadeMesh, beacons, lamps: roofLamps });
     this.roofsMade = { furnished, of: local.length, decks, strips, corners: this.roofMesh.count };
     this.scene.set('roofs', this.roofMesh, { lifted: 1 });
     this.scene.set('roofshade', this.roofShadeMesh, { lifted: 2 });
+    // What shows only by night: the light from the shop windows on the pavement, and the red lamps on
+    // the masts of the towers and on top of the landmarks.
+    this.spillMesh.clear();
+    const spilled = shopSpill(this.spillMesh, whole, origin);
+    for (const [lng, lat, height] of landmarkBeacons()) {
+      if (here && lng >= here.west && lng <= here.east && lat >= here.south && lat <= here.north) beacons.push([(lng - origin.lng) * squeeze, (lat - origin.lat) * METERS_PER_DEGREE, height]);
+    }
+    this.spillMade = { strips: spilled, beacons: drawBeacons(this.spillMesh, beacons), roofLamps: drawRoofLights(this.roofLightMesh, roofLamps) };
+    this.scene.set('spill', this.spillMesh, { glow: true });
+    // (Like the shade on the roofs, the light on them is drawn a touch nearer the eye than the roofs are.)
+    this.scene.set('rooflights', this.roofLightMesh, { glow: true, lifted: 2 });
     this.map.triggerRepaint();
   }
 
@@ -1342,6 +1571,7 @@ export class MapView {
           if (coordinates.length < 2 || !coordinates.some(inBox)) continue;
           lines.push({
             class: properties.class,
+            subclass: properties.subclass,
             oneway: properties.oneway,
             tunnel: properties.brunnel === 'tunnel',
             bridge: properties.brunnel === 'bridge',
@@ -1383,6 +1613,7 @@ export class MapView {
     this.layRoofs();
     this.layBridges();
     this.layStreet();
+    this.layLamps();
     map.triggerRepaint();
   }
 
@@ -1406,6 +1637,27 @@ export class MapView {
       this.marksMade = { network: this.network, ...drawMarks(this.markMesh, this.network) };
       this.scene.set('marks', this.markMesh);
     }
+  }
+
+  /**
+   * Stand the street lamps afresh along the streets read from the map: the
+   * posts, which stand by day too, and their light, which shows by night.
+   */
+  layLamps() {
+    if (!this.scene.origin || this.type !== 'city' || !this.network) {
+      if (this.lampPostMesh.count > 0 || this.lampLightMesh.count > 0) {
+        this.lampPostMesh.clear();
+        this.lampLightMesh.clear();
+        this.scene.set('lampposts', this.lampPostMesh);
+        this.scene.set('lamplight', this.lampLightMesh, { glow: true });
+      }
+      this.lampsMade = null;
+      return;
+    }
+    const made = drawLamps(this.lampPostMesh, this.lampLightMesh, this.network, lightFrom(this.sun), { most: LAMPS_MOST, built: this.builtGround()?.built ?? null });
+    this.lampsMade = { ...made, roofs: this.roofs };
+    this.scene.set('lampposts', this.lampPostMesh);
+    this.scene.set('lamplight', this.lampLightMesh, { glow: true });
   }
 
   /** Draw the parked cars and the bus shelters afresh, for the streets the traffic runs on. */
@@ -1436,6 +1688,9 @@ export class MapView {
     const origin = this.scene.origin;
     const box = this.shade?.box;
     if (!origin || !box || !this.buildings || this.roofs.length === 0) return null;
+    // (Asked for more than once for the same buildings, trees and origin: worked out once.)
+    const kept = this.groundMade;
+    if (kept && kept.roofs === this.roofs && kept.trees === this.trees && kept.box === box && kept.lng === origin.lng && kept.lat === origin.lat) return kept.ground;
     const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
     const squares = new Map();
     const squareOf = (cellX, cellY) => (cellX + 32768) * 65536 + (cellY + 32768);
@@ -1506,7 +1761,9 @@ export class MapView {
       }
       return false;
     };
-    return { built, near, within: [(box.west - origin.lng) * squeeze, (box.south - origin.lat) * METERS_PER_DEGREE, (box.east - origin.lng) * squeeze, (box.north - origin.lat) * METERS_PER_DEGREE] };
+    const ground = { built, near, within: [(box.west - origin.lng) * squeeze, (box.south - origin.lat) * METERS_PER_DEGREE, (box.east - origin.lng) * squeeze, (box.north - origin.lat) * METERS_PER_DEGREE] };
+    this.groundMade = { roofs: this.roofs, trees: this.trees, box, lng: origin.lng, lat: origin.lat, ground };
+    return ground;
   }
 
   /** Before each picture: move the traffic on and draw it afresh. True while there is something moving. */
@@ -1526,6 +1783,10 @@ export class MapView {
       if (this.trafficMesh.count > 0) {
         this.trafficMesh.clear();
         this.scene.set('traffic', this.trafficMesh);
+      }
+      if (this.lightMesh.count > 0) {
+        this.lightMesh.clear();
+        this.scene.set('lights', this.lightMesh, { glow: true });
       }
       this.lifeDrawn = 0;
       return false;
@@ -1548,6 +1809,14 @@ export class MapView {
     const scale = Math.min(Math.max(1 + (17.5 - zoom) * 0.5, 1), 1.5);
     this.lifeDrawn = drawTraffic(this.trafficMesh, this.traffic, lightFrom(this.sun), shadowReach(this.sun), scale);
     this.scene.set('traffic', this.trafficMesh);
+    // By night everything that moves has its lights on.
+    if (lampsLit(this.night) > 0) {
+      drawTrafficLights(this.lightMesh, this.traffic, scale);
+      this.scene.set('lights', this.lightMesh, { glow: true });
+    } else if (this.lightMesh.count > 0) {
+      this.lightMesh.clear();
+      this.scene.set('lights', this.lightMesh, { glow: true });
+    }
     return true;
   }
 
@@ -1628,7 +1897,8 @@ export class MapView {
   }
 
   moveCamera(first) {
-    if (this.followMode === 'off' || !this.position) return;
+    // (Outside Riyadh there is nothing to follow anyone on: the map stays on the city.)
+    if (this.followMode === 'off' || !this.position || !inRiyadh(this.position)) return;
     const map = this.map;
     const center = [this.position.lng, this.position.lat];
     const camera = cameraOf(this.type)[this.followMode];
