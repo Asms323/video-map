@@ -307,7 +307,8 @@ test('a red lamp stands on the mast of every tall tower, and on top of the tall 
 
   // The landmarks: one on each of the highest points of every tall one. Kingdom Centre has two, its two points.
   const tops = landmarkBeacons();
-  const near = (landmark) => tops.filter(([lng, lat]) => Math.abs(lng - landmark.at[0]) < 0.001 && Math.abs(lat - landmark.at[1]) < 0.001);
+  // (Each landmark's own: along King Fahd Road they stand a street's width apart.)
+  const near = (landmark) => tops.filter(([lng, lat]) => Math.hypot((lng - landmark.at[0]) * 101100, (lat - landmark.at[1]) * 111320) < landmark.clear + 12);
   for (const landmark of LANDMARKS) {
     const own = near(landmark);
     if (landmark.height < 60) assert.equal(own.length, 0, landmark.id);
@@ -318,6 +319,8 @@ test('a red lamp stands on the mast of every tall tower, and on top of the tall 
   assert.equal(near(LANDMARKS.find((one) => one.id === 'kingdom-centre')).length, 2);
   assert.equal(near(LANDMARKS.find((one) => one.id === 'burj-rafal')).length, 2, 'a mast on each horn');
   assert.equal(near(LANDMARKS.find((one) => one.id === 'tv-tower')).length, 1);
+  assert.equal(near(LANDMARKS.find((one) => one.id === 'hamad-tower')).length, 1, 'on the point of the sail');
+  assert.equal(near(LANDMARKS.find((one) => one.id === 'al-anoud-tower')).length, 2, 'on each of its two masts');
 });
 
 test('a lamp is left on up on three roofs in ten, by the door at the head of the stairs, and under every awning', () => {

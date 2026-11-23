@@ -348,6 +348,105 @@ function hamadPodium() {
   return [{ outline: block(43.5, 30.5, -2.3, 5.5), base: 0, top: 9, paint: '#dcd8cf', roof: true }];
 }
 
+/**
+ * The Al Anoud Towers: two of a kind, side by side on King Fahd Road across
+ * from Hamad Tower, the first of them the head office of Alinma Bank. Each
+ * is a fin that stands end-on to the road: two long side walls of sand-
+ * coloured stone, and between them, towards the road, a narrow bowed front
+ * of dark glass. The front stands upright for six tenths of its height and
+ * then curves back to a peak, from which the roof falls away to the rear and
+ * a pair of masts lean back like the sword the design is named for (it is
+ * said to be based on a swordfish). In each side wall two tall slots of
+ * glass are let into the stone, crossed with white braces.
+ *
+ * (The first was opened in 2009, "more than 121 m" high, which is what its
+ * masts come to in a photograph taken along the road; the second, of 18
+ * floors, is the lower. Their plots are the street map's; the shape is
+ * measured from that photograph.)
+ */
+function anoudTower(model, { peak, masts }) {
+  const half = 15; // from its middle to its front, and to its back
+  const side = 9; // from its middle to either side wall
+  const bow = 2.5; // how far the middle of the front stands out
+  const fall = 0.67; // how steeply the roof falls to the rear
+  // The front, from the ground to the peak: [how far towards the road, how high].
+  const front = [[half, 0], [half, 0.2 * peak], [half, 0.4 * peak], [half, 0.6 * peak], [half - 0.8, 0.71 * peak], [half - 2.6, 0.826 * peak], [half - 5.7, 0.93 * peak], [half - 8.6, peak]];
+  const crest = half - 8.6; // where the peak stands
+  const rear = peak - fall * (crest + half); // the height of the back wall
+  const stone = { kind: 'plain', colour: '#cbbd98', light: '#ffe2b0', glow: 0.22 };
+  const glass = { kind: 'glass', colour: '#1f2f47', storey: 4, bay: 2.6, lit: 0.2, floors: 0.4, mirror: 0.45 };
+  const white = { kind: 'plain', colour: '#eceeed' };
+  const plain = [false, false, false, false];
+
+  // The two side walls, each with its two slots of braced glass.
+  const low = [[half - 13, 0.12 * peak], [half - 6.4, 0.12 * peak], [half - 6.4, 0.57 * peak], [half - 13, 0.57 * peak]];
+  const high = [[half - 12.8, 0.62 * peak], [half - 6.9, 0.62 * peak], [half - 9.5, 0.857 * peak], [half - 12.8, 0.857 * peak]];
+  for (const way of [-1, 1]) {
+    const out = [0, way, 0];
+    const wall = (points, y) => points.map(([x, z]) => [x, y, z]);
+    model.flat(wall([[-half, 0], ...front, [-half, rear]], way * side), stone, { out, holes: [wall(low, way * side), wall(high, way * side)] });
+    for (const slot of [low, high]) {
+      const y = way * (side - 0.4);
+      model.quad(...wall(slot, y), glass, { out, lines: plain, own: 11 });
+      // Three crosses, one over the other, and a bar between each and the next.
+      const at = (part, k) => {
+        const [bottom, top] = part === 0 ? [slot[0], slot[3]] : [slot[1], slot[2]];
+        return [bottom[0] + ((top[0] - bottom[0]) * k) / 3, way * (side - 0.3), bottom[1] + ((top[1] - bottom[1]) * k) / 3];
+      };
+      const bar = (p, q, thick = 0.45) => {
+        const run = [q[0] - p[0], q[2] - p[2]];
+        const size = Math.hypot(run[0], run[1]) || 1;
+        const across = [(-run[1] / size) * (thick / 2), (run[0] / size) * (thick / 2)];
+        model.quad([p[0] - across[0], p[1], p[2] - across[1]], [q[0] - across[0], q[1], q[2] - across[1]], [q[0] + across[0], q[1], q[2] + across[1]], [p[0] + across[0], p[1], p[2] + across[1]], white, { out, lines: plain });
+      };
+      for (let k = 0; k < 3; k += 1) {
+        bar(at(0, k), at(1, k + 1));
+        bar(at(1, k), at(0, k + 1));
+        if (k > 0) bar(at(0, k), at(1, k));
+      }
+    }
+  }
+  // The front: dark glass, bowed outwards between the two walls, upright and then curving back to the peak.
+  const ys = [-side, -side / 2, 0, side / 2, side];
+  const out = (y) => bow * (1 - (y / side) ** 2);
+  for (let k = 1; k < front.length; k += 1) {
+    const [x0, z0] = front[k - 1];
+    const [x1, z1] = front[k];
+    for (let j = 1; j < ys.length; j += 1) {
+      const [y0, y1] = [ys[j - 1], ys[j]];
+      model.quad([x0 + out(y0), y0, z0], [x0 + out(y1), y1, z0], [x1 + out(y1), y1, z1], [x1 + out(y0), y0, z1], glass, { out: [1, 0, 0.2], lines: plain, own: 11 });
+    }
+  }
+  // The roof: a cap behind the top of the front, and from the peak a fall to the rear.
+  const roofing = { kind: 'plain', colour: '#a9a595', open: true };
+  model.flat([...ys.map((y) => [crest + out(y), y, peak]), [crest, side, peak], [crest, -side, peak]].filter((point, i, all) => i === 0 || Math.hypot(point[0] - all[i - 1][0], point[1] - all[i - 1][1]) > 0.01), roofing);
+  model.quad([crest, -side, peak], [crest, side, peak], [-half, side, rear], [-half, -side, rear], roofing, { out: [0, 0, 1], lines: plain });
+  // The back: stone, with a band of glass up its middle.
+  model.quad([-half, side, 0], [-half, -side, 0], [-half, -side, rear], [-half, side, rear], stone, { out: [-1, 0, 0], lines: plain });
+  model.quad([-half - 0.15, side - 3, 0.12 * peak], [-half - 0.15, 3 - side, 0.12 * peak], [-half - 0.15, 3 - side, rear - 4], [-half - 0.15, side - 3, rear - 4], glass, { out: [-1, 0, 0], lines: plain, own: 11 });
+  // The masts: a pair on the peak, leaning back.
+  const lean = (15 * Math.PI) / 180;
+  const beacons = [];
+  masts.forEach((long, i) => {
+    const y = (i === 0 ? -1 : 1) * 3.2;
+    const foot = [crest - 0.4, y, peak - 0.3];
+    const tip = [foot[0] - long * Math.sin(lean), y, foot[2] + long * Math.cos(lean)];
+    const thick = 0.35;
+    for (const [dx, dy, looks] of [[0, -thick, [0, -1, 0]], [0, thick, [0, 1, 0]], [thick, 0, [1, 0, 0.3]], [-thick, 0, [-1, 0, -0.3]]]) {
+      const [ax, ay] = dx === 0 ? [thick, 0] : [0, thick];
+      model.quad([foot[0] + dx - ax, foot[1] + dy - ay, foot[2]], [foot[0] + dx + ax, foot[1] + dy + ay, foot[2]], [tip[0] + dx + ax, tip[1] + dy + ay, tip[2]], [tip[0] + dx - ax, tip[1] + dy - ay, tip[2]], white, { out: looks, lines: plain });
+    }
+    beacons.push([tip[0], tip[1], tip[2] + 0.5]);
+  });
+  return { beacons };
+}
+const anoudFirst = (model) => anoudTower(model, { peak: 100, masts: [22.5, 17] });
+const anoudSecond = (model) => anoudTower(model, { peak: 92, masts: [15, 11] });
+/** The two storeys each of the Al Anoud Towers stands on: its entrance hall, and the hotel's. */
+function anoudPodium() {
+  return [{ outline: block(25, 26, 0, 1), base: 0, top: 11, paint: '#d6ccb2', roof: true }];
+}
+
 // The violet the financial district lights its tower and its station in.
 const PIF_LIGHT = '#a428f5';
 
@@ -792,6 +891,8 @@ export const LANDMARKS = [
     nights: { '#e4e7e9': '#5d6670', '#56677a': '#232c3a', '#f5f5f3': '#bcc6d1', '#f1f2f1': '#bcc6d1', '#eceeed': '#909ca8', '#d9a23c': '#ffc45a', '#e7b955': '#ffdb84', '#eef0ef': '#c9d4de', '#dfe3e4': '#b4c0cb', '#d9dcdd': '#aab4be' },
   },
   { id: 'hamad-tower', name: 'Hamad Tower', at: [46.682825, 24.692065], bearing: 342, height: 163, clear: 40, build: hamadPodium, model: hamadTower, nights: { '#dcd8cf': '#4a4334' } },
+  { id: 'al-anoud-tower', name: 'Al Anoud Tower', at: [46.681436, 24.692002], bearing: 334, height: 121, clear: 30, build: anoudPodium, model: anoudFirst, nights: { '#d6ccb2': '#4d4433' } },
+  { id: 'al-anoud-tower-2', name: 'Al Anoud Tower 2', at: [46.681674, 24.691597], bearing: 334, height: 106, clear: 30, build: anoudPodium, model: anoudSecond, nights: { '#d6ccb2': '#4d4433' } },
   { id: 'pif-tower', name: 'PIF Tower', at: [46.641519, 24.763701], bearing: 0, height: 385, clear: 36, model: pifTower },
   { id: 'burj-rafal', name: 'Burj Rafal', at: [46.632342, 24.792398], bearing: 81.6, height: 308, clear: 32, build: burjRafal, nights: { '#84b4c9': '#1a3340', '#96c2d4': '#27485a', '#dfe5e8': '#95a5af' } },
   { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20, height: 232, clear: 30, build: majdoul, nights: { '#eef0f1': '#7b8793', '#4f6478': '#1b2532', '#dfe4e7': '#6d7985' } },

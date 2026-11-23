@@ -35,16 +35,16 @@ function modelOf(id) {
   const one = landmark(id);
   const mesh = new ModelMesh();
   landmarkModels(mesh, { lng: one.at[0], lat: one.at[1] });
-  // (Only its own: the others stand kilometres off.)
-  return facesOf(mesh).filter((face) => face.corners.every(([east, north]) => Math.hypot(east, north) < 400));
+  // (Only its own: its neighbours along King Fahd Road stand a street's width off, the rest kilometres.)
+  return facesOf(mesh).filter((face) => face.corners.every(([east, north]) => Math.hypot(east, north) < one.clear + 10));
 }
 
 test('every landmark is a stack of slabs, or a true model, standing where the building stands', () => {
   const data = landmarkSlabs();
   assert.equal(data.type, 'FeatureCollection');
   assert.equal(landmarkSlabs(), data, 'made once');
-  assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station']);
-  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'hamad-tower', 'pif-tower']);
+  assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station']);
+  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'pif-tower']);
   for (const one of LANDMARKS) {
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
     if (one.model) {
@@ -89,13 +89,14 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   }
   // A mesh may hold every model at once, each at its own place; built again, it holds them once.
   const mesh = new ModelMesh();
-  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 3);
+  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 5);
   const corners = mesh.count;
-  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 3);
+  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 5);
   assert.equal(mesh.count, corners);
   // (The PIF Tower stands 2.9 km west and 7.1 km north of there; Kingdom Centre 0.4 km east and 1.3 km north; Hamad Tower 1.3 km east and 0.9 km south.)
   for (const corner of facesOf(mesh).flatMap((face) => face.corners)) {
-    assert.ok(Math.hypot(corner[0] + 2880, corner[1] - 7090) < 60 || Math.hypot(corner[0] - 446, corner[1] - 1263) < 60 || Math.hypot(corner[0] - 1297, corner[1] + 883) < 60, JSON.stringify(corner));
+    // (And the two Al Anoud Towers across the road from that one.)
+    assert.ok(Math.hypot(corner[0] + 2880, corner[1] - 7090) < 60 || Math.hypot(corner[0] - 446, corner[1] - 1263) < 60 || Math.hypot(corner[0] - 1297, corner[1] + 883) < 60 || Math.hypot(corner[0] - 1169, corner[1] + 913) < 60, JSON.stringify(corner));
   }
   assert.ok(JSON.stringify(data).length < 700000, 'small enough to hand to the map in one piece');
 });
@@ -536,6 +537,64 @@ test('Hamad Tower: a sail of blue glass that narrows to a point along a curve, b
   };
   const gone = replacedByLandmarks([rect('sail', [-7.6, 17.25], 21, 16.5), rect('block', [7.6, -17.25], 22.5, 16.5), rect('both', [-4.5, -3.9], 43.5, 30.5), rect('ministry', [-50, 105], 30, 20)]);
   assert.deepEqual([...gone].sort(), ['block', 'both', 'sail']);
+});
+
+test('the Al Anoud Towers: two fins of sand-coloured stone end-on to the road, each with a bowed front of dark glass that curves back to a peak, and a pair of masts', () => {
+  const hamad = landmark('hamad-tower');
+  const [first, second] = [landmark('al-anoud-tower'), landmark('al-anoud-tower-2')];
+  // Side by side on the far side of King Fahd Road from Hamad Tower: some 140 m west of it, 57 m apart along the road.
+  for (const one of [first, second]) {
+    const [east, north] = from(hamad, one.at);
+    assert.ok(east < -110 && east > -160 && Math.abs(north) < 60 && one.bearing === 334 && one.clear === 30, `${east}, ${north}`);
+  }
+  const [apartAlong, apartAcross] = along(first, from(first, second.at));
+  assert.ok(near(apartAlong, -55, 6) && Math.abs(apartAcross) < 8, `${apartAlong}, ${apartAcross}`);
+  assert.deepEqual([first.height, second.height], [121, 106]);
+  for (const [one, peak, masts] of [[first, 100, [22.5, 17]], [second, 92, [15, 11]]]) {
+    const angle = (one.bearing * Math.PI) / 180;
+    // Its own measure: east towards the road, north along it, up.
+    const own = ([east, north, up]) => [east * Math.cos(angle) - north * Math.sin(angle), east * Math.sin(angle) + north * Math.cos(angle), up];
+    const faces = modelOf(one.id).map((face) => ({ ...face, places: face.corners.map(own), looks: own(face.normal) }));
+    // The side walls: stone, 30 m from back to front, standing 18 m apart; lit a little by night.
+    const stone = faces.filter((face) => face.colour === '#cbbd98');
+    assert.ok(stone.length > 20 && stone.every((face) => face.kind === 'plain' && face.light === '#ffe2b0' && near(face.glow, 0.22, 0.01)));
+    const sides = stone.filter((face) => Math.abs(face.looks[1]) > 0.99);
+    assert.ok(sides.every((face) => face.places.every((place) => near(Math.abs(place[1]), 9, 0.01) && place[0] >= -15.01 && place[0] <= 15.01)));
+    assert.ok(sides.some((face) => face.looks[1] > 0) && sides.some((face) => face.looks[1] < 0));
+    // The wall's outline: upright at the front for six tenths of its height, then curving back 8.6 m to the peak; the roof falls to the rear.
+    const outline = sides.flatMap((face) => face.places);
+    const frontAt = (z) => Math.max(...outline.filter((place) => near(place[2], z, 0.01)).map((place) => place[0]));
+    assert.ok(near(frontAt(0), 15, 0.01) && near(frontAt(0.6 * peak), 15, 0.01) && near(frontAt(0.826 * peak), 12.4, 0.01) && near(frontAt(peak), 6.4, 0.01));
+    assert.ok(near(Math.max(...outline.map((place) => place[2])), peak, 0.01));
+    const rear = peak - 0.67 * 21.4;
+    assert.ok(near(Math.max(...outline.filter((place) => near(place[0], -15, 0.01)).map((place) => place[2])), rear, 0.01));
+    // In each wall, two slots of glass crossed with white braces: three crosses to a slot.
+    const glass = faces.filter((face) => face.colour === '#1f2f47');
+    assert.ok(glass.every((face) => face.kind === 'glass' && face.own === 11));
+    const slots = glass.filter((face) => Math.abs(face.looks[1]) > 0.99);
+    assert.equal(slots.length, 2 * 2 * 2);
+    assert.ok(slots.every((face) => face.places.every((place) => near(Math.abs(place[1]), 8.6, 0.01) && place[0] > 1.9 && place[0] < 8.7 && place[2] >= 0.12 * peak - 0.01 && place[2] <= 0.857 * peak + 0.01)));
+    const braces = faces.filter((face) => face.colour === '#eceeed' && Math.abs(face.looks[1]) > 0.99 && face.places.every((place) => place[2] < peak - 1));
+    assert.equal(braces.length, 2 * 2 * (3 * 2 + 2) * 2);
+    // The front: glass from wall to wall, standing 2.5 m further out in its middle than at its edges, up to the peak.
+    const frontGlass = glass.filter((face) => face.looks[0] > 0.5);
+    assert.equal(frontGlass.length, 7 * 4 * 2);
+    const bowed = frontGlass.flatMap((face) => face.places).filter((place) => near(place[2], 0.4 * peak, 0.01));
+    assert.ok(near(Math.max(...bowed.map((place) => place[0])), 17.5, 0.01) && near(Math.min(...bowed.map((place) => place[0])), 15, 0.01));
+    assert.ok(bowed.every((place) => near(place[0], 15 + 2.5 * (1 - (place[1] / 9) ** 2), 0.01)));
+    // The masts: a pair on the peak, leaning back 15 degrees; a red lamp on the tip of each.
+    const lamps = landmarkBeacons().filter((beacon) => Math.hypot(...from(one, beacon)) < 20).map((beacon) => own([...from(one, beacon), beacon[2]]));
+    assert.equal(lamps.length, 2);
+    lamps.sort((a, b) => b[2] - a[2]);
+    lamps.forEach((lamp, i) => {
+      const long = masts[i];
+      assert.ok(near(lamp[2], peak - 0.3 + long * Math.cos((15 * Math.PI) / 180) + 0.5, 0.05) && near(lamp[0], 6 - long * Math.sin((15 * Math.PI) / 180), 0.05) && near(Math.abs(lamp[1]), 3.2, 0.05), `${lamp}`);
+    });
+    assert.ok(near(lamps[0][2], one.height, 1));
+    // One podium under it, two storeys.
+    const podium = slabsOf(one.id);
+    assert.ok(podium.length === 1 && podium[0].properties.t === 11);
+  }
 });
 
 test('replacedByLandmarks picks the tower\'s own outline, not the block it stands in', () => {
