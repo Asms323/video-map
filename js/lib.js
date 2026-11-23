@@ -1486,14 +1486,26 @@ const GLOW_FAR = 0.85; // and from across the city, where it is all there is to 
 // The sky by day, at the height of dusk and by night: overhead, and where it meets the ground.
 const SKY = { day: ['#86addb', '#e4eaef'], dusk: ['#4c5c92', '#f4bd8e'], night: ['#060a17', '#3d2d2a'] };
 
+const SKY_GREYS_MOST = 0.55; // how far the sky goes to grey under a covered sky
+
 /**
  * The colours of the sky for a darkness of 0 (day) to 1 (night): { overhead,
- * horizon }. Half-way, with the sun just down, it is dusk.
+ * horizon }. Half-way, with the sun just down, it is dusk. sunlight: how
+ * much of the sun gets through the clouds, 1 (a clear sky) to 0.
  */
-export function skyColours(night) {
+export function skyColours(night, sunlight = 1) {
   const dark = clamp(Number(night) || 0, 0, 1);
   const [from, to, part] = dark < 0.5 ? [SKY.day, SKY.dusk, dark / 0.5] : [SKY.dusk, SKY.night, (dark - 0.5) / 0.5];
-  return { overhead: hexMix(from[0], to[0], part), horizon: hexMix(from[1], to[1], part) };
+  // Under cloud the sky loses its colour: the more of the sun the clouds keep back, the greyer it is.
+  // (Not while most of the sun still gets through: between a few clouds the sky is as blue as ever.)
+  const dull = clamp((0.75 - clamp(Number.isFinite(sunlight) ? sunlight : 1, 0, 1)) / 0.6, 0, 1) * SKY_GREYS_MOST;
+  const greyed = (colour) => {
+    const [r, g, b] = [1, 3, 5].map((at) => parseInt(colour.slice(at, at + 2), 16));
+    const light = 0.3 * r + 0.59 * g + 0.11 * b;
+    const grey = `#${[0.96, 0.99, 1.06].map((tint) => Math.round(clamp(light * tint, 0, 255)).toString(16).padStart(2, '0')).join('')}`;
+    return dull > 0 ? hexMix(colour, grey, dull) : colour;
+  };
+  return { overhead: greyed(hexMix(from[0], to[0], part)), horizon: greyed(hexMix(from[1], to[1], part)) };
 }
 
 /**
@@ -1761,9 +1773,9 @@ export function cityModelStyle(base, { buildings = null, night = 0, sunlight = 1
     // The sky, for the views that reach the horizon: blue by day and pale where it meets the ground; at dusk
     // deep blue over a band of orange; by night dark, with the glow a city of lamps throws into the dust above it.
     sky: {
-      'sky-color': skyColours(dark).overhead,
-      'horizon-color': skyColours(dark).horizon,
-      'fog-color': skyColours(dark).horizon,
+      'sky-color': skyColours(dark, sunlight).overhead,
+      'horizon-color': skyColours(dark, sunlight).horizon,
+      'fog-color': skyColours(dark, sunlight).horizon,
       'fog-ground-blend': 0.7,
       'horizon-fog-blend': 0.9,
       'sky-horizon-blend': 0.75,

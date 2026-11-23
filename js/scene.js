@@ -1316,10 +1316,10 @@ export class SceneLayer {
     }
 
     // (The colours of the sky at this hour: they show in the glass of the models, and far things fade into them.)
-    if (this.sky.night !== night) {
-      const { overhead, horizon } = skyColours(night);
+    if (this.sky.night !== night || this.sky.sunlight !== this.sunlight) {
+      const { overhead, horizon } = skyColours(night, this.sunlight);
       const parts = (colour) => [1, 3, 5].map((from) => Number.parseInt(colour.slice(from, from + 2), 16) / 255);
-      this.sky = { night, high: parts(overhead), low: parts(horizon) };
+      this.sky = { night, sunlight: this.sunlight, high: parts(overhead), low: parts(horizon) };
     }
     // The models of the famous buildings. Each stands alone, where the map's own block was taken out for it.
     if (modelled) {

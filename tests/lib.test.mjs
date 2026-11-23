@@ -1380,6 +1380,11 @@ test('cityModelStyle by night: a dark over the ground, the lamps along the roads
   assert.equal(BASE_STYLE.layers[2].paint['text-color'], '#333', 'the style it was built on is left as it was');
   // The sky is dark overhead, with the glow of the city along the horizon.
   assert.ok(bright(night.sky['sky-color']) < 40 && bright(night.sky['horizon-color']) > bright(night.sky['sky-color']) && bright(day.sky['sky-color']) > 200);
+  // Under cloud the sky loses its colour: the blue of a clear day goes towards grey, and the more so the less sun gets through.
+  const blue = (colour) => parseInt(colour.slice(5, 7), 16) - parseInt(colour.slice(1, 3), 16);
+  const [clear, clouded, covered] = [1, 0.5, 0].map((sunlight) => cityModelStyle(BASE_STYLE, { sunlight }).sky['sky-color']);
+  assert.equal(clear, day.sky['sky-color']);
+  assert.ok(blue(clear) > blue(clouded) + 10 && blue(clouded) > blue(covered) + 10 && blue(covered) > 0, `${clear} ${clouded} ${covered}`);
 });
 
 test('cityModelStyle changes nothing but colours and strengths between day and night', () => {

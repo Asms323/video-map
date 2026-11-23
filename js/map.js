@@ -2100,8 +2100,11 @@ export class MapView {
    */
   setWeather(weather) {
     this.weather = weather ?? null;
-    // Under cloud the sun throws a weaker shadow: on the ground, and on every wall and roof.
-    this.sunlight = 0.12 + 0.88 * sunBetween(cloudLayersOf(this.weather));
+    // Under cloud the sun throws a weaker shadow, on the ground and on every wall and roof, and the sky
+    // is greyer. (With a few clouds about the sun is out most of the time: little changes until the sky
+    // is mostly covered.)
+    const between = Math.min(Math.max((sunBetween(cloudLayersOf(this.weather)) - 0.1) / 0.65, 0), 1);
+    this.sunlight = 0.1 + 0.9 * between * between * (3 - 2 * between);
     this.scene.sunlight = this.sunlight;
     this.applyNight(this.night);
     this.map?.triggerRepaint();
@@ -2200,7 +2203,7 @@ export class MapView {
       const index = kept.clouds.due.shift();
       const drawn = kept.clouds;
       const layer = CLOUD_LAYERS[index];
-      kept.laid[index] = drawClouds(this.skyCloudMeshes, { only: index, eye: kept.eye, sun: this.sun, night: kept.night, horizon: skyColours(kept.night).horizon, moon: kept.moon, clouds: drawn.list, visibility: weather.visibility, windFrom: drawn.wind.windFrom });
+      kept.laid[index] = drawClouds(this.skyCloudMeshes, { only: index, eye: kept.eye, sun: this.sun, night: kept.night, horizon: skyColours(kept.night, this.sunlight).horizon, moon: kept.moon, clouds: drawn.list, visibility: weather.visibility, windFrom: drawn.wind.windFrom });
       // The layer's grain is fixed to the layer itself: measured from a spot that drifts with it. (Kept
       // within a few hundred kilometres, for the sake of the numbers: once in many hours the grain changes.)
       const blowing = ((drawn.wind.windFrom + 180) * Math.PI) / 180;
