@@ -452,6 +452,7 @@ export class MapView {
     this.beaconMesh = new Mesh(); // the red lamps on what is tall
     this.modelMesh = new ModelMesh(); // the famous buildings that are true models
     this.modelsMade = null;
+    this.roadNames = null; // the layers of names along the roads, and how strongly they are shown
     this.spillMesh = new Mesh(); // the light from shop windows on the pavement
     this.roofLightMesh = new Mesh(); // the lamps left on up on the roofs
     this.spillMade = null;
@@ -1836,6 +1837,30 @@ export class MapView {
     return ground;
   }
 
+  /**
+   * Show the names written along the roads this strongly (0 to 1). In a view
+   * along the ground they are no use: those close by are drawn out long and
+   * thin, and those far off are specks that lie across whatever stands in
+   * front of them. (The street you are on is named at the top of the map.)
+   */
+  fadeRoadNames(shown) {
+    this.whenStyled((map) => {
+      let names = this.roadNames;
+      if (!names || names.type !== this.type || !names.ids.every((id) => map.getLayer(id))) {
+        if (shown === 1) return; // nothing has been faded in this style: it need not be read
+        const ids = map.getStyle().layers.filter((layer) => layer.type === 'symbol' && String(layer.layout?.['symbol-placement'] ?? 'point').startsWith('line')).map((layer) => layer.id);
+        names = { type: this.type, ids, shown: 1 };
+        this.roadNames = names;
+      }
+      if (names.ids.length === 0 || (names.shown === shown && (map.getPaintProperty(names.ids[0], 'text-opacity') ?? 1) === shown)) return;
+      for (const id of names.ids) {
+        map.setPaintProperty(id, 'text-opacity', shown);
+        map.setPaintProperty(id, 'icon-opacity', shown);
+      }
+      names.shown = shown;
+    });
+  }
+
   /** Build the models of the famous buildings afresh, each where it stands from the scene's origin. */
   layModels() {
     const origin = this.scene.origin;
@@ -1862,8 +1887,10 @@ export class MapView {
     // before anything else has given the scene a place to measure from. And they are measured from that
     // place: built again whenever it moves.
     this.scene.modelOpacity = Math.min(Math.max((zoom - MODEL_MIN_ZOOM) * 2, 0), 1);
-    // In a view that reaches towards the horizon, what is far off fades into the haze.
+    // In a view that reaches towards the horizon, what is far off fades into the haze; and the names
+    // written along the roads fade out.
     this.scene.haze = this.type === 'city' ? Math.min(Math.max((this.map.getPitch() - HAZE_FROM_PITCH) / (HAZE_FULL_PITCH - HAZE_FROM_PITCH), 0), 1) : 0;
+    this.fadeRoadNames(Math.round((1 - this.scene.haze) * 4) / 4);
     if (this.type === 'city') {
       if (!this.scene.origin) this.scene.setOrigin({ lng: middle.lng, lat: middle.lat });
       if (this.modelsMade?.origin !== this.scene.origin) this.layModels();

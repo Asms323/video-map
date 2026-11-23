@@ -30,17 +30,18 @@ export const NO_LINE = 10000;
 export class ModelMesh {
   constructor(corners = 2048) {
     this.positions = new Float32Array(corners * 3);
-    this.normals = new Float32Array(corners * 3);
+    // Which way its face looks there; and how much of a mirror the face is (0 to 1).
+    this.normals = new Float32Array(corners * 4);
     // Along its face and up from the ground, in metres; the height of a storey and the width of a bay.
     this.surfaces = new Float32Array(corners * 4);
-    // How far it is to each edge of its face, in metres.
-    this.edges = new Float32Array(corners * 3);
+    // How far it is to each edge of its face, in metres; and how plainly the edges of its floors show (0 to 1).
+    this.edges = new Float32Array(corners * 4);
     // The colour of its face; and what the face is made of (x 32) with the face's own number.
     this.tints = new Uint8Array(corners * 4);
     // The colour of the light the face gives by night, and how strong.
     this.lights = new Uint8Array(corners * 4);
     // The share of its rooms that are lit by night; how much of a net of fins lies over it; how bright the
-    // lines along its edges; and whether it takes no shadow.
+    // lines along its edges; and (x 85) 1 if it takes no shadow, 2 if its light changes colour, 3 if both.
     this.more = new Uint8Array(corners * 4);
     this.count = 0;
     this.faces = 0;
@@ -54,7 +55,7 @@ export class ModelMesh {
   room(corners) {
     if (this.count + corners <= this.positions.length / 3) return;
     const most = Math.max((this.count + corners) * 2, 2048);
-    for (const [name, size] of [['positions', 3], ['normals', 3], ['surfaces', 4], ['edges', 3], ['tints', 4], ['lights', 4], ['more', 4]]) {
+    for (const [name, size] of [['positions', 3], ['normals', 4], ['surfaces', 4], ['edges', 4], ['tints', 4], ['lights', 4], ['more', 4]]) {
       const grown = new this[name].constructor(most * size);
       grown.set(this[name].subarray(0, this.count * size));
       this[name] = grown;
@@ -133,6 +134,10 @@ export class Model {
    *       it along the edge of every floor; for a lamp, all of it; for plain stuff, lamps shining on it,
    *     lit: for glass, the share of its floors whose rooms are lit by night (1: every room of every floor),
    *     fins: for glass, how much of a net of slanting fins lies over it (0 to 1),
+   *     floors: for glass, how plainly the edge of each floor shows (0 to 1; 1 unless told),
+   *     mirror: for glass, how much of a mirror it is (0: dark glass that shows a little of the sky;
+   *       1: silvered, and little but the sky),
+   *     changing: true for a light that changes colour slowly, all night (its own colour is then not used),
    *     ridge: how bright the lines along its edges are (0 to 1),
    *     open: true for a face that takes no shadow: one that lies inside the block the map has for the
    *       building, whose shadow would otherwise always fall on it (a roof behind its parapets) }
@@ -140,6 +145,9 @@ export class Model {
    * out: a direction the face looks towards rather than away from; it
    * settles which of its two sides is the outside. Without it the outside is
    * the side from which a, b, c run anticlockwise.
+   * normals: for a face that is a piece of a curved surface, which way that
+   * surface looks at each of a, b and c; the light then falls on it as on
+   * the curve, not as on a flat piece. (Not with bands.)
    * lines: along which of its edges a line is drawn: [a to b, b to c, c to a].
    * along, from: the level direction [east, north] its bays are counted in,
    * and the place they are counted from. Without them, bays are counted
@@ -147,9 +155,10 @@ export class Model {
    * bands: [{ from, to, stuff }]: between these heights it is of other stuff.
    * own: the face's own number; without it, each face gets the next.
    */
-  facet(a, b, c, stuff, { out = null, lines = [true, true, true], along = null, from = [0, 0], bands = null, own = null } = {}) {
+  facet(a, b, c, stuff, { out = null, lines = [true, true, true], along = null, from = [0, 0], bands = null, own = null, normals = null } = {}) {
     let corners = [a, b, c];
     let edged = lines;
+    let curved = normals;
     let normal = cross(minus(b, a), minus(c, a));
     const size = long(normal);
     if (!(size > 1e-9)) return; // no face at all: its corners lie in a line
@@ -158,6 +167,7 @@ export class Model {
       corners = [a, c, b];
       edged = [lines[2], lines[1], lines[0]];
       normal = [-normal[0], -normal[1], -normal[2]];
+      if (normals) curved = [normals[0], normals[2], normals[1]];
     }
     const [p, q, r] = corners;
     // The way into the face from each of its edges, lying in the face: the distance of a point from an
@@ -179,6 +189,8 @@ export class Model {
     const number = (own ?? mesh.faces * 7 + 3) % OWN_NUMBERS;
     mesh.faces += 1;
     const turnedNormal = this.turned(normal);
+    // (Which way a curved surface looks at each corner, each made one long and turned with the model.)
+    const turnedCurved = curved && !bands ? curved.map((way) => this.turned(way.map((part) => part / long(way)))) : null;
     const put = (shape, made) => {
       const kind = Math.max(STUFFS.indexOf(made.kind ?? 'plain'), 0);
       const colour = rgbOf(made.colour);
@@ -187,21 +199,23 @@ export class Model {
       // (A shape with more than three corners is laid as a fan of triangles from its first.)
       mesh.room((shape.length - 2) * 3);
       for (let i = 1; i < shape.length - 1; i += 1) {
-        for (const corner of [shape[0], shape[i], shape[i + 1]]) {
+        for (const [k, corner] of [[0, shape[0]], [i, shape[i]], [i + 1, shape[i + 1]]]) {
           const n = mesh.count;
           const [east, north, up] = this.turned(corner);
           mesh.positions[n * 3] = this.east + east;
           mesh.positions[n * 3 + 1] = this.north + north;
           mesh.positions[n * 3 + 2] = up;
-          mesh.normals.set(turnedNormal, n * 3);
+          mesh.normals.set(turnedCurved ? turnedCurved[k] : turnedNormal, n * 4);
+          mesh.normals[n * 4 + 3] = Math.min(Math.max(made.mirror ?? 0, 0), 1);
           mesh.surfaces[n * 4] = (corner[0] - from[0]) * level[0] + (corner[1] - from[1]) * level[1];
           mesh.surfaces[n * 4 + 1] = corner[2];
           mesh.surfaces[n * 4 + 2] = made.storey ?? 0;
           mesh.surfaces[n * 4 + 3] = made.bay ?? 0;
-          for (let e = 0; e < 3; e += 1) mesh.edges[n * 3 + e] = Math.max(dot(minus(corner, starts[e]), ways[e]), 0) + (edged[e] ? 0 : NO_LINE);
+          for (let e = 0; e < 3; e += 1) mesh.edges[n * 4 + e] = Math.max(dot(minus(corner, starts[e]), ways[e]), 0) + (edged[e] ? 0 : NO_LINE);
+          mesh.edges[n * 4 + 3] = Math.min(Math.max(made.floors ?? 1, 0), 1);
           mesh.tints.set([colour[0], colour[1], colour[2], kind * OWN_NUMBERS + number], n * 4);
           mesh.lights.set([light[0], light[1], light[2], glow], n * 4);
-          mesh.more.set([byte(made.lit ?? 0), byte(made.fins ?? 0), byte(made.ridge ?? 0), made.open ? 255 : 0], n * 4);
+          mesh.more.set([byte(made.lit ?? 0), byte(made.fins ?? 0), byte(made.ridge ?? 0), ((made.open ? 1 : 0) + (made.changing ? 2 : 0)) * 85], n * 4);
           mesh.count += 1;
         }
       }
@@ -228,12 +242,13 @@ export class Model {
    * that meet along the line from a to c. Lines are drawn round its outline
    * (lines: [a to b, b to c, c to d, d to a]), and along the line from a to c
    * only if fold is set: when the four corners do not lie in one plane, that
-   * is where the face is folded.
+   * is where the face is folded. normals: for a piece of a curved surface,
+   * which way the surface looks at each of the four corners.
    */
-  quad(a, b, c, d, stuff, { lines = [true, true, true, true], fold = false, ...rest } = {}) {
+  quad(a, b, c, d, stuff, { lines = [true, true, true, true], fold = false, normals = null, ...rest } = {}) {
     const own = rest.own ?? this.mesh.faces * 7 + 3;
-    this.facet(a, b, c, stuff, { ...rest, own: fold ? rest.own ?? null : own, lines: [lines[0], lines[1], fold] });
-    this.facet(a, c, d, stuff, { ...rest, own: fold ? rest.own ?? null : own, lines: [fold, lines[2], lines[3]] });
+    this.facet(a, b, c, stuff, { ...rest, own: fold ? rest.own ?? null : own, lines: [lines[0], lines[1], fold], normals: normals && [normals[0], normals[1], normals[2]] });
+    this.facet(a, c, d, stuff, { ...rest, own: fold ? rest.own ?? null : own, lines: [fold, lines[2], lines[3]], normals: normals && [normals[0], normals[2], normals[3]] });
   }
 
   /**

@@ -424,17 +424,17 @@ void main() {
 // light in the building's own colour; and between them are the rooms, some with their lamps on.
 const MODEL_VERTEX = `
 attribute vec3 a_pos;
-attribute vec3 a_normal;
+attribute vec4 a_normal;
 attribute vec4 a_surf;
-attribute vec3 a_edge;
+attribute vec4 a_edge;
 attribute vec4 a_tint;
 attribute vec4 a_light;
 attribute vec4 a_more;
 uniform mat4 u_matrix;
 varying vec3 v_world;
-varying vec3 v_normal;
+varying vec4 v_normal;
 varying vec4 v_surf;
-varying vec3 v_edge;
+varying vec4 v_edge;
 varying vec4 v_tint;
 varying vec4 v_light;
 varying vec4 v_more;
@@ -459,14 +459,15 @@ uniform vec3 u_eye;      // where the eye is, in the scene's metres
 uniform float u_pixel;   // metres to a pixel of the screen, for each unit of depth
 uniform vec3 u_skyHigh;  // the colour of the sky overhead
 uniform vec3 u_skyLow;   // and where it meets the ground
+uniform float u_time;    // seconds, for the lights that change colour
 uniform float u_opacity;
 varying vec3 v_world;
-varying vec3 v_normal;
+varying vec4 v_normal;   // which way the face looks; and how much of a mirror it is
 varying vec4 v_surf;     // along the face, up from the ground, the height of a storey, the width of a bay
-varying vec3 v_edge;     // how far it is to each edge of the face
+varying vec4 v_edge;     // how far it is to each edge of the face; and how plainly the edges of its floors show
 varying vec4 v_tint;     // the face's colour; and what it is made of (x 32) with the face's own number
 varying vec4 v_light;    // the light it gives by night, and how strong
-varying vec4 v_more;     // the share of its rooms that are lit; the net of fins over it; the lines along its edges; whether it takes no shadow
+varying vec4 v_more;     // the share of its rooms that are lit; the net of fins over it; the lines along its edges; and (x 3) 1 if it takes no shadow, 2 if its light changes colour
 
 float chance(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -481,10 +482,15 @@ float lines(float value, float wide) {
 }
 
 void main() {
-  vec3 normal = normalize(v_normal);
+  vec3 normal = normalize(v_normal.xyz);
   vec3 eye = normalize(u_eye - v_world);
-  // Only the outside of a face is ever seen.
-  if (dot(normal, eye) < 0.0) discard;
+  // Only the outside of a face is ever seen. (A piece of a curved surface is lit as the curve is, which
+  // at its rim looks a little away from the eye while the piece itself does not: so the line is drawn a
+  // little past edge-on.)
+  if (dot(normal, eye) < -0.12) discard;
+  float marks = floor(v_more.w * 3.0 + 0.5);
+  float changing = step(1.5, marks);
+  float open = mod(marks, 2.0);
   float pixel = u_pixel / gl_FragCoord.w;
   float style = floor(v_tint.a * 255.0 + 0.5);
   float kind = floor(style / 32.0);   // 0 plain, 1 glass, 2 a lamp
@@ -496,7 +502,7 @@ void main() {
   // exactly where the block that throws its shadow does: the shadow is asked for a little way out from
   // the face.) By night: what little the sky gives.
   float sunned = max(dot(normal, u_sun), 0.0) * u_day;
-  if (sunned > 0.0 && v_more.w < 0.5) sunned *= 1.0 - inShadow(v_world + vec3(normal.xy * 4.0, 0.0), 0.6);
+  if (sunned > 0.0 && open < 0.5) sunned *= 1.0 - inShadow(v_world + vec3(normal.xy * 4.0, 0.0), 0.6);
   vec3 sky = vec3(0.60, 0.63, 0.70) * (0.88 + 0.12 * normal.z) * (0.95 + 0.10 * dot(normal.xy, vec2(-0.6, -0.8)));
   vec3 sunlight = mix(vec3(1.0, 0.74, 0.48), vec3(1.0, 0.95, 0.86), smoothstep(0.1, 0.6, u_sun.z)) * 0.52;
   vec3 light = mix(vec3(0.80, 0.82, 0.88), sky + sunlight * sunned, u_day);
@@ -505,7 +511,9 @@ void main() {
   vec3 colour = v_tint.rgb * light;
   vec3 glow = vec3(0.0); // the light a point of the face gives of its own once the lamps are on
   vec3 show = vec3(0.0); // and the light the building is dressed in, which is not put on until it is dark
-  vec3 ownLight = v_light.rgb * v_light.a;
+  // (A light that changes colour goes round all the colours in a minute, never quite pure.)
+  vec3 turning = clamp(abs(mod(u_time / 10.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+  vec3 ownLight = mix(v_light.rgb, mix(vec3(1.0), turning, 0.82), changing) * v_light.a;
 
   if (kind > 0.5 && kind < 1.5) {
     // Glass. No two faces are of quite the same tone.
@@ -533,8 +541,9 @@ void main() {
     vec3 seen = mix(below, above, smoothstep(-0.04, 0.04, thrown.z));
     // (Glass mirrors more, the more it is looked along; and what shows in tinted glass takes its tint.)
     float glance = pow(1.0 - max(dot(normal, eye), 0.0), 3.0);
-    float mirror = 0.18 + 0.45 * glance;
-    vec3 pane = body * light * (1.0 - 0.4 * mirror) + seen * mirror * 0.8 * (0.6 + 1.3 * body);
+    float silvered = 0.18 + 0.5 * v_normal.w;
+    float mirror = silvered + (0.9 - silvered) * 0.6 * glance;
+    vec3 pane = body * light * (1.0 - 0.4 * mirror) + seen * mirror * 0.8 * min(0.6 + 1.3 * body, vec3(1.0));
     // The sun in the glass: a glint where the face throws its light straight at the eye.
     pane += vec3(1.0, 0.96, 0.86) * pow(max(dot(reflect(-u_sun, normal), eye), 0.0), 20.0) * 0.7 * step(0.001, sunned);
     // Over the glass, a net of slanting fins: each runs across half a bay from one floor to the next, and
@@ -545,7 +554,7 @@ void main() {
     pane = mix(pane, vec3(0.60, 0.66, 0.67) * light, 0.5 * v_more.y * netHere);
     // The edge of each floor, with the walkway outside it: a paler line across the top of every storey.
     float edge = 1.0 - smoothstep(0.10 - softY, 0.10 + softY, abs(fract(fy + 0.6) - 0.5));
-    pane = mix(pane, vec3(0.52, 0.58, 0.59) * light, 0.5 * mix(0.2, edge, fineFloors));
+    pane = mix(pane, vec3(0.52, 0.58, 0.59) * light, 0.5 * v_edge.w * mix(0.2, edge, fineFloors));
     colour = pane;
 
     // By night that edge is a line of light in the building's own colour, which spills over the glass
@@ -570,15 +579,19 @@ void main() {
       vec3 white = vec3(0.88, 0.92, 1.0) * 0.84;
       vec3 byFloor = white * mix(0.07, mix(0.70, 1.0, always), floorOn) * 0.86 * glassY;
       vec3 even = white * mix(share * 0.70 + (1.0 - share) * 0.07, 1.0, always) * 0.86 * 0.64;
-      glow = mix(even, mix(byFloor, rooms, fineBays), fineFloors) * mix(0.3 + 0.7 * smoothstep(0.4, 0.9, u_night), 1.0, always);
+      // (And silvered glass lets less of a lamp through.)
+      glow = mix(even, mix(byFloor, rooms, fineBays), fineFloors) * mix(0.3 + 0.7 * smoothstep(0.4, 0.9, u_night), 1.0, always) * (1.0 - 0.4 * v_normal.w);
     }
   } else if (kind > 1.5) {
-    // A lamp: by night all of it gives its light.
-    glow = ownLight;
+    // A lamp: by night all of it gives its light. (One whose colour changes is part of the building's
+    // show, and comes on with it.)
+    glow = ownLight * (1.0 - changing);
+    show = ownLight * changing;
   } else {
     // Plain stuff: a little uneven; and by night it shows in the colour of whatever lamps are trained on it.
     colour *= 0.97 + 0.06 * chance(floor(v_world.xy / 3.0) + own);
-    glow = v_tint.rgb * ownLight;
+    glow = v_tint.rgb * ownLight * (1.0 - changing);
+    show = v_tint.rgb * ownLight * changing;
   }
 
   // Along the edges of the face, where it is folded against its neighbour: a ridge that catches the light
@@ -590,7 +603,7 @@ void main() {
     float wide = max(0.4, 1.1 * pixel);
     float line = (1.0 - smoothstep(wide * 0.5, wide, nearest)) * ridge * clamp(0.4 / (1.1 * pixel), 0.45, 1.0);
     colour = mix(colour, vec3(0.74, 0.79, 0.80) * light, 0.7 * line);
-    show += mix(v_light.rgb, vec3(1.0), 0.3) * step(0.004, v_light.a) * line * (0.25 + 0.35 * step(0.5, fract(up / 8.5)));
+    show += mix(mix(v_light.rgb, turning, changing), vec3(1.0), 0.3) * step(0.004, v_light.a) * line * (0.25 + 0.35 * step(0.5, fract(up / 8.5)));
   }
   gl_FragColor = vec4(min(colour + glow * u_lamps + show * smoothstep(0.5, 0.85, u_night), vec3(1.0)) * u_opacity, u_opacity);
 }`;
@@ -750,7 +763,7 @@ export class SceneLayer {
     this.wallProgram = link(gl, WALL_VERTEX, WALL_FRAGMENT);
     this.wallAt = places(gl, this.wallProgram, ['pos', 'surf', 'normal', 'tint'], ['matrix', 'opacity', 'sun', 'day', 'night', 'lamps', 'eye', 'pixel', 'top', ...SHADOW_UNIFORMS]);
     this.modelProgram = link(gl, MODEL_VERTEX, MODEL_FRAGMENT);
-    this.modelAt = places(gl, this.modelProgram, ['pos', 'normal', 'surf', 'edge', 'tint', 'light', 'more'], ['matrix', 'opacity', 'sun', 'day', 'night', 'lamps', 'eye', 'pixel', 'skyHigh', 'skyLow', ...SHADOW_UNIFORMS]);
+    this.modelAt = places(gl, this.modelProgram, ['pos', 'normal', 'surf', 'edge', 'tint', 'light', 'more'], ['matrix', 'opacity', 'sun', 'day', 'night', 'lamps', 'eye', 'pixel', 'skyHigh', 'skyLow', 'time', ...SHADOW_UNIFORMS]);
     this.hazeProgram = link(gl, HAZE_VERTEX, HAZE_FRAGMENT);
     this.hazeAt = places(gl, this.hazeProgram, ['pos', 'thick'], ['matrix', 'haze']);
     this.hazeBuffer = null;
@@ -1177,6 +1190,8 @@ export class SceneLayer {
       gl.uniform1f(at.pixel, pixelPerDepth);
       gl.uniform3f(at.skyHigh, this.sky.high[0], this.sky.high[1], this.sky.high[2]);
       gl.uniform3f(at.skyLow, this.sky.low[0], this.sky.low[1], this.sky.low[2]);
+      // (Counted round the hour, so that the number stays small enough to be told finely.)
+      gl.uniform1f(at.time, (performance.now() / 1000) % 3600);
       this.shadowsFor(gl, at);
       if (!this.models.buffers) this.models.buffers = { positions: gl.createBuffer(), normals: gl.createBuffer(), surfaces: gl.createBuffer(), edges: gl.createBuffer(), tints: gl.createBuffer(), lights: gl.createBuffer(), more: gl.createBuffer() };
       const buffers = this.models.buffers;
@@ -1187,9 +1202,9 @@ export class SceneLayer {
         gl.vertexAttribPointer(where, size, type, normalised, 0, 0);
       };
       send(buffers.positions, at.pos, models.positions, 3, gl.FLOAT, false);
-      send(buffers.normals, at.normal, models.normals, 3, gl.FLOAT, false);
+      send(buffers.normals, at.normal, models.normals, 4, gl.FLOAT, false);
       send(buffers.surfaces, at.surf, models.surfaces, 4, gl.FLOAT, false);
-      send(buffers.edges, at.edge, models.edges, 3, gl.FLOAT, false);
+      send(buffers.edges, at.edge, models.edges, 4, gl.FLOAT, false);
       send(buffers.tints, at.tint, models.tints, 4, gl.UNSIGNED_BYTE, true);
       send(buffers.lights, at.light, models.lights, 4, gl.UNSIGNED_BYTE, true);
       send(buffers.more, at.more, models.more, 4, gl.UNSIGNED_BYTE, true);

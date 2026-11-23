@@ -63,64 +63,149 @@ function ball(slabs, u, v, z, radius, step, paints) {
 // ── The towers ────────────────────────────────────────────────────────────
 
 /**
- * Kingdom Centre, 302 m. In plan a lens: two arcs that meet in a point at
- * either end. The top third is cut away in a parabola, point down, which
- * leaves two legs that thin out as they rise, joined at the very top by the
- * sky bridge. Silver-blue glass all over.
+ * Kingdom Centre, 302.3 m (Ellerbe Becket and Omrania, 2002), built as a
+ * true model (see models.js). In plan an almond: two arcs that meet in a
+ * point at either end, some 78 m from point to point and 40 m across, in
+ * silvered glass without a seam, so that the whole tower is a mirror of the
+ * sky. From 205 m up an opening is cut right through it in the shape of a
+ * parabola, point down, 56 m wide at the top: what is left is two legs that
+ * thin out as they rise, joined at 290 m by the sky bridge, a corridor of
+ * steel and glass that the public can walk across.
+ *
+ * By night the tower stays dark but for the inside of the opening and its
+ * edge on both faces, which are lit in colours that change all night.
+ *
+ * Where it stands and which way it is turned are from the buildings data,
+ * which also has the opening begin at 205 m. Its height, the height of the
+ * bridge's floor, the glass and the lighting are as published; its length
+ * and width lie between the published figures and the outline in the data.
+ * The width of the opening is measured off a photograph and agrees with the
+ * published length of the bridge.
  */
-function kingdomCentre() {
-  const slabs = [];
-  const halfLength = 39.6;
-  const halfWidth = 22.2;
-  const height = 302;
-  const archFoot = 186; // where the opening starts
-  const bridge = [291, 299];
-  const openAtTop = 31.5; // half the width of the opening where the bridge spans it
-  const radius = (halfLength ** 2 + halfWidth ** 2) / (2 * halfWidth);
-  const thick = (u) => Math.sqrt(Math.max(radius ** 2 - u ** 2, 0)) - (radius - halfWidth);
-  // The part of the lens between two places along its length.
-  const lens = (from, to, steps = 10) => {
-    const near = [];
-    const far = [];
-    for (let i = 0; i <= steps; i += 1) {
-      const u = from + ((to - from) * i) / steps;
-      const t = thick(u);
-      if (t < 0.05) {
-        near.push([u, 0]); // the pointed end: one corner, not two
-        continue;
-      }
-      near.push([u, -t]);
-      far.push([u, t]);
-    }
-    return [...near, ...far.reverse()];
+function kingdomCentre(model) {
+  const half = 38.75; // from the middle to either point
+  const wide = 20; // from the middle to the swell of either face
+  const height = 302.3;
+  const foot = 205; // where the opening begins
+  const deck = 290.4; // the floor of the sky bridge: the top of the opening
+  const span = 28; // half the width of the opening under the bridge
+  const radius = (half ** 2 + wide ** 2) / (2 * wide);
+  const thick = (u) => Math.sqrt(Math.max(radius ** 2 - u ** 2, 0)) - (radius - wide);
+  // (The model is turned so that its own north runs along the tower: a place u along it and v to the left is [-v, u].)
+  const at = (u, v, z) => [-v, u, z];
+  // Which way a face looks at a place along it: square to its arc. side: 1 for the face on the left, -1 for the other.
+  const looks = (u, side) => [-side * Math.sqrt(Math.max(radius ** 2 - u ** 2, 0)), u, 0];
+  const onFace = (u, side, z, out = 0) => {
+    const way = looks(u, side);
+    const far = Math.hypot(way[0], way[1]);
+    const [east, north] = at(u, side * thick(u), z);
+    return [east + (way[0] / far) * out, north + (way[1] / far) * out, z];
   };
-  const glass = ['#a7bccd', '#b8cad8'];
-  stack(slabs, 0, archFoot, 4, () => lens(-halfLength, halfLength, 16), glass);
-  const opening = (z) => openAtTop * Math.sqrt(Math.min(Math.max((z - archFoot) / (bridge[0] - archFoot), 0), 1));
+  const opening = (z) => span * Math.sqrt(Math.min(Math.max((z - foot) / (deck - foot), 0), 1));
+
+  const glass = { kind: 'glass', colour: '#8ea4b7', storey: 4.3, bay: 3.2, lit: 0.14, floors: 0.18, mirror: 0.8 };
+  /** A piece of a face: from u0 to u1 along the tower at the lower height, and from u2 to u3 at the upper. */
+  const piece = (side, z0, z1, u0, u1, u2, u3) => {
+    // (Bays are counted along the arc from the tower's western point.)
+    const along = Math.asin(Math.min(Math.max(u0 / radius, -1), 1)) * radius;
+    const run = [u1 - u0, side * (thick(u1) - thick(u0))];
+    const far = Math.hypot(run[0], run[1]) || 1;
+    const dir = at(run[0] / far, run[1] / far, 0);
+    const start = at(u0, side * thick(u0), 0);
+    model.quad(onFace(u0, side, z0), onFace(u1, side, z0), onFace(u3, side, z1), onFace(u2, side, z1), glass, {
+      out: looks((u0 + u1) / 2, side),
+      normals: [looks(u0, side), looks(u1, side), looks(u3, side), looks(u2, side)],
+      along: [dir[0], dir[1]],
+      from: [start[0] - dir[0] * along, start[1] - dir[1] * along],
+      lines: [false, false, false, false],
+      own: 9, // one skin without a seam: every piece of it of the same tone
+    });
+  };
+  // The body: the whole almond, up to where the opening begins.
+  const strips = 18;
   for (const side of [1, -1]) {
-    stack(slabs, archFoot, height, 4, (z) => {
-      const inner = Math.min(opening(z), halfLength - 2.5);
-      return side === 1 ? lens(inner, halfLength, 6) : lens(-halfLength, -inner, 6);
-    }, glass);
-  }
-  // Along the edge of the opening, on both faces of the tower, runs a band of light: by day a pale trim
-  // on each leg, by night the arch the whole city knows the tower by.
-  for (let base = archFoot + 4; base < bridge[0]; base += 4) {
-    const inner = Math.min(opening(base + 2), halfLength - 2.5);
-    for (const side of [1, -1]) {
-      for (const face of [1, -1]) slabs.push({ outline: block(1, 0.9, side * (inner - 0.2), face * (thick(inner) - 0.5)), base, top: base + 4, paint: '#c3d1dc', night: ARCH_LIGHT });
+    for (let i = 0; i < strips; i += 1) {
+      const u0 = -half + (2 * half * i) / strips;
+      const u1 = -half + (2 * half * (i + 1)) / strips;
+      piece(side, 0, foot, u0, u1, u0, u1);
     }
   }
-  // The sky bridge: a slim span from leg to leg, not the full depth of the tower.
-  slabs.push({ outline: block(openAtTop + 2, 5.5), base: bridge[0], top: bridge[1], paint: '#cdd8e1', night: '#eef8ff' });
-  // The podium that the tower rises from: the shopping centre and the hotel's wings, four storeys.
-  // (Low and wide: its roof is laid and furnished like any other building's.)
-  slabs.push({ outline: KINGDOM_PODIUM, base: 0, top: 16, paint: '#e3ddd2', north: true, roof: true });
-  return slabs;
+  // The legs: what is left of the almond beyond the opening, on either side of it. (The rows are closer
+  // together low down, where the parabola opens fastest.) And above the bridge's floor, the tips of the legs.
+  const rows = 14;
+  const levels = Array.from({ length: rows + 1 }, (_, j) => foot + (deck - foot) * (j / rows) ** 2);
+  levels.push(height);
+  const across = 4;
+  const lit = { kind: 'lamp', colour: '#dfe7ec', light: '#ffffff', glow: 1, changing: true };
+  const inside = { kind: 'plain', colour: '#c4ced6', light: '#ffffff', glow: 0.8, changing: true };
+  for (let j = 0; j < levels.length - 1; j += 1) {
+    const [z0, z1] = [levels[j], levels[j + 1]];
+    const [w0, w1] = [opening(z0), opening(z1)];
+    for (const leg of [1, -1]) {
+      for (const side of [1, -1]) {
+        for (let i = 0; i < across; i += 1) {
+          const place = (w, k) => leg * (w + ((half - w) * k) / across);
+          piece(side, z0, z1, place(w0, i), place(w0, i + 1), place(w1, i), place(w1, i + 1));
+        }
+        // Along the edge of the opening, on both faces: the band of light the tower is known by after dark.
+        if (z0 < deck) {
+          model.quad(onFace(leg * (w0 + 0.15), side, z0, 0.25), onFace(leg * (w0 + 2.6), side, z0, 0.25), onFace(leg * (w1 + 2.6), side, z1, 0.25), onFace(leg * (w1 + 0.15), side, z1, 0.25), lit, {
+            out: looks(leg * w0, side),
+            lines: [false, false, false, false],
+          });
+        }
+      }
+      // The inside of the opening: it looks across at the other leg and up at the bridge.
+      if (z0 < deck) {
+        const slope = (z) => (z - foot < 0.01 ? [0, 0, 1] : [0, -leg, span / (2 * Math.sqrt((z - foot) * (deck - foot)))]);
+        model.quad(at(leg * w0, -thick(w0), z0), at(leg * w0, thick(w0), z0), at(leg * w1, thick(w1), z1), at(leg * w1, -thick(w1), z1), inside, {
+          out: [0, -leg, 0.4],
+          normals: [slope(z0), slope(z0), slope(z1), slope(z1)],
+          lines: [false, false, false, false],
+        });
+      }
+    }
+  }
+  // The tops of the legs.
+  const beacons = [];
+  for (const leg of [1, -1]) {
+    const tip = [];
+    for (let i = 0; i <= across; i += 1) tip.push([leg * (span + ((half - span) * i) / across), -1]);
+    for (let i = across - 1; i >= 0; i -= 1) tip.push([leg * (span + ((half - span) * i) / across), 1]);
+    model.flat(tip.map(([u, side]) => at(u, side * thick(u), height)), { kind: 'plain', colour: '#b9c5cf' });
+    beacons.push(at(leg * (half - 4), 0, height + 0.6));
+  }
+  // The sky bridge: a corridor from leg to leg with windows down both sides, its underside a shallow arch.
+  const bridgeHalf = 5.5;
+  const under = (u) => deck - 1.6 * (u / span) ** 2;
+  const windows = { kind: 'glass', colour: '#93a8ba', storey: 5.95, bay: 2.4, lit: 1, floors: 0.6, mirror: 0.6, light: '#ffffff', glow: 0.7, changing: true };
+  const steps = 8;
+  for (let i = 0; i < steps; i += 1) {
+    const u0 = -span - 1 + ((2 * span + 2) * i) / steps;
+    const u1 = -span - 1 + ((2 * span + 2) * (i + 1)) / steps;
+    for (const side of [1, -1]) {
+      model.quad(at(u0, side * bridgeHalf, under(u0)), at(u1, side * bridgeHalf, under(u1)), at(u1, side * bridgeHalf, height), at(u0, side * bridgeHalf, height), windows, {
+        out: at(0, side, 0),
+        along: [at(1, 0, 0)[0], at(1, 0, 0)[1]],
+        lines: [false, false, false, false],
+        own: 9,
+      });
+    }
+    model.quad(at(u0, -bridgeHalf, under(u0)), at(u1, -bridgeHalf, under(u1)), at(u1, bridgeHalf, under(u1)), at(u0, bridgeHalf, under(u0)), inside, { out: [0, 0, -1], lines: [false, false, false, false] });
+  }
+  model.flat([[-span - 1, -bridgeHalf], [span + 1, -bridgeHalf], [span + 1, bridgeHalf], [-span - 1, bridgeHalf]].map(([u, v]) => at(u, v, height)), { kind: 'plain', colour: '#b9c5cf' });
+  return { beacons };
 }
 
-// The light along Kingdom Centre's arch. (The real one changes colour from night to night.)
-const ARCH_LIGHT = '#9fe9ff';
+/**
+ * The podium that Kingdom Centre rises from: the shopping centre and the
+ * hall for feasts in its two wings, four storeys. Low and wide: its roof is
+ * laid and furnished like any other building's, so it stays a slab.
+ */
+function kingdomPodium() {
+  return [{ outline: KINGDOM_PODIUM, base: 0, top: 16, paint: '#e3ddd2', north: true, roof: true }];
+}
+
 // The violet the financial district lights its tower and its station in.
 const PIF_LIGHT = '#a428f5';
 
@@ -546,13 +631,13 @@ function kafdStation() {
 /**
  * The landmarks: where each stands ([lng, lat] of the middle of its
  * footprint), which way its long axis points (degrees clockwise from north),
- * and how to build it: build() gives its slabs, or model(model) builds it as
- * a true model. clear: within this many metres of its middle the map's
+ * and how to build it: build() gives its slabs, model(model) builds it as a
+ * true model (one may have both: a model that stands on a slab). clear: within this many metres of its middle the map's
  * own buildings are taken out, so the model does not stand inside a block.
  * shade: a footprint and height for its shadow, where the map data has none.
  */
 export const LANDMARKS = [
-  { id: 'kingdom-centre', name: 'Kingdom Centre', at: [46.67441, 24.711346], bearing: 63.4, height: 302, clear: 48, build: kingdomCentre, nights: { '#a7bccd': '#1d2a42', '#b8cad8': '#24334e', '#e3ddd2': '#4a3f2e' } },
+  { id: 'kingdom-centre', name: 'Kingdom Centre', at: [46.67441, 24.711346], bearing: 63.4, height: 302, clear: 48, build: kingdomPodium, model: kingdomCentre, nights: { '#e3ddd2': '#4a3f2e' } },
   {
     id: 'al-faisaliah',
     name: 'Al Faisaliah Tower',

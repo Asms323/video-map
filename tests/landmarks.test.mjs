@@ -44,13 +44,13 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   assert.equal(data.type, 'FeatureCollection');
   assert.equal(landmarkSlabs(), data, 'made once');
   assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station']);
-  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['pif-tower']);
+  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'pif-tower']);
   for (const one of LANDMARKS) {
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
     if (one.model) {
-      // A model: no slabs. It stands on the ground, is as tall as the real one, and keeps to its plot.
-      assert.equal(slabsOf(one.id).length, 0, one.id);
-      assert.equal(one.build, undefined);
+      // A model: no slabs, but for a podium it may stand on. It stands on the ground, is as tall as the
+      // real one, and keeps to its plot.
+      assert.ok(slabsOf(one.id).every((feature) => feature.properties.t <= 20), one.id);
       const faces = modelOf(one.id);
       assert.ok(faces.length > 100, `${one.id}: ${faces.length} triangles`);
       const corners = faces.flatMap((face) => face.corners);
@@ -89,57 +89,94 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   }
   // A mesh may hold every model at once, each at its own place; built again, it holds them once.
   const mesh = new ModelMesh();
-  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 1);
+  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 2);
   const corners = mesh.count;
-  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 1);
+  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 2);
   assert.equal(mesh.count, corners);
-  // (The PIF Tower stands 2.9 km west and 7.1 km north of there.)
-  const middle = [0, 1].map((k) => facesOf(mesh).flatMap((face) => face.corners).reduce((sum, corner, _, all) => sum + corner[k] / all.length, 0));
-  assert.ok(near(middle[0], -2880, 25) && near(middle[1], 7090, 25), JSON.stringify(middle));
+  // (The PIF Tower stands 2.9 km west and 7.1 km north of there; Kingdom Centre 0.4 km east and 1.3 km north.)
+  for (const corner of facesOf(mesh).flatMap((face) => face.corners)) {
+    assert.ok(Math.hypot(corner[0] + 2880, corner[1] - 7090) < 60 || Math.hypot(corner[0] - 446, corner[1] - 1263) < 60, JSON.stringify(corner));
+  }
   assert.ok(JSON.stringify(data).length < 700000, 'small enough to hand to the map in one piece');
 });
 
-test('Kingdom Centre: a lens in plan, parted at the top by its arch and joined by the sky bridge', () => {
-  // Below the arch one slab at every level, 79 m long and 44 m wide, in the tower's own silver-blue.
-  for (const z of [20, 100, 180]) {
-    const [tower] = cut('kingdom-centre', z);
-    assert.equal(cut('kingdom-centre', z).length, 1);
-    assert.ok(near(tower.to - tower.from, 79.2, 0.5) && near(tower.wide, 44.4, 0.6), JSON.stringify(tower));
+test('Kingdom Centre: an almond in plan, of mirror glass, parted at the top by its parabola and joined by the sky bridge', () => {
+  const one = landmark('kingdom-centre');
+  // Every corner as it lies along the tower (u) and across it (v).
+  const faces = modelOf('kingdom-centre').map((face) => ({ ...face, places: face.corners.map(([east, north, up]) => [...along(one, [east, north]), up]) }));
+  const glass = faces.filter((face) => face.colour === '#8ea4b7');
+  assert.ok(glass.length > 300 && glass.every((face) => face.kind === 'glass' && near(face.mirror, 0.8, 1e-6) && face.floors < 0.3 && face.ridge === 0 && face.own === 9), 'one seamless skin of mirror glass');
+  // An almond: 77.5 m from point to point, 40 m across, each face an arc; every corner of the skin lies on one.
+  const radius = (38.75 ** 2 + 20 ** 2) / 40;
+  for (const face of glass) {
+    for (const [u, v] of face.places) assert.ok(near(Math.hypot(u, Math.abs(v) + radius - 20), radius, 0.02), `${u}, ${v}`);
   }
-  // (At the ground the podium is there too: the shopping centre, four storeys.)
-  assert.deepEqual(cut('kingdom-centre', 8).map((slab) => slab.paint).sort(), ['#a7bccd', '#e3ddd2']);
-  assert.equal(cut('kingdom-centre', 17).length, 1);
-  // Above it two legs, and the gap between them widens with height the way a parabola does.
-  // (Along the edge of the gap each leg carries the band of light that shows the arch by night.)
-  const glass = (slab) => slab.paint === '#a7bccd' || slab.paint === '#b8cad8';
-  const gapAt = (z) => {
-    const legs = cut('kingdom-centre', z).filter(glass);
-    assert.equal(legs.length, 2, `two legs at ${z} m`);
-    assert.ok(near(legs[0].from, -39.6, 0.5) && near(legs[1].to, 39.6, 0.5), 'the legs keep the tower\'s outer line');
-    return legs[1].from - legs[0].to;
-  };
-  const gaps = [200, 230, 260, 285].map(gapAt);
-  assert.ok(gaps[0] > 15 && gaps[0] < gaps[1] && gaps[1] < gaps[2] && gaps[2] < gaps[3] && gaps[3] > 55 && gaps[3] < 66, String(gaps));
-  assert.ok(gaps[1] - gaps[0] > gaps[3] - gaps[2], 'it opens fast at the foot of the arch and slowly at the top');
-  // The sky bridge spans the gap just under the top.
-  const top = cut('kingdom-centre', 295);
-  assert.equal(top.length, 3);
-  assert.ok(top[1].to - top[1].from > gapAt(289) && top[1].wide < 14, JSON.stringify(top[1]));
-  assert.equal(cut('kingdom-centre', 300.5).length, 2, 'the two points stand a little above it');
-  // The arch's light: a thin band on each face of each leg where it meets the gap, a pale trim by day,
-  // and by night brighter than anything else on the tower but the bridge.
-  for (const z of [200, 230, 260, 285]) {
-    const all = cut('kingdom-centre', z);
-    const legs = all.filter(glass);
-    const bands = all.filter((slab) => !glass(slab));
-    assert.equal(bands.length, 4, `a band on each face of each leg at ${z} m`);
-    for (const band of bands) {
-      assert.ok(band.to - band.from <= 2.01 && band.wide <= 1.81 && band.night === '#9fe9ff', JSON.stringify(band));
-      assert.ok(Math.min(...legs.map((leg) => Math.min(Math.abs(leg.to - band.to), Math.abs(leg.from - band.from)))) < 1.5, 'at the inner edge of a leg');
+  const us = glass.flatMap((face) => face.places.map((place) => place[0]));
+  const vs = glass.flatMap((face) => face.places.map((place) => place[1]));
+  assert.ok(near(Math.max(...us), 38.75, 0.01) && near(Math.min(...us), -38.75, 0.01) && near(Math.max(...vs), 20, 0.01) && near(Math.min(...vs), -20, 0.01));
+  // The light falls on it as on a curve: at each corner the skin looks straight out from its arc, level.
+  for (const face of glass) {
+    face.normals.forEach((normal, k) => {
+      const [u, v] = face.places[k];
+      const [nu, nv] = along(one, [normal[0], normal[1]]);
+      // (At the two points of the almond a corner belongs to both faces: the face is told by which way it looks.)
+      const out = [u / radius, (Math.sign(Math.abs(v) > 0.01 ? v : nv) * Math.sqrt(radius ** 2 - u ** 2)) / radius];
+      assert.ok(near(normal[2], 0, 1e-6) && near(nu, out[0], 0.02) && near(nv, out[1], 0.02), JSON.stringify([u, v, nu, nv, out]));
+    });
+  }
+  // Up to 205 m the whole almond; above that an opening right through it, a parabola with its point
+  // down, 56 m wide where the bridge's floor crosses it at 290.4 m: half as wide a quarter of the way up.
+  const reachAt = (z) => {
+    // How near the middle the skin comes at a height: half the width of the opening there.
+    let nearest = Infinity;
+    for (const face of glass) {
+      const heights = face.places.map((place) => place[2]);
+      if (Math.min(...heights) > z || Math.max(...heights) < z) continue;
+      for (let k = 0; k < 3; k += 1) {
+        const [a, b] = [face.places[k], face.places[(k + 1) % 3]];
+        if (a[2] > z === b[2] > z) continue;
+        const part = (z - a[2]) / (b[2] - a[2]);
+        nearest = Math.min(nearest, Math.abs(a[0] + (b[0] - a[0]) * part));
+      }
     }
-    for (const leg of legs) assert.ok(/^#[12][0-9a-f]{5}$/.test(leg.night), `the glass is dark by night: ${leg.night}`);
+    return nearest;
+  };
+  assert.ok(reachAt(100) < 2.2 && reachAt(204) < 2.2, 'no opening below 205 m');
+  const quarter = 205 + (290.4 - 205) / 4;
+  assert.ok(near(reachAt(quarter), 14, 0.6), `${reachAt(quarter)} m`);
+  assert.ok(near(reachAt(289), 28 * Math.sqrt((289 - 205) / 85.4), 0.5) && near(reachAt(296), 28, 0.01));
+  assert.ok(near(Math.max(...glass.flatMap((face) => face.places.map((place) => place[2]))), 302.3, 1e-3));
+  // The inside of the opening and a band along its edge on both faces are lit by night, in colours that change.
+  const inside = faces.filter((face) => face.colour === '#c4ced6');
+  const band = faces.filter((face) => face.kind === 'lamp');
+  assert.ok(inside.length > 50 && inside.every((face) => face.kind === 'plain' && face.changing && face.glow > 0.7));
+  assert.ok(band.length === 14 * 2 * 2 * 2 && band.every((face) => face.changing && face.glow === 1 && face.places.every(([, , up]) => up >= 205 - 1e-3 && up <= 290.4 + 1e-3)));
+  // (The band lies just outside the skin, and hugs the parabola: its inner edge is on the opening's.)
+  for (const face of band) {
+    for (const [u, v, up] of face.places) {
+      const open = 28 * Math.sqrt(Math.max((up - 205) / 85.4, 0));
+      assert.ok(Math.abs(u) > open && Math.abs(u) < open + 2.9 && Math.hypot(u, Math.abs(v) + radius - 20) > radius + 0.2, JSON.stringify([u, v, up]));
+    }
   }
-  assert.equal(top[1].night, '#eef8ff', 'the bridge is lit');
+  // The sky bridge: a corridor 11 m wide from leg to leg, its floor at 290.4 m in the middle, with
+  // windows down both sides that are lit all night.
+  const bridge = faces.filter((face) => face.colour === '#93a8ba');
+  assert.ok(bridge.length === 32 && bridge.every((face) => face.kind === 'glass' && face.lit === 1 && face.changing));
+  const along0 = bridge.flatMap((face) => face.places.map((place) => place[0]));
+  assert.ok(near(Math.min(...along0), -29, 0.01) && near(Math.max(...along0), 29, 0.01));
+  assert.ok(bridge.every((face) => face.places.every(([, v, up]) => near(Math.abs(v), 5.5, 0.01) && up >= 290.4 - 1.75 && up <= 302.3 + 1e-3)));
+  assert.ok(near(Math.max(...bridge.flatMap((face) => face.places.filter(([u]) => Math.abs(u) < 4).map((place) => place[2])).filter((up) => up < 295)), 290.4, 0.15));
+  // A red lamp on the top of each leg.
+  const lamps = landmarkBeacons().filter(([lng, lat]) => Math.abs(lng - one.at[0]) < 0.001 && Math.abs(lat - one.at[1]) < 0.001);
+  assert.equal(lamps.length, 2);
+  for (const lamp of lamps) {
+    const [u, v] = along(one, from(one, lamp));
+    assert.ok(near(Math.abs(u), 34.75, 0.2) && near(v, 0, 0.2) && near(lamp[2], 302.9, 0.01), JSON.stringify([u, v, lamp[2]]));
+  }
+  // It stands on its podium, which is still a slab: the shopping centre's roof is laid like any other.
+  const podium = slabsOf('kingdom-centre');
+  assert.equal(podium.length, 1);
+  assert.ok(podium[0].properties.b === 0 && podium[0].properties.t === 16 && podium[0].properties.c === '#e3ddd2' && podium[0].properties.n === '#4a3f2e');
 });
 
 test('by night the landmarks are lit, each in its own way', () => {
