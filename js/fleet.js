@@ -126,8 +126,12 @@ const YELLOW = [232, 190, 48];
 const ORANGE = [222, 122, 40];
 const GREEN = [44, 122, 74];
 const ALUMINIUM = [196, 200, 204];
-/** The taxis' green. (That they are green is the Transport General Authority's rule; this shade is a guess at it.) */
-export const TAXI_GREEN = [86, 170, 116];
+/**
+ * The taxis' green. (That they are green, "a specified shade" chosen to recall the green of the country's
+ * flag, is the Transport General Authority's rule; the shade itself is not told anywhere that could be
+ * read, and this is a guess at it: lighter than the flag's.)
+ */
+export const TAXI_GREEN = [52, 148, 94];
 const PATROL_BLACK = [26, 28, 32];
 const TRAFFIC_GREEN = [0, 122, 74];
 const AMBULANCE_RED = [206, 40, 40];
