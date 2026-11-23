@@ -8,6 +8,8 @@
 
 import { shadeOnRoof } from './roofs.js';
 
+import { sinkWays, sunkAlong } from './cuttings.js';
+
 const METERS_PER_DEGREE = 111320;
 const LANE_METERS = 3.4;
 const NARROW_LANE_METERS = 2; // on a residential street, where cars are parked along both sides
@@ -100,9 +102,13 @@ function stackBridges(drafts) {
   });
 }
 
-/** How high above the ground a way runs at a distance along it, in metres: 0 except on a bridge. */
+/**
+ * How high above the ground a way runs at a distance along it, in metres: 0
+ * except on a bridge, and less than nothing where a great road runs in a
+ * cutting (see cuttings.js).
+ */
 export function heightAlong(way, distance) {
-  if (!(way.deck > 0)) return 0;
+  if (!(way.deck > 0)) return way.sunk ? -sunkAlong(way, distance) : 0;
   const run = Math.min(BRIDGE_RAMP_METERS, way.length * 0.45);
   const ease = (t) => {
     const k = Math.min(Math.max(t, 0), 1);
@@ -526,6 +532,8 @@ export function buildNetwork(lines, origin, { busStops = [], stations = [] } = {
       const whole = pieces.length === 1;
       const first = whole ? line.coordinates[0] : [origin.lng + xy[0] / squeeze, origin.lat + xy[1] / METERS_PER_DEGREE];
       const last = whole ? line.coordinates[count - 1] : [origin.lng + xy[count * 2 - 2] / squeeze, origin.lat + xy[count * 2 - 1] / METERS_PER_DEGREE];
+      // (A slip road is two lanes at the most, whatever road it is a slip road of.)
+      const lanes = rail ? 1 : line.ramp ? Math.min(road.lanes, 2) : road.lanes;
       const way = {
         key: `${line.class}:${place6(first[0])},${place6(first[1])}:${place6(last[0])},${place6(last[1])}:${count}`,
         rail,
@@ -536,8 +544,12 @@ export function buildNetwork(lines, origin, { busStops = [], stations = [] } = {
         hidden: draft.hidden,
         deck: draft.level > 0 ? (rail ? RAIL_DECK_METERS : ROAD_DECK_METERS) + (draft.level - 1) * DECK_ABOVE_DECK_METERS : 0, // how high its bridge carries it
         rise: null, // on a bridge: how high it is at its start and at its end
-        lanes: rail ? 1 : road.lanes,
-        width: Number(line.width) > 0 ? Number(line.width) : rail ? 5 : road.lanes * LANE_METERS * (Number(line.oneway) ? 1 : 2),
+        ramp: Boolean(line.ramp), // a slip road
+        sunk: null, // in a cutting: how deep it lies at its start and at its end
+        dips: null, // and, for a great road, the slope it is on from each end (see cuttings.js)
+        clear: null, // for a slip road that leaves a great road below the ground: how far it runs beside it before it can climb
+        lanes: rail ? 1 : lanes,
+        width: Number(line.width) > 0 ? Number(line.width) : rail ? 5 : lanes * LANE_METERS * (Number(line.oneway) ? 1 : 2),
         speed: rail ? 20 : road.speed,
         perKm: rail ? 0 : road.perKm,
         stops: [], // the bus stops or stations along it
@@ -569,6 +581,10 @@ export function buildNetwork(lines, origin, { busStops = [], stations = [] } = {
       return Math.min(way.deck, met);
     });
   }
+
+  // A great road goes down to meet a tunnel, and along a cutting it stays down (see cuttings.js). A slip
+  // road that leaves it there climbs to the street from where it leaves.
+  sinkWays(ways, joins, origin);
 
   // Put each bus stop on the street it stands beside, and each station on every track that passes it.
   const place = (points, fits, reach, onlyNearest) => {
@@ -1719,11 +1735,14 @@ export function drawMarks(mesh, network) {
   const strip = (way, from, to, across, half, paint, alpha = 1) => {
     pointAlong(way, from, a);
     pointAlong(way, to, b);
+    // (Down in a cutting the paint lies on the road down there.)
+    const za = way.sunk ? z + heightAlong(way, from) : z;
+    const zb = way.sunk ? z + heightAlong(way, to) : z;
     mesh.face(
-      [a[0] - a[3] * (across + half), a[1] + a[2] * (across + half), z],
-      [a[0] - a[3] * (across - half), a[1] + a[2] * (across - half), z],
-      [b[0] - b[3] * (across - half), b[1] + b[2] * (across - half), z],
-      [b[0] - b[3] * (across + half), b[1] + b[2] * (across + half), z],
+      [a[0] - a[3] * (across + half), a[1] + a[2] * (across + half), za],
+      [a[0] - a[3] * (across - half), a[1] + a[2] * (across - half), za],
+      [b[0] - b[3] * (across - half), b[1] + b[2] * (across - half), zb],
+      [b[0] - b[3] * (across + half), b[1] + b[2] * (across + half), zb],
       paint[0],
       paint[1],
       paint[2],

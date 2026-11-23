@@ -147,6 +147,22 @@ export function shadowCasters(mesh, buildings, origin, fall) {
 }
 
 /**
+ * Add to what throws the shadows the ground beside the roads that run
+ * below it, and over the tunnels they run into (the banks drawCuttings()
+ * makes: see cuttings.js): flat, at the level of the street. It shades
+ * nothing that stands on the ground, and the road in the cutting wherever
+ * the sun does not reach down to it. ground: a Mesh of triangles. Returns
+ * how many corners were added.
+ */
+export function groundCasters(mesh, ground) {
+  const count = ground?.count ?? 0;
+  if (count === 0) return 0;
+  mesh.room(count);
+  for (let i = 0; i < count; i += 1) mesh.corner(ground.positions[i * 3], ground.positions[i * 3 + 1], 0);
+  return count;
+}
+
+/**
  * How many spots a side the picture of the shadows needs: enough for a spot
  * to be about `fine` metres of ground, as a power of two, within what the
  * device allows.

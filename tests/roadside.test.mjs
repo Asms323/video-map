@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildNetwork, lightFrom, Mesh } from '../js/life.js';
+import { buildNetwork, heightAlong, lightFrom, Mesh } from '../js/life.js';
 import { drawRoadside, medianPalms } from '../js/roadside.js';
 
 const ORIGIN = { lng: 46.67, lat: 24.7 };
@@ -78,4 +78,23 @@ test('medianPalms: a row of palms down the median of an avenue, and nowhere else
   assert.equal(medianPalms(buildNetwork([line('primary', [[0, 0], [400, 0]]), line('primary', [[400, 20], [0, 20]])], ORIGIN)).length, 0);
   // Nor where a building stands.
   assert.equal(medianPalms(network, { built: () => true }).length, 0);
+});
+
+test('drawRoadside: a slip road has neither barrier nor kerb, and where an avenue dives under a crossing its kerb goes down with it', () => {
+  // A slip road of a motorway, and one of an avenue: one side of nothing.
+  const slips = buildNetwork([line('motorway', [[0, 0], [400, 30]], { oneway: 1, ramp: true }), line('primary', [[0, 100], [400, 130]], { oneway: 1, ramp: true })], ORIGIN);
+  assert.ok(slips.ways.every((way) => way.ramp && way.lanes === 2 && Math.abs(way.width - 6.8) < 1e-9));
+  const mesh = new Mesh();
+  assert.deepEqual(drawRoadside(mesh, slips, NOON), { barriers: 0, gantries: 0, kerbs: 0 });
+  assert.equal(mesh.count, 0);
+  // An avenue's carriageway into its underpass: the kerb of its median follows the road down to the tunnel's mouth.
+  const avenue = buildNetwork([line('primary', [[0, 0], [600, 0]], { oneway: 1 }), line('primary', [[600, 0], [720, 0]], { oneway: 1, tunnel: true })], ORIGIN);
+  const way = avenue.ways.find((one) => !one.hidden);
+  const made = drawRoadside(mesh, avenue, NOON);
+  assert.ok(made.kerbs > 500 && made.barriers === 0);
+  const points = corners(mesh);
+  const feet = points.filter((point) => point[0] > 560 && point[0] < 590);
+  assert.ok(feet.length > 0 && feet.every((point) => point[2] < -5.5 && Math.abs(point[2] - heightAlong(way, point[0])) <= 0.2 + 0.3), 'down at the mouth');
+  const up = points.filter((point) => point[0] < 400);
+  assert.ok(up.length > 0 && up.every((point) => point[2] >= 0 && point[2] <= 0.2 + 1e-6), 'on the street before the dip');
 });

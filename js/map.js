@@ -37,6 +37,7 @@ import {
   wallImage,
   withOverlays,
 } from './lib.js';
+import { drawCuttings, overCutting } from './cuttings.js';
 import { characterAt } from './districts.js';
 import { PLAIN_FUEL, brandOf, localKind, mosqueExtras, mosquesAmong, stationExtras, storeExtras } from './dress.js';
 import { STAYED_BRIDGES, landmarkBeacons, landmarkModels, landmarkRoofs, landmarkShades, replacedByLandmarks } from './landmarks.js';
@@ -49,7 +50,7 @@ import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
 import { SceneLayer } from './scene.js';
 import { buildingArchive, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
 import { footprintGrid, heightsFromShadows, passSuns, pavedGrid, photoGrid, roofColours, tilesFor, treesInPhoto } from './sight.js';
-import { CasterMesh, shadowCasters, shadowFall, shadowMapSize } from './shade.js';
+import { CasterMesh, groundCasters, shadowCasters, shadowFall, shadowMapSize } from './shade.js';
 import { PARAPET_METERS, PARAPET_THICK_METERS, WallMesh, colourOf, facadeOf, footShade, parapetTops, tilePieces, wallTone, wallsOf } from './walls.js';
 
 export const MAP_TYPES = ['city', 'streets', 'night', 'satellite', 'detailed'];
@@ -429,6 +430,7 @@ export class MapView {
     this.roofsMade = null;
     this.casterMesh = new CasterMesh(); // what throws the shadows on walls and roofs
     this.shadowsMade = null;
+    this.shadesNear = null; // which of the landmarks' shades were round here when the shadows were last laid
     this.wallMesh = new WallMesh(); // the walls, laid over the blocks the map draws
     this.wallsMade = null;
     this.footMesh = new Mesh(); // the shade on the ground at the foot of the walls
@@ -456,6 +458,10 @@ export class MapView {
     this.plotMesh = new Mesh(); // the walls round the houses
     this.roadsideMesh = new Mesh(); // barriers, sign gantries and the kerbs of medians
     this.roadsideMade = null;
+    this.cuttingMesh = new Mesh(); // the floors and walls of the roads that run below the ground
+    this.bankMesh = new Mesh(); // the ground beside them, which hides what is behind it
+    this.cuttingGlowMesh = new Mesh(); // and the lamps' light on their floors and walls by night
+    this.cuttingsMade = null;
     this.plotsMade = null;
     this.modelMesh = new ModelMesh(); // the famous buildings that are true models
     this.modelsMade = null;
@@ -1303,9 +1309,7 @@ export class MapView {
       const [lng, lat] = one.polygons[0][0][0];
       return Boolean(here) && lng >= here.west && lng <= here.east && lat >= here.south && lat <= here.north;
     };
-    const cast = fall ? shadowCasters(this.casterMesh, [...this.roofs, ...landmarkShades().filter(near), ...this.extraShades.filter(near)], origin, fall) : null;
-    this.shadowsMade = cast ? { ...cast, fall, size: shadowMapSize(cast.box), corners: this.casterMesh.count } : null;
-    this.scene.setShadows(this.casterMesh, this.shadowsMade);
+    this.layShadows(fall, near);
 
     // The roofs: one on every building, in its own colour, inside its parapet. (And on the flat roofs among the landmarks' models.)
     const roofed = [...whole, ...landmarkRoofs().filter(near)];
@@ -1537,12 +1541,16 @@ export class MapView {
       return;
     }
     const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
+    // (What the photo shows as a tree over a road that runs in a cutting is down in the cutting: none is stood there.)
+    const sunken = Boolean(this.network?.ways.some((way) => way.sunk));
     const local = this.photoOn
-      ? this.trees.map((tree) => ({
-          x: (tree.lng - origin.lng) * squeeze,
-          y: (tree.lat - origin.lat) * METERS_PER_DEGREE,
-          radius: tree.radius,
-        }))
+      ? this.trees
+          .map((tree) => ({
+            x: (tree.lng - origin.lng) * squeeze,
+            y: (tree.lat - origin.lat) * METERS_PER_DEGREE,
+            radius: tree.radius,
+          }))
+          .filter((tree) => !sunken || !overCutting(this.network, tree.x, tree.y))
       : [];
     // Down the medians of the avenues, a row of date palms: stood by rule (see roadside.js).
     const palms = this.detailOn && this.network ? medianPalms(this.network, { built: this.builtGround()?.built ?? null }) : [];
@@ -1650,6 +1658,7 @@ export class MapView {
             bridge: properties.brunnel === 'bridge',
             layer: properties.layer,
             service: properties.service,
+            ramp: properties.ramp === 1,
             width: groundWidth(properties.class),
             coordinates,
           });
@@ -1691,6 +1700,21 @@ export class MapView {
     map.triggerRepaint();
   }
 
+  /**
+   * Make afresh the picture the shadows on walls, roofs and cars are read from. What throws them: the
+   * buildings, and the ground beside every road that runs below it, which shades the road in its cutting.
+   * fall: how the shadows fall (null for none); near: which of the landmarks' shades are round here.
+   * Without either, as they were when the roofs were last laid.
+   */
+  layShadows(fall = this.shadowsMade?.fall ?? null, near = this.shadesNear ?? (() => false)) {
+    this.shadesNear = near;
+    const origin = this.scene.origin;
+    const cast = fall && origin ? shadowCasters(this.casterMesh, [...this.roofs, ...landmarkShades().filter(near), ...this.extraShades.filter(near)], origin, fall) : null;
+    const ground = cast ? groundCasters(this.casterMesh, this.bankMesh) : 0;
+    this.shadowsMade = cast ? { ...cast, fall, size: shadowMapSize(cast.box), corners: this.casterMesh.count, ground } : null;
+    this.scene.setShadows(this.casterMesh, this.shadowsMade);
+  }
+
   /** Build the bridges and viaducts afresh: their decks, parapets and piers. And paint the roads: their lines and crossings. */
   layBridges() {
     if (!this.scene.origin || this.type !== 'city' || !this.network) {
@@ -1698,13 +1722,21 @@ export class MapView {
         this.bridgeMesh.clear();
         this.markMesh.clear();
         this.roadsideMesh.clear();
+        this.cuttingMesh.clear();
+        this.bankMesh.clear();
         this.scene.set('bridges', this.bridgeMesh);
         this.scene.set('marks', this.markMesh);
         this.scene.set('roadside', this.roadsideMesh);
+        this.cuttingGlowMesh.clear();
+        this.scene.set('cuttings', this.cuttingMesh);
+        this.scene.set('banks', this.bankMesh, { mask: true });
+        this.scene.set('cuttinglight', this.cuttingGlowMesh, { glow: true });
+        if (this.shadowsMade?.ground > 0) this.layShadows();
       }
       this.bridgesMade = 0;
       this.marksMade = null;
       this.roadsideMade = null;
+      this.cuttingsMade = null;
       return;
     }
     this.bridgesMade = drawBridges(this.bridgeMesh, this.network, lightFrom(this.sun), STAYED_BRIDGES);
@@ -1713,6 +1745,14 @@ export class MapView {
     // the yellow-and-black kerb of an avenue's median.
     this.roadsideMade = drawRoadside(this.roadsideMesh, this.network, lightFrom(this.sun));
     this.scene.set('roadside', this.roadsideMesh);
+    // The great roads that run below the ground: King Fahd Road through the centre, and every road where
+    // it goes down into a tunnel.
+    this.cuttingsMade = drawCuttings(this.cuttingMesh, this.bankMesh, this.network, lightFrom(this.sun), this.cuttingGlowMesh);
+    this.scene.set('cuttings', this.cuttingMesh);
+    this.scene.set('banks', this.bankMesh, { mask: true });
+    this.scene.set('cuttinglight', this.cuttingGlowMesh, { glow: true });
+    // (The ground beside a cutting is among the things that throw a shadow: into the cutting.)
+    if (this.bankMesh.count > 0 || this.shadowsMade?.ground > 0) this.layShadows();
     // (The paint does not change with the sun: laid once for each network.)
     if (this.marksMade?.network !== this.network) {
       this.marksMade = { network: this.network, ...drawMarks(this.markMesh, this.network) };

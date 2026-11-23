@@ -30,6 +30,9 @@ precision mediump float;
 // how high the highest thing is on the ray of sunlight that lands there. A point is followed down its own
 // ray to the ground, and is in shadow if the picture has something higher on that ray than the point
 // itself. Four spots round the place are asked and weighed by how near they are, which softens the edge.
+// (Heights are counted from some way below the ground: a road in a cutting lies below it, and the ground
+// beside the cutting, which is among the things that throw a shadow, shades it. See cuttings.js.)
+const SHADOW_BELOW = '16.0';
 const SHADOW = `
 uniform sampler2D u_shadow;
 uniform vec4 u_shadowBox;   // the ground the picture covers: west, south, 1 / width, 1 / height (metres)
@@ -37,7 +40,7 @@ uniform vec3 u_shadowFall;  // how far a shadow falls for each metre of height: 
 uniform float u_shadowSize; // spots a side; 0 when there are no shadows
 float shadowTop(vec2 at) {
   vec4 kept = texture2D(u_shadow, at);
-  return (kept.r + kept.g / 255.0) * u_shadowFall.z;
+  return (kept.r + kept.g / 255.0) * (u_shadowFall.z + ${SHADOW_BELOW}) - ${SHADOW_BELOW};
 }
 float inShadow(vec3 point, float margin) {
   if (u_shadowSize < 1.0) return 0.0;
@@ -649,7 +652,7 @@ uniform vec3 u_fall; // east and north for each metre of height; and the height 
 varying float v_height;
 void main() {
   vec2 lands = (a_pos.xy + a_pos.z * u_fall.xy - u_box.xy) * u_box.zw;
-  v_height = a_pos.z / u_fall.z;
+  v_height = (a_pos.z + ${SHADOW_BELOW}) / (u_fall.z + ${SHADOW_BELOW});
   gl_Position = vec4(lands * 2.0 - 1.0, 1.0 - 2.0 * v_height, 1.0);
 }`;
 
@@ -848,16 +851,19 @@ export class SceneLayer {
    * throw, headlights): it is drawn by night only, over everything else, and
    * its colours are added to what lies behind them. point: for a part of
    * light whose every corner is a point of light of its own (a lamp seen
-   * from afar), how wide each is, in metres.
+   * from afar), how wide each is, in metres. mask: true for a part that is
+   * not seen itself but hides what lies behind it: the ground beside a road
+   * that runs in a cutting, which the map draws without any depth.
    */
-  set(name, mesh, { shaded = true, lifted = 0, glow = false, point = 0 } = {}) {
-    const part = this.parts.get(name) ?? { mesh: null, buffers: null, stale: true, shaded: true, lifted: 0, glow: false, point: 0 };
+  set(name, mesh, { shaded = true, lifted = 0, glow = false, point = 0, mask = false } = {}) {
+    const part = this.parts.get(name) ?? { mesh: null, buffers: null, stale: true, shaded: true, lifted: 0, glow: false, point: 0, mask: false };
     part.mesh = mesh;
     part.stale = true;
     part.shaded = shaded;
     part.lifted = lifted;
     part.glow = glow;
     part.point = glow ? point : 0;
+    part.mask = mask;
     this.parts.set(name, part);
   }
 
@@ -1095,6 +1101,42 @@ export class SceneLayer {
     const depth = m[3] * this.focus[0] + m[7] * this.focus[1] + m[15];
     const pixelPerDepth = depth > 1e-9 ? this.pixel / depth : this.pixel;
 
+    // First of all, what hides: the ground beside a cutting. It is drawn unseen, into the picture's depth
+    // only, and a touch further off than it lies, so that nothing standing on the ground is hidden by it.
+    const masks = shown ? [...this.parts.values()].filter((part) => part.mask && part.mesh && part.mesh.count > 0) : [];
+    if (masks.length > 0) {
+      gl.useProgram(this.program);
+      gl.uniformMatrix4fv(this.at.matrix, false, m);
+      gl.uniform1f(this.at.opacity, 1);
+      gl.uniform1f(this.at.night, 0);
+      gl.uniform1f(this.at.shaded, 0);
+      gl.uniform1f(this.at.glow, 0);
+      gl.uniform1f(this.at.point, 0);
+      gl.uniform1f(this.at.lamps, 0);
+      this.shadowsFor(gl, this.at);
+      gl.colorMask(false, false, false, false);
+      gl.enable(gl.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(1, 6);
+      gl.enableVertexAttribArray(this.at.pos);
+      gl.enableVertexAttribArray(this.at.color);
+      for (const part of masks) {
+        if (!part.buffers) part.buffers = { positions: gl.createBuffer(), colours: gl.createBuffer() };
+        gl.bindBuffer(gl.ARRAY_BUFFER, part.buffers.positions);
+        if (part.stale) gl.bufferData(gl.ARRAY_BUFFER, part.mesh.positions.subarray(0, part.mesh.count * 3), gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(this.at.pos, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, part.buffers.colours);
+        if (part.stale) gl.bufferData(gl.ARRAY_BUFFER, part.mesh.colours.subarray(0, part.mesh.count * 4), gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(this.at.color, 4, gl.UNSIGNED_BYTE, true, 0, 0);
+        part.stale = false;
+        gl.drawArrays(gl.TRIANGLES, 0, part.mesh.count);
+      }
+      gl.disableVertexAttribArray(this.at.pos);
+      gl.disableVertexAttribArray(this.at.color);
+      gl.disable(gl.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(0, 0);
+      gl.colorMask(true, true, true, true);
+    }
+
     // The walls first: they stand a hand's breadth outside the blocks the map has drawn, and are drawn a
     // touch nearer still, so that it is they that show.
     const walls = this.walls.mesh;
@@ -1262,7 +1304,7 @@ export class SceneLayer {
       }
     };
     for (const part of this.parts.values()) {
-      if (!part.glow && part.mesh && part.mesh.count > 0) draw(part);
+      if (!part.glow && !part.mask && part.mesh && part.mesh.count > 0) draw(part);
     }
     gl.disableVertexAttribArray(this.at.pos);
     gl.disableVertexAttribArray(this.at.color);

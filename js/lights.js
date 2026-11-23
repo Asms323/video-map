@@ -186,7 +186,8 @@ export function drawLamps(posts, glow, network, light, { most = 3000, built = nu
     pointAlong(way, s, spot);
     const [x, y, east, north] = spot;
     const deck = way.deck > 0;
-    const lift = deck ? Math.max(heightAlong(way, s), 0) : 0;
+    // (On a bridge it stands on the deck; in a cutting, down on the road.)
+    const lift = deck ? Math.max(heightAlong(way, s), 0) : way.sunk ? heightAlong(way, s) : 0;
     const across = deck ? way.width / 2 + 0.52 : way.width / 2 + LAMP_BEHIND_KERB_METERS;
     // To the right of the way as it is drawn (side 1), or to its left (side -1).
     const outEast = north * side;
@@ -256,9 +257,9 @@ export function drawLamps(posts, glow, network, light, { most = 3000, built = nu
         }
       }
     } else if (Math.hypot(hx, hy) <= POOL_FINE_WITHIN_METERS) {
-      pool(glow, hx, hy, POOL_UP_METERS, rule.pool, colour, POOL_STRENGTH);
+      pool(glow, hx, hy, lift + POOL_UP_METERS, rule.pool, colour, POOL_STRENGTH);
     } else {
-      disc(glow, hx, hy, POOL_UP_METERS, rule.pool * 0.8, colour, POOL_STRENGTH * 0.8, 8);
+      disc(glow, hx, hy, lift + POOL_UP_METERS, rule.pool * 0.8, colour, POOL_STRENGTH * 0.8, 8);
     }
     return true;
   };

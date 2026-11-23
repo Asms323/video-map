@@ -17,6 +17,7 @@ const SHELL = [
   './js/districts-data.js',
   './js/plots.js',
   './js/roadside.js',
+  './js/cuttings.js',
   './js/dress.js',
   './js/roofs.js',
   './js/walls.js',

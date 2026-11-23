@@ -12,7 +12,7 @@
 // Nothing here touches the browser. Measurements are in metres, east and
 // north of the network's origin.
 
-import { faceLight, nearestOn, pointAlong } from './life.js';
+import { faceLight, heightAlong, nearestOn, pointAlong } from './life.js';
 
 const BARRIER_ROADS = new Set(['motorway', 'trunk']);
 const BARRIER_HALF_METERS = 0.28;
@@ -98,27 +98,36 @@ export function drawRoadside(mesh, network, light) {
     if (side === 0 || way.length < FROM_END_METERS * 2 + 6) return;
     const from = FROM_END_METERS;
     const to = way.length - FROM_END_METERS;
-    if (BARRIER_ROADS.has(way.class)) {
+    // (A slip road has neither barrier nor median: it is one side of nothing.)
+    if (BARRIER_ROADS.has(way.class) && !way.ramp) {
       // The barrier: just beyond the edge of the carriageway, on the side of its median.
       const across = side * (way.width / 2 + 0.2 + BARRIER_HALF_METERS);
-      for (let s = from; s < to; s += BARRIER_STEP_METERS) box(way, s, Math.min(s + BARRIER_STEP_METERS, to), across, BARRIER_HALF_METERS, 0, BARRIER_TALL_METERS, BARRIER_PAINT);
+      for (let s = from; s < to; s += BARRIER_STEP_METERS) {
+        const until = Math.min(s + BARRIER_STEP_METERS, to);
+        // (In a cutting the barrier stands down on the road.)
+        const floor = way.sunk ? heightAlong(way, (s + until) / 2) : 0;
+        box(way, s, until, across, BARRIER_HALF_METERS, floor, floor + BARRIER_TALL_METERS, BARRIER_PAINT);
+      }
       made.barriers += to - from;
     }
-    if (KERB_ROADS.has(way.class)) {
+    if (KERB_ROADS.has(way.class) && !way.ramp) {
       // The kerb of the median: black, with a length of yellow every few metres.
       const across = side * (way.width / 2 + KERB_HALF_METERS);
       for (let s = from; s < to; s += KERB_STEP_METERS) {
         const until = Math.min(s + KERB_STEP_METERS, to);
         const half = Math.min(s + KERB_STEP_METERS / 2, until);
-        box(way, s, half, across, KERB_HALF_METERS, 0, KERB_UP_METERS, KERB_YELLOW);
-        if (until > half) box(way, half, until, across, KERB_HALF_METERS, 0, KERB_UP_METERS, KERB_BLACK);
+        // (Where the avenue dives under a crossing, its kerb goes down with it.)
+        const floor = way.sunk ? heightAlong(way, (s + until) / 2) : 0;
+        box(way, s, half, across, KERB_HALF_METERS, floor, floor + KERB_UP_METERS, KERB_YELLOW);
+        if (until > half) box(way, half, until, across, KERB_HALF_METERS, floor, floor + KERB_UP_METERS, KERB_BLACK);
       }
       made.kerbs += to - from;
     }
-    if (GANTRY_ROADS.has(way.class) && way.length > 260) {
+    if (GANTRY_ROADS.has(way.class) && !way.ramp && way.length > 260) {
       // The gantries: the first a way along (no two roads alike), then one every kilometre or so.
       const first = 120 + ((index * 197) % 400);
       for (let s = first; s < way.length - 60; s += GANTRY_EVERY_METERS) {
+        if (way.sunk && heightAlong(way, s) < -0.5) continue; // none down in a cutting
         pointAlong(way, s, a);
         const [x, y, east, north] = a;
         const half = way.width / 2 + 1;
@@ -184,6 +193,7 @@ export function medianPalms(network, { built = null, most = 1500 } = {}) {
     const side = medianSide(way);
     if (side === 0 || way.length < FROM_END_METERS * 2 + PALM_EVERY_METERS) return;
     for (let s = FROM_END_METERS + ((index * 7) % PALM_EVERY_METERS); s < way.length - FROM_END_METERS && palms.length < most; s += PALM_EVERY_METERS) {
+      if (way.sunk && heightAlong(way, s) < -0.3) continue; // the median of a cutting is down in it
       pointAlong(way, s, spot);
       const [x, y, east, north] = spot;
       // Out across the median: the nearest other carriageway that runs the other way.
