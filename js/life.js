@@ -6,6 +6,8 @@
 // Nothing here touches the browser. Positions are in metres east and north of
 // an origin, so the numbers stay small.
 
+import { shadeOnRoof } from './roofs.js';
+
 const METERS_PER_DEGREE = 111320;
 const LANE_METERS = 3.4;
 const NARROW_LANE_METERS = 2; // on a residential street, where cars are parked along both sides
@@ -365,7 +367,7 @@ function piecesOf(draft) {
 /**
  * Turn map lines into ways that can be driven.
  *
- * lines: [{ class, oneway (1, -1 or 0), tunnel, bridge, layer, service, width (metres, as drawn), coordinates: [[lng, lat], …] }]
+ * lines: [{ class, oneway (1, -1 or 0), tunnel, bridge, layer, service (the kind of service lane), width (metres, as drawn), coordinates: [[lng, lat], …] }]
  * origin: { lng, lat }
  * busStops, stations: [[lng, lat], …], the stops and stations on the map
  * Returns { ways, joins, roadKm, railKm, busKm }. A way runs from one junction
@@ -454,6 +456,7 @@ export function buildNetwork(lines, origin, { busStops = [], stations = [] } = {
         key: `${line.class}:${place6(first[0])},${place6(first[1])}:${place6(last[0])},${place6(last[1])}:${count}`,
         rail,
         class: line.class,
+        service: line.service ?? null, // what kind of service lane it is, if it is one: the lane of a car park, a driveway…
         oneway: rail ? 0 : Number(line.oneway) || 0,
         hidden: draft.hidden,
         deck: draft.level > 0 ? (rail ? RAIL_DECK_METERS : ROAD_DECK_METERS) + (draft.level - 1) * DECK_ABOVE_DECK_METERS : 0, // how high its bridge carries it
@@ -1381,16 +1384,16 @@ export function drawTraffic(mesh, traffic, light, reach, scale = 1) {
 
 // ── What stands still ─────────────────────────────────────────────────────
 
-/** A box standing at (x, y), turned so that its length runs along (east, north). */
-function drawBox(mesh, x, y, east, north, halfLength, halfWidth, low, high, colour, light, alpha = 1) {
+/** A box standing at (x, y), turned so that its length runs along (east, north). lid: the colour of its top, if not that of its sides. */
+function drawBox(mesh, x, y, east, north, halfLength, halfWidth, low, high, colour, light, alpha = 1, lid = colour) {
   const rightEast = north;
   const rightNorth = -east;
   const at = (along, across, z) => [x + east * along + rightEast * across, y + north * along + rightNorth * across, z];
-  const paintFace = (a, b, c, d, nEast, nNorth, nUp) => {
+  const paintFace = (a, b, c, d, nEast, nNorth, nUp, paint = colour) => {
     const lit = faceLight(light, nEast, nNorth, nUp);
-    mesh.face(a, b, c, d, colour[0] * lit, colour[1] * lit, colour[2] * lit, alpha);
+    mesh.face(a, b, c, d, paint[0] * lit, paint[1] * lit, paint[2] * lit, alpha);
   };
-  paintFace(at(-halfLength, -halfWidth, high), at(halfLength, -halfWidth, high), at(halfLength, halfWidth, high), at(-halfLength, halfWidth, high), 0, 0, 1);
+  paintFace(at(-halfLength, -halfWidth, high), at(halfLength, -halfWidth, high), at(halfLength, halfWidth, high), at(-halfLength, halfWidth, high), 0, 0, 1, lid);
   paintFace(at(halfLength, -halfWidth, low), at(halfLength, halfWidth, low), at(halfLength, halfWidth, high), at(halfLength, -halfWidth, high), east, north, 0);
   paintFace(at(-halfLength, halfWidth, low), at(-halfLength, -halfWidth, low), at(-halfLength, -halfWidth, high), at(-halfLength, halfWidth, high), -east, -north, 0);
   paintFace(at(-halfLength, halfWidth, low), at(halfLength, halfWidth, low), at(halfLength, halfWidth, high), at(-halfLength, halfWidth, high), rightEast, rightNorth, 0);
@@ -1403,38 +1406,95 @@ const PARKING_SLOT_METERS = 6;
 const PARKING_FROM_CORNER_METERS = 9;
 const SHELTER_PAINT = [224, 228, 232];
 const SHELTER_ROOF = [70, 82, 100];
+// Car parks. Beside the lanes of a car park cars stand in rows, nose or tail to the lane, each in a bay
+// marked out on the ground; and so they do, unmarked and fewer, beside any other service lane that has
+// room for them. The lanes are on the map. Where the bays are and how full, is made up.
+const BAYS_FULL = { parking_aisle: 0.62, lane: 0.3 };
+const NO_BAYS = new Set(['driveway', 'alley', 'drive-through', 'emergency_access']);
+const BAY_WIDE_METERS = 2.7;
+const BAY_DEEP_METERS = 5;
+const BAY_FROM_LANE_METERS = 3; // from the middle of the lane to the mouth of a bay
+const BAY_FROM_END_METERS = 7; // no bay this close to where the lane meets another
+const BAY_CLEAR_OF_STREET_METERS = 5; // room for a pavement between a street and a row of cars
+const BAY_NEAR_BUILDING_METERS = 45; // beside a lane that is no car park's, cars stand only this near a building
+const BAY_LINE_HALF_METERS = 0.07;
 
 /**
  * Fill a mesh with what stands still along the streets: cars parked at the
- * kerbs of residential streets, and a shelter at every bus stop on the map.
- * The parked cars are set out by chance, but the same way every time, so a
- * street looks the same whenever it is drawn. most: the most cars, nearest the
- * middle of the network first. Returns { parked, shelters }.
+ * kerbs of residential streets, cars in rows beside the lanes of car parks,
+ * and a shelter at every bus stop on the map. The parked cars are set out
+ * by chance, but the same way every time, so a street looks the same whenever
+ * it is drawn. most: the most cars, nearest the middle of the network first.
+ *
+ * built(x, y): whether a building stands at a spot (in the network's metres),
+ * and within: [west, south, east, north], the ground that is known for.
+ * Without them no car park is filled: a row of cars might stand in a house.
+ * near(x, y, reach): whether a building stands within reach of a spot. People
+ * park where they are going: beside a lane that is not marked as a car
+ * park's, cars stand only near a building, not out along a track through
+ * open ground.
+ *
+ * Returns { parked, shelters, bays }: all the cars, the shelters, and how
+ * many of the cars stand in car parks.
  */
-export function drawStreet(mesh, network, light, reach, most = 2500) {
+export function drawStreet(mesh, network, light, reach, most = 2500, { built = null, within = null, near = null } = {}) {
   mesh.clear();
   const spot = [0, 0, 0, 0];
   let parked = 0;
   let shelters = 0;
+  let bays = 0;
 
-  // Nearest streets first, so the cars that are left out are the far ones.
-  const streets = [];
-  network.ways.forEach((way) => {
-    if (way.rail || way.hidden || way.deck > 0 || !(PARKING[way.class] > 0) || way.length < PARKING_FROM_CORNER_METERS * 2 + PARKING_SLOT_METERS) return;
-    streets.push({ way, far: Math.hypot((way.box[0] + way.box[2]) / 2, (way.box[1] + way.box[3]) / 2) });
-  });
-  streets.sort((a, b) => a.far - b.far);
-  for (const { way } of streets) {
-    if (parked >= most) break;
+  // Every road and track, filed under the squares of ground it passes through: a bay keeps clear of them all.
+  const SQUARE = 48;
+  const squares = new Map();
+  const squareOf = (cellX, cellY) => (cellX + 32768) * 65536 + (cellY + 32768);
+  if (built) {
+    for (const way of network.ways) {
+      if (way.hidden || way.deck > 0) continue;
+      const out = way.width / 2 + BAY_CLEAR_OF_STREET_METERS + 1;
+      for (let cellX = Math.floor((way.box[0] - out) / SQUARE); cellX <= Math.floor((way.box[2] + out) / SQUARE); cellX += 1) {
+        for (let cellY = Math.floor((way.box[1] - out) / SQUARE); cellY <= Math.floor((way.box[3] + out) / SQUARE); cellY += 1) {
+          const key = squareOf(cellX, cellY);
+          if (!squares.has(key)) squares.set(key, []);
+          squares.get(key).push(way);
+        }
+      }
+    }
+  }
+  const onRoad = (x, y, own) => {
+    for (const way of squares.get(squareOf(Math.floor(x / SQUARE), Math.floor(y / SQUARE))) ?? []) {
+      if (way === own) continue;
+      const clear = way.width / 2 + (way.class === 'service' ? 0.6 : BAY_CLEAR_OF_STREET_METERS);
+      if (x < way.box[0] - clear || x > way.box[2] + clear || y < way.box[1] - clear || y > way.box[3] + clear) continue;
+      if (nearestOn(way, x, y).distance < clear) return true;
+    }
+    return false;
+  };
+  // The cars that stand in bays so far, filed the same way but finer: no two in one spot.
+  const SPOT = 4;
+  const stood = new Map();
+  const taken = (x, y) => {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (const [px, py] of stood.get(squareOf(Math.floor(x / SPOT) + dx, Math.floor(y / SPOT) + dy)) ?? []) {
+          if (Math.hypot(px - x, py - y) < 2.6) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  /** Cars at the kerbs of a residential street, both sides, facing the way they would drive off. */
+  const alongKerbs = (way) => {
     const random = seededRandom(Math.floor(unitFrom(way.key) * 4294967296));
     const aside = way.width / 2 - 0.65; // the wheels on the kerb side stand just off the edge of the road as drawn
     for (const side of [1, -1]) {
       for (let s = PARKING_FROM_CORNER_METERS + random() * PARKING_SLOT_METERS; s < way.length - PARKING_FROM_CORNER_METERS; s += PARKING_SLOT_METERS) {
-        const taken = random() < PARKING[way.class];
+        const there = random() < PARKING[way.class];
         const kind = random();
         const paint = pick(CAR_PAINT, random);
         // Nobody parks in a bus stop.
-        if (!taken || parked >= most || way.stops.some((stop) => stop.kerb === side && Math.abs(stop.at - s) < 14)) continue;
+        if (!there || parked >= most || way.stops.some((stop) => stop.kerb === side && Math.abs(stop.at - s) < 14)) continue;
         pointAlong(way, s, spot);
         // On the right of the street a car faces the way the street runs, on the left the other way, unless the street is one-way.
         const facing = side === 1 || way.oneway === 1 ? 1 : -1;
@@ -1443,6 +1503,67 @@ export function drawStreet(mesh, network, light, reach, most = 2500) {
         parked += 1;
       }
     }
+  };
+
+  /** Cars in a row of bays down each side of a service lane, wherever there is room for a bay. */
+  const besideLane = (way) => {
+    const marked = way.service === 'parking_aisle';
+    const full = marked ? BAYS_FULL.parking_aisle : BAYS_FULL.lane;
+    const random = seededRandom(Math.floor(unitFrom(`${way.key}:bays`) * 4294967296));
+    const middle = BAY_FROM_LANE_METERS + BAY_DEEP_METERS / 2;
+    const deep = BAY_DEEP_METERS / 2 + 0.5;
+    const wide = BAY_WIDE_METERS / 2;
+    for (const side of [1, -1]) {
+      for (let s = BAY_FROM_END_METERS; s <= way.length - BAY_FROM_END_METERS; s += BAY_WIDE_METERS) {
+        const car = random() < full;
+        const kind = random();
+        const paint = pick(CAR_PAINT, random);
+        const noseOut = random() < 0.7; // most drive straight in
+        pointAlong(way, s, spot);
+        // Out from the lane, to its right or to its left; and the bay's middle, where a car would stand.
+        const outX = spot[3] * side;
+        const outY = -spot[2] * side;
+        const x = spot[0] + outX * middle;
+        const y = spot[1] + outY * middle;
+        if (within && (x < within[0] || x > within[2] || y < within[1] || y > within[3])) continue;
+        if (!marked && near && !near(x, y, BAY_NEAR_BUILDING_METERS)) continue;
+        // Room for a bay: no building and no road from its mouth to its far end, across its whole width.
+        const corner = (along, across) => [x + outX * along + spot[2] * across, y + outY * along + spot[3] * across];
+        const far = corner(deep, 0);
+        if ([corner(0, 0), corner(deep, wide), corner(deep, -wide), corner(-deep * 0.6, wide), corner(-deep * 0.6, -wide)].some(([px, py]) => built(px, py)) || onRoad(x, y, way) || onRoad(far[0], far[1], way)) continue;
+        if (taken(x, y)) continue;
+        if (marked) {
+          // The line between this bay and the one before it.
+          const from = corner(-BAY_DEEP_METERS / 2, -wide);
+          const to = corner(BAY_DEEP_METERS / 2, -wide);
+          const hx = spot[2] * BAY_LINE_HALF_METERS;
+          const hy = spot[3] * BAY_LINE_HALF_METERS;
+          mesh.face([from[0] - hx, from[1] - hy, MARKS_UP_METERS], [from[0] + hx, from[1] + hy, MARKS_UP_METERS], [to[0] + hx, to[1] + hy, MARKS_UP_METERS], [to[0] - hx, to[1] - hy, MARKS_UP_METERS], LINE_PAINT[0], LINE_PAINT[1], LINE_PAINT[2], 0.85);
+        }
+        if (!car || parked >= most) continue;
+        const turned = noseOut ? 1 : -1;
+        drawVehicle(mesh, kind < 0.36 ? 'suv' : kind < 0.42 ? 'van' : 'car', x, y, outX * turned, outY * turned, paint, paint, 1, light, reach);
+        const key = squareOf(Math.floor(x / SPOT), Math.floor(y / SPOT));
+        if (!stood.has(key)) stood.set(key, []);
+        stood.get(key).push([x, y]);
+        parked += 1;
+        bays += 1;
+      }
+    }
+  };
+
+  // Streets and car parks alike, the nearest first: the cars that are left out are the far ones.
+  const places = [];
+  network.ways.forEach((way) => {
+    if (way.rail || way.hidden || way.deck > 0) return;
+    const far = Math.hypot((way.box[0] + way.box[2]) / 2, (way.box[1] + way.box[3]) / 2);
+    if (PARKING[way.class] > 0 && way.length >= PARKING_FROM_CORNER_METERS * 2 + PARKING_SLOT_METERS) places.push({ way, far, park: alongKerbs });
+    else if (built && way.class === 'service' && !NO_BAYS.has(way.service) && way.length >= BAY_FROM_END_METERS * 2 + BAY_WIDE_METERS) places.push({ way, far, park: besideLane });
+  });
+  places.sort((a, b) => a.far - b.far);
+  for (const { way, park } of places) {
+    if (parked >= most) break;
+    park(way);
   }
 
   for (const way of network.ways) {
@@ -1460,7 +1581,7 @@ export function drawStreet(mesh, network, light, reach, most = 2500) {
       shelters += 1;
     }
   }
-  return { parked, shelters };
+  return { parked, shelters, bays };
 }
 
 // ── What is painted on the roads ──────────────────────────────────────────
@@ -1826,23 +1947,68 @@ function drawVault(mesh, ring, east, north, top, light) {
   }
 }
 
-const ROOF_PAINT = [233, 230, 222]; // the roofs' own colour
+const ROOF_PAINT = [233, 230, 222]; // plaster, where a building's own colour is not known
 const PLANT_PAINT = [176, 180, 184];
-const TANK_PAINT = [214, 214, 208];
+const PLANT_LID = [120, 124, 130]; // the grille over the fans
+const UNIT_PAINT = [206, 208, 209];
+const UNIT_LID = [132, 136, 142];
+const TANK_PAINT = [230, 232, 230];
+const TANK_LID = [208, 211, 210];
+const PANEL_PAINT = [48, 64, 100]; // the glass of a solar panel
+const AWNING_PAINT = [224, 208, 178];
+const POST_PAINT = [150, 142, 128];
+const MAST_PAINT_ROOF = [210, 210, 214];
+const ROOF_SHADE_UP = 0.05; // how far above the roof the shade of what stands on it is laid
+const ROOF_SHADE_LONGEST = 8;
+// By night the light is even, and a box of one colour all round is a flat patch on its roof. What stands on
+// the roofs is given a little form then: lit as if from above and a touch from the south-west, and dimmed
+// until its top is as bright as everything else is by night.
+const NIGHT_FORM = { east: -0.2, north: -0.35, up: 0.9 };
+const NIGHT_DIM = 0.83;
+
+/** The corners of the smallest outline without dents that holds a set of points: [[x, y], …], anticlockwise. */
+export function hullOf(points) {
+  const sorted = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const turn = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = (list) => {
+    const out = [];
+    for (const point of list) {
+      while (out.length >= 2 && turn(out[out.length - 2], out[out.length - 1], point) <= 0) out.pop();
+      out.push(point);
+    }
+    out.pop();
+    return out;
+  };
+  return half(sorted).concat(half(sorted.reverse()));
+}
 
 /**
- * Fill a mesh with what stands on flat roofs: on a house the room at the head
- * of the stairs and a water tank, on a large roof rows of cooling plant.
+ * Fill a mesh with what stands on flat roofs. On a house: the room at the
+ * head of the stairs, a water tank, the outdoor halves of its air
+ * conditioners, on some an awning to sit under or a few solar panels. On a
+ * block of flats or shops more of the same, and on a large roof rows of
+ * cooling plant. On a tower the lift's machine room, plant, and on the
+ * tallest a mast.
  *
  * buildings: [{ ring: [[x, y], …] in metres, top: the height of the roof,
- * vault: true for a station }]. A station gets a long vaulted roof with a
- * strip of glass along its ridge, in place of furniture.
+ * vault: true for a station, kind: 'house', 'block', 'shops' or 'tower',
+ * wall: the colour of its walls as [red, green, blue], seed: a number of its
+ * own }]. A station gets a long vaulted roof with a strip of glass along its
+ * ridge, in place of furniture.
+ * fall: how far a shadow falls for each metre of height, [east, north], or
+ * null by night; shade: a Mesh the shade of each thing on its roof is added
+ * to (it is not emptied first).
+ *
  * Nobody maps these things, so they are made up: placed by chance, but the
- * same way every time for the same building. Returns the number of roofs furnished.
+ * same way every time for the same building. Returns the number of roofs
+ * furnished.
  */
-export function drawRoofs(mesh, buildings, light) {
+export function drawRoofs(mesh, buildings, sunlight, { fall = null, shade = null } = {}) {
   mesh.clear();
   let furnished = 0;
+  const light = sunlight ?? NIGHT_FORM;
+  const dim = sunlight ? 1 : NIGHT_DIM;
+  const toned = (paint) => (dim === 1 ? paint : paint.map((part) => part * dim));
   for (const building of buildings) {
     const ring = building.ring;
     if (!Array.isArray(ring) || ring.length < 4) continue;
@@ -1870,48 +2036,132 @@ export function drawRoofs(mesh, buildings, light) {
     const area = Math.abs(doubled) / 2;
     if (!(area > 45) || !(building.top > 0)) continue;
     if (building.vault) {
-      drawVault(mesh, ring, east, north, building.top, light);
+      drawVault(mesh, ring, east, north, building.top, sunlight);
       furnished += 1;
       continue;
     }
     const middleX = sumX / (3 * doubled);
     const middleY = sumY / (3 * doubled);
-    const random = seededRandom(Math.round(middleX * 131 + middleY * 71) + Math.round(area));
+    const random = seededRandom(Number.isFinite(building.seed) ? building.seed : Math.round(middleX * 131 + middleY * 71) + Math.round(area));
+    const top = building.top;
+    const outline = shade && fall ? ring.slice(0, -1) : null;
+    const taken = []; // what stands on this roof so far: [x, y, as far as it reaches]
     const fits = (x, y, halfLength, halfWidth) => {
       for (const [along, across] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
         if (!insideRing(ring, x + east * along * (halfLength + 0.6) + north * across * (halfWidth + 0.6), y + north * along * (halfLength + 0.6) - east * across * (halfWidth + 0.6))) return false;
       }
-      return true;
+      const reach = Math.hypot(halfLength, halfWidth);
+      return !taken.some(([tx, ty, far]) => Math.hypot(tx - x, ty - y) < far + reach * 0.8);
+    };
+    // The shade of something that stands so high on corners given as [x, y].
+    const shadeOf = (corners, height) => {
+      if (!outline) return;
+      const pull = Math.min(1, ROOF_SHADE_LONGEST / Math.max(Math.hypot(fall[0], fall[1]) * height, 0.001));
+      const dx = fall[0] * height * pull;
+      const dy = fall[1] * height * pull;
+      shadeOnRoof(shade, outline, hullOf(corners.concat(corners.map(([x, y]) => [x + dx, y + dy]))), top + ROOF_SHADE_UP);
+    };
+    const cornersOf = (x, y, halfLength, halfWidth) => [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([along, across]) => [x + east * along * halfLength + north * across * halfWidth, y + north * along * halfLength - east * across * halfWidth]);
+    const box = (x, y, halfLength, halfWidth, height, colour, lid = colour) => {
+      drawBox(mesh, x, y, east, north, halfLength, halfWidth, top, top + height, toned(colour), light, 1, toned(lid));
+      shadeOf(cornersOf(x, y, halfLength, halfWidth), height);
+      taken.push([x, y, Math.hypot(halfLength, halfWidth)]);
+    };
+    // A water tank: round, as far as six sides make it.
+    const tank = (x, y, radius, height) => {
+      const corners = [];
+      for (let i = 0; i < 6; i += 1) corners.push([x + Math.cos((i * Math.PI) / 3) * radius, y + Math.sin((i * Math.PI) / 3) * radius]);
+      for (let i = 0; i < 6; i += 1) {
+        const [x0, y0] = corners[i];
+        const [x1, y1] = corners[(i + 1) % 6];
+        const lit = faceLight(light, Math.cos(((i + 0.5) * Math.PI) / 3), Math.sin(((i + 0.5) * Math.PI) / 3), 0) * dim;
+        mesh.face([x0, y0, top], [x1, y1, top], [x1, y1, top + height], [x0, y0, top + height], TANK_PAINT[0] * lit, TANK_PAINT[1] * lit, TANK_PAINT[2] * lit, 1);
+      }
+      const lit = faceLight(light, 0, 0, 1) * dim;
+      const lidAt = (i) => [corners[i][0], corners[i][1], top + height];
+      mesh.face(lidAt(0), lidAt(1), lidAt(2), lidAt(3), TANK_LID[0] * lit, TANK_LID[1] * lit, TANK_LID[2] * lit, 1);
+      mesh.face(lidAt(0), lidAt(3), lidAt(4), lidAt(5), TANK_LID[0] * lit, TANK_LID[1] * lit, TANK_LID[2] * lit, 1);
+      shadeOf(corners, height);
+      taken.push([x, y, radius]);
     };
     // A spot part of the way from the middle towards a corner.
-    const somewhere = () => {
+    const somewhere = (least = 0.2, most = 0.7) => {
       const corner = ring[Math.floor(random() * (ring.length - 1))];
-      const share = 0.2 + random() * 0.5;
+      const share = least + random() * (most - least);
       return [middleX + (corner[0] - middleX) * share, middleY + (corner[1] - middleY) * share];
     };
-    const top = building.top;
-    let placed = 0;
-    if (area < 700 && building.top < 28) {
-      // A house or a small block: the stair head, and beside it a water tank.
-      for (let tries = 0; tries < 4 && placed === 0; tries += 1) {
-        const [x, y] = somewhere();
-        if (!fits(x, y, 2.2, 1.6)) continue;
-        drawBox(mesh, x, y, east, north, 2.2, 1.6, top, top + 2.5, ROOF_PAINT, light);
-        const tankAt = [x + east * 3.1, y + north * 3.1];
-        if (fits(tankAt[0], tankAt[1], 0.7, 0.7)) drawBox(mesh, tankAt[0], tankAt[1], east, north, 0.7, 0.7, top, top + 1.5, TANK_PAINT, light);
-        placed += 1;
+    // Put one thing somewhere it fits, in a few tries. Returns whether it found a place.
+    const place = (halfLength, halfWidth, put, tries = 5, least = 0.2, most = 0.7) => {
+      for (let n = 0; n < tries; n += 1) {
+        const [x, y] = somewhere(least, most);
+        if (!fits(x, y, halfLength, halfWidth)) continue;
+        put(x, y);
+        return true;
       }
+      return false;
+    };
+    // A row of like things along the building, as many as fit. Returns how many were put.
+    const row = (count, halfLength, halfWidth, gap, put, least = 0.45, most = 0.8) => {
+      for (let n = 0; n < 4; n += 1) {
+        const [x, y] = somewhere(least, most);
+        if (!fits(x, y, halfLength, halfWidth)) continue;
+        // Towards whichever end of the building has more room.
+        const way = (x - middleX) * east + (y - middleY) * north > 0 ? -1 : 1;
+        let stood = 0;
+        for (let k = 0; k < count; k += 1) {
+          const px = x + east * way * k * (halfLength * 2 + gap);
+          const py = y + north * way * k * (halfLength * 2 + gap);
+          if (!fits(px, py, halfLength, halfWidth)) break;
+          put(px, py);
+          stood += 1;
+        }
+        return stood;
+      }
+      return 0;
+    };
+
+    const wall = building.wall ?? ROOF_PAINT;
+    const tower = building.kind === 'tower' || top >= 60;
+    const large = area >= 700 || building.kind === 'store';
+    const before = mesh.count;
+    if (tower) {
+      // The lift's machine room, cooling plant round it, and on the tallest a mast.
+      place(3.2, 2.6, (x, y) => box(x, y, 3.2, 2.6, 3.4, wall), 6, 0, 0.35);
+      row(2 + Math.floor(random() * 3), 1.8, 1.2, 0.9, (x, y) => box(x, y, 1.8, 1.2, 1.6, PLANT_PAINT, PLANT_LID));
+      row(2 + Math.floor(random() * 3), 1.8, 1.2, 0.9, (x, y) => box(x, y, 1.8, 1.2, 1.6, PLANT_PAINT, PLANT_LID));
+      if (top >= 90) place(0.2, 0.2, (x, y) => box(x, y, 0.16, 0.16, 11, MAST_PAINT_ROOF), 10, 0, 0.5);
+    } else if (large) {
+      // A large roof: rows of cooling plant, the head of the stairs, tanks.
+      const units = Math.min(Math.max(Math.round(area / 300), 2), 10);
+      const first = row(Math.ceil(units / 2), 1.8, 1.2, 0.9, (x, y) => box(x, y, 1.8, 1.2, 1.6, PLANT_PAINT, PLANT_LID));
+      if (units - first > 0) row(units - first, 1.8, 1.2, 0.9, (x, y) => box(x, y, 1.8, 1.2, 1.6, PLANT_PAINT, PLANT_LID));
+      place(2.4, 1.8, (x, y) => box(x, y, 2.4, 1.8, 2.6, wall));
+      if (random() < 0.7) row(2, 0.75, 0.75, 0.5, (x, y) => tank(x, y, 0.75, 1.5));
     } else {
-      // A large roof: units of cooling plant, in a row along the building.
-      const units = Math.min(Math.floor(area / 350), 6);
-      for (let tries = 0; tries < units * 3 && placed < units; tries += 1) {
-        const [x, y] = somewhere();
-        if (!fits(x, y, 1.8, 1.2)) continue;
-        drawBox(mesh, x, y, east, north, 1.8, 1.2, top, top + 1.6, PLANT_PAINT, light);
-        placed += 1;
+      // A house or a block: the stair head, and beside it a water tank; the air conditioners in a row by the parapet.
+      const small = building.kind === 'house' || area < 260;
+      place(2.2, 1.6, (x, y) => {
+        box(x, y, 2.2, 1.6, 2.5, wall);
+        const tankAt = [x + east * 3.3, y + north * 3.3];
+        if (fits(tankAt[0], tankAt[1], 0.7, 0.7)) tank(tankAt[0], tankAt[1], 0.7, 1.4);
+      });
+      if (!small || random() < 0.5) place(0.75, 0.75, (x, y) => tank(x, y, 0.75, 1.5), 3);
+      row(small ? 1 + Math.floor(random() * 3) : 3 + Math.floor(random() * 4), 0.45, 0.24, 0.5, (x, y) => box(x, y, 0.45, 0.24, 0.75, UNIT_PAINT, UNIT_LID), 0.55, 0.85);
+      const extra = random();
+      if (extra < 0.16) {
+        // An awning to sit under: a sheet on four posts.
+        place(2.2, 1.7, (x, y) => {
+          drawBox(mesh, x, y, east, north, 2.2, 1.7, top + 2.3, top + 2.42, toned(AWNING_PAINT), light);
+          for (const [px, py] of cornersOf(x, y, 2.05, 1.55)) drawBox(mesh, px, py, east, north, 0.06, 0.06, top, top + 2.3, toned(POST_PAINT), light);
+          shadeOf(cornersOf(x, y, 2.2, 1.7), 2.4);
+          taken.push([x, y, 2.8]);
+        }, 4);
+      } else if (extra < 0.27) {
+        // Solar panels, flat and dark, a few in a row.
+        row(2 + Math.floor(random() * 3), 0.55, 0.9, 0.12, (x, y) => box(x, y, 0.55, 0.9, 0.22, PANEL_PAINT), 0.3, 0.7);
       }
     }
-    if (placed > 0) furnished += 1;
+    if (mesh.count > before) furnished += 1;
   }
   return furnished;
 }

@@ -13,6 +13,7 @@ import {
   faceLight,
   GLASS,
   heightAlong,
+  hullOf,
   isPalm,
   lightFrom,
   localTime,
@@ -740,9 +741,102 @@ test('cars are parked along residential streets, the same way every time, and ev
   // With the sun out every car has a shade as well; and the cars can be capped.
   drawStreet(again, network, lightFrom({ azimuth: 180, altitude: 50 }), { bearing: 0, factor: 1 });
   assert.equal(again.count, made.parked * 96 + 2 * 4 * 30);
-  assert.deepEqual(drawStreet(again, network, null, null, 5), { parked: 5, shelters: 2 });
-  assert.deepEqual(drawStreet(again, buildNetwork([], ORIGIN), null, null), { parked: 0, shelters: 0 });
+  assert.deepEqual(drawStreet(again, network, null, null, 5), { parked: 5, shelters: 2, bays: 0 });
+  assert.deepEqual(drawStreet(again, buildNetwork([], ORIGIN), null, null), { parked: 0, shelters: 0, bays: 0 });
   assert.equal(again.count, 0);
+});
+
+test('in a car park cars stand in bays beside the lanes, wherever there is room for a bay', () => {
+  const lines = [
+    line('service', [[0, 0], [100, 0]], { width: 4, service: 'parking_aisle' }), // a lane of a car park
+    line('service', [[0, 40], [100, 40]], { width: 4 }), // a service lane of no particular kind
+    line('service', [[0, 80], [100, 80]], { width: 4, service: 'driveway' }), // somebody's drive
+    line('primary', [[0, -12], [100, -12]], { width: 12 }), // a main road, close along the south side of the car park
+  ];
+  const network = buildNetwork(lines, ORIGIN);
+  assert.deepEqual(network.ways.map((way) => way.service), ['parking_aisle', null, 'driveway', null]);
+  // A building north of the car park's lane, from 60 m along it.
+  const built = (x, y) => x >= 60 && x <= 100 && y >= 2 && y <= 30;
+  const within = [-10, -50, 110, 120];
+
+  const mesh = new Mesh();
+  const made = drawStreet(mesh, network, null, null, 2500, { built, within });
+  assert.equal(made.parked, made.bays, 'no kerb here to park at');
+  // Bays are 2.7 m wide, from 7 m in to 7 m short of the end: 32 to a side. The car park's lane has them
+  // on its north side only, as far as the building (20); the other lane on both sides (64).
+  const lineCorners = 20 * 6; // a line between the bays of the car park proper, which are marked
+  assert.equal(mesh.count, made.bays * 90 + lineCorners);
+  assert.ok(made.bays >= 20 && made.bays <= 45, `six in ten of 20, three in ten of 64: ${made.bays}`);
+  const rows = { park: 0, laneSouth: 0, laneNorth: 0, lines: 0 };
+  for (let i = 0; i < mesh.count; i += 1) {
+    const x = mesh.positions[i * 3];
+    const y = mesh.positions[i * 3 + 1];
+    const z = mesh.positions[i * 3 + 2];
+    assert.ok(!built(x, y), `in the building: ${x}, ${y}`);
+    assert.ok(x > 7 - 1.5 && x < 93 + 1.5, `clear of the ends of the lanes: ${x}`);
+    if (near(z, 0.16, 1e-6) && y > 2.9 && y < 8.1) {
+      rows.lines += 1; // a line of paint on the ground, the depth of a bay
+      continue;
+    }
+    // A car stands across its bay, nose or tail to the lane: its middle 5.5 m from the middle of the lane.
+    assert.ok(z > 0.01 && z < 2, `${z}`);
+    if (Math.abs(y - 5.5) <= 2.7) rows.park += 1;
+    else if (Math.abs(y - 34.5) <= 2.7) rows.laneSouth += 1;
+    else if (Math.abs(y - 45.5) <= 2.7) rows.laneNorth += 1;
+    else assert.fail(`a car out of its row: ${x}, ${y}`);
+  }
+  assert.equal(rows.lines, lineCorners);
+  assert.ok(rows.park > 0 && rows.laneSouth > 0 && rows.laneNorth > 0, JSON.stringify(rows));
+  assert.ok(rows.park / 90 >= 8 && rows.park / 90 <= 17, `about six bays in ten taken: ${rows.park / 90}`);
+  // No two cars share a spot: their middles are at least a bay apart.
+  const middles = [];
+  for (let i = 0; i + 90 <= mesh.count; ) {
+    if (near(mesh.positions[i * 3 + 2], 0.16, 1e-6) && near(mesh.positions[(i + 5) * 3 + 2], 0.16, 1e-6)) {
+      i += 6;
+      continue;
+    }
+    let x = 0;
+    let y = 0;
+    for (let k = 30; k < 60; k += 1) {
+      x += mesh.positions[(i + k) * 3] / 30;
+      y += mesh.positions[(i + k) * 3 + 1] / 30;
+    }
+    middles.push([x, y]);
+    i += 90;
+  }
+  assert.equal(middles.length, made.bays);
+  for (let a = 0; a < middles.length; a += 1) {
+    for (let b = a + 1; b < middles.length; b += 1) assert.ok(Math.hypot(middles[a][0] - middles[b][0], middles[a][1] - middles[b][1]) > 2.5);
+  }
+
+  // The same car park is filled the same way every time.
+  const again = new Mesh();
+  assert.deepEqual(drawStreet(again, buildNetwork(lines, ORIGIN), null, null, 2500, { built, within }), made);
+  assert.deepEqual(Array.from(again.positions.subarray(0, again.count * 3)), Array.from(mesh.positions.subarray(0, mesh.count * 3)));
+  // Only on the ground the buildings are known for; and with no word about buildings at all, not anywhere.
+  const part = drawStreet(again, network, null, null, 2500, { built, within: [-10, -50, 50, 120] });
+  assert.ok(part.bays > 0 && part.bays < made.bays);
+  for (let i = 0; i < again.count; i += 1) assert.ok(again.positions[i * 3] < 50 + 2.7);
+  assert.deepEqual(drawStreet(again, network, null, null), { parked: 0, shelters: 0, bays: 0 });
+  // Beside a lane that is no car park's, cars stand only where a building is near; a car park is a car park wherever it is.
+  // (Here "near" is taken to be within 12 m, to tell the two ends of the lane apart; the app asks about 45 m.)
+  const asked = new Set();
+  const fromTheBuilding = (x, y) => Math.hypot(Math.max(60 - x, 0, x - 100), Math.max(2 - y, 0, y - 30));
+  const few = drawStreet(again, network, null, null, 2500, { built, within, near: (x, y, reach) => asked.add(reach) && fromTheBuilding(x, y) <= 12 });
+  assert.deepEqual([...asked], [45]);
+  assert.ok(few.bays > 0 && few.bays < made.bays, `${few.bays} of ${made.bays}`);
+  let inThePark = 0;
+  for (let i = 0; i < again.count; i += 1) {
+    const x = again.positions[i * 3];
+    const y = again.positions[i * 3 + 1];
+    if (Math.abs(y - 5.5) <= 2.7 || (y > 2.9 && y < 8.1)) inThePark += 1;
+    else assert.ok(fromTheBuilding(x, y) <= 12 + 3, `a car out in the open: ${x}, ${y}`);
+  }
+  assert.equal(inThePark, rows.park + lineCorners, 'the car park itself is as full as before');
+  // The cars can be capped, and each has its shade when the sun is out.
+  assert.equal(drawStreet(again, network, null, null, 7, { built, within }).bays, 7);
+  drawStreet(again, network, lightFrom({ azimuth: 180, altitude: 50 }), { bearing: 0, factor: 1 }, 2500, { built, within });
+  assert.equal(again.count, made.bays * 96 + lineCorners);
 });
 
 test('on a residential street the moving cars keep clear of the parked ones', () => {
@@ -761,39 +855,97 @@ test('on a residential street the moving cars keep clear of the parked ones', ()
   assert.ok(seen > 20, String(seen));
 });
 
-test('roofs get their furniture: a stair head and a tank on a house, cooling plant on a large roof', () => {
+test('roofs get their furniture: stair head, tank and air conditioners on a house, plant on a large roof, more on a tower', () => {
   const rect = (x, y, width, depth) => [[x, y], [x + width, y], [x + width, y + depth], [x, y + depth], [x, y]];
-  const house = { ring: rect(0, 0, 14, 12), top: 9 };
-  const hall = { ring: rect(100, 0, 60, 40), top: 15 };
+  const house = { ring: rect(0, 0, 14, 12), top: 9, kind: 'house', seed: 11 };
+  const hall = { ring: rect(100, 0, 60, 40), top: 15, kind: 'block', seed: 12 };
+  const tower = { ring: rect(300, 0, 40, 40), top: 120, kind: 'tower', seed: 13 };
   const shed = { ring: rect(200, 0, 5, 6), top: 4 }; // too small to bother with
   const mesh = new Mesh();
-  assert.equal(drawRoofs(mesh, [house, hall, shed, { ring: [[0, 0], [1, 1]], top: 5 }, { ring: rect(300, 0, 20, 20), top: 0 }], null), 2);
-  const boxes = { house: 0, hall: 0 };
+  assert.equal(drawRoofs(mesh, [house, hall, tower, shed, { ring: [[0, 0], [1, 1]], top: 5 }, { ring: rect(400, 0, 20, 20), top: 0 }], null), 3);
+  const corners = { house: 0, hall: 0, tower: 0 };
+  const tallest = { house: 0, hall: 0, tower: 0 };
   for (let i = 0; i < mesh.count; i += 1) {
     const x = mesh.positions[i * 3];
     const y = mesh.positions[i * 3 + 1];
     const z = mesh.positions[i * 3 + 2];
-    if (x < 50) {
-      boxes.house += 1;
-      // Standing on the roof, well inside its edge, no taller than a small room.
-      assert.ok(x > 0.5 && x < 13.5 && y > 0.5 && y < 11.5 && z >= 9 - 1e-6 && z <= 11.5 + 1e-6, `${x}, ${y}, ${z}`);
-    } else {
-      boxes.hall += 1;
-      assert.ok(x > 100.5 && x < 159.5 && y > 0.5 && y < 39.5 && z >= 15 - 1e-6 && z <= 16.6 + 1e-6, `${x}, ${y}, ${z}`);
-    }
+    // Everything stands on its roof, well inside its edge.
+    const [name, roof] = x < 50 ? ['house', house] : x < 250 ? ['hall', hall] : ['tower', tower];
+    const [[west, south], , [east, north]] = roof.ring;
+    corners[name] += 1;
+    tallest[name] = Math.max(tallest[name], z - roof.top);
+    assert.ok(x > west + 0.5 && x < east - 0.5 && y > south + 0.5 && y < north - 0.5 && z >= roof.top - 1e-4, `${name}: ${x}, ${y}, ${z}`);
   }
-  assert.ok(boxes.house === 30 || boxes.house === 60, `stair head, and a tank if there is room: ${boxes.house}`);
-  assert.ok(boxes.hall >= 60 && boxes.hall <= 180 && boxes.hall % 30 === 0, `some units of plant: ${boxes.hall}`);
-  // The same building is furnished the same way every time; lit by the sun, its faces differ.
+  // A house: the room at the head of the stairs, as tall as a small room; perhaps a tank, air conditioners, an awning.
+  assert.ok(corners.house >= 30 && corners.house % 6 === 0 && near(tallest.house, 2.5, 1e-4), `${corners.house} corners, ${tallest.house} m`);
+  // A hall: cooling plant in rows, and the head of its stairs.
+  assert.ok(corners.hall >= 3 * 30 && near(tallest.hall, 2.6, 1e-4), `${corners.hall} corners, ${tallest.hall} m`);
+  // A tower: the lift's machine room, plant, and a mast on one this tall.
+  assert.ok(corners.tower >= 3 * 30 && near(tallest.tower, 11, 1e-4), `${corners.tower} corners, ${tallest.tower} m`);
+  // The same building is furnished the same way every time; another building of the same shape, otherwise.
   const again = new Mesh();
-  drawRoofs(again, [house, hall], null);
+  drawRoofs(again, [house, hall, tower], null);
   assert.deepEqual(Array.from(again.positions.subarray(0, again.count * 3)), Array.from(mesh.positions.subarray(0, mesh.count * 3)));
+  const other = new Mesh();
+  drawRoofs(other, [{ ...house, seed: 5012 }], null);
+  drawRoofs(again, [house], null);
+  assert.notDeepEqual(Array.from(other.positions.subarray(0, 18)), Array.from(again.positions.subarray(0, 18)));
+  // The head of the stairs is in the colour of the building's walls.
+  drawRoofs(again, [{ ...house, wall: [200, 100, 50] }], null);
+  assert.deepEqual([...again.colours.subarray(0, 4)], [160, 80, 40, 255], 'by night: an even light, eight tenths');
+  // Lit by the sun, its faces differ.
   drawRoofs(again, [house], lightFrom({ azimuth: 135, altitude: 45 }));
   const shades = new Set();
   for (let i = 0; i < again.count; i += 6) shades.add(again.colours[i * 4]);
   assert.ok(shades.size >= 3, 'top, sunny side and far side');
   assert.equal(drawRoofs(again, [], null), 0);
   assert.equal(again.count, 0);
+});
+
+test('what stands on a roof throws its shade on the roof, and no further', () => {
+  const rect = (x, y, width, depth) => [[x, y], [x + width, y], [x + width, y + depth], [x, y + depth], [x, y]];
+  const house = { ring: rect(0, 0, 14, 12), top: 9, kind: 'house', seed: 11 };
+  const hall = { ring: rect(100, 0, 60, 40), top: 15, kind: 'block', seed: 12 };
+  const mesh = new Mesh();
+  const shade = new Mesh();
+  // The sun low in the south-east: a shadow three metres long for each metre of height, falling north-west.
+  const fall = [-2.1, 2.1];
+  drawRoofs(mesh, [house, hall], lightFrom({ azimuth: 135, altitude: 20 }), { fall, shade });
+  assert.ok(shade.count >= 6 && shade.count % 3 === 0, String(shade.count));
+  let area = 0;
+  for (let i = 0; i < shade.count; i += 1) {
+    const x = shade.positions[i * 3];
+    const y = shade.positions[i * 3 + 1];
+    const z = shade.positions[i * 3 + 2];
+    const roof = x < 50 ? house : hall;
+    const [[west, south], , [east, north]] = roof.ring;
+    // Just above its own roof, and cut off at the roof's edge however long the shadow.
+    assert.ok(near(z, roof.top + 0.05, 1e-4) && x >= west - 1e-4 && x <= east + 1e-4 && y >= south - 1e-4 && y <= north + 1e-4, `${x}, ${y}, ${z}`);
+    assert.deepEqual([...shade.colours.subarray(i * 4, i * 4 + 4)], [6, 8, 13, 107]);
+    if (i % 3 === 0) {
+      const p = (k) => [shade.positions[(i + k) * 3], shade.positions[(i + k) * 3 + 1]];
+      area += Math.abs((p(1)[0] - p(0)[0]) * (p(2)[1] - p(0)[1]) - (p(2)[0] - p(0)[0]) * (p(1)[1] - p(0)[1])) / 2;
+    }
+  }
+  assert.ok(area > 20, `more than the things themselves cover: ${area}`);
+  // The mesh the shade goes into is added to, not emptied: the parapets' shade may be in it already.
+  const before = shade.count;
+  drawRoofs(mesh, [house], lightFrom({ azimuth: 135, altitude: 20 }), { fall, shade });
+  assert.ok(shade.count > before);
+  // By night there is no shade; nor without a mesh to put it in.
+  const none = new Mesh();
+  drawRoofs(mesh, [house, hall], null, { fall: null, shade: none });
+  assert.equal(none.count, 0);
+  assert.equal(drawRoofs(mesh, [house, hall], null, { fall }), 2);
+});
+
+test('hullOf finds the outline without dents round a set of points', () => {
+  const hull = hullOf([[0, 0], [4, 0], [4, 3], [0, 3], [2, 1], [1, 2], [3, 3], [4, 0]]);
+  assert.deepEqual(hull, [[0, 0], [4, 0], [4, 3], [0, 3]], 'anticlockwise from the lowest of the leftmost; what lies inside or along an edge is left out');
+  // A box and the same box moved: six corners.
+  const moved = hullOf([[0, 0], [2, 0], [2, 1], [0, 1], [3, 2], [5, 2], [5, 3], [3, 3]]);
+  assert.equal(moved.length, 6);
+  assert.deepEqual(hullOf([[1, 1], [2, 2]]), [[1, 1], [2, 2]]);
 });
 
 test('a bridge carries its road over the ground, with a ramp at either end, and the traffic goes up with it', () => {
@@ -827,7 +979,7 @@ test('a bridge carries its road over the ground, with a ramp at either end, and 
   // No bus stops on a bridge, and nobody parks on one.
   assert.equal(small.stops.length, 0);
   const street = new Mesh();
-  assert.deepEqual(drawStreet(street, buildNetwork([lines[7]], ORIGIN), null, null), { parked: 0, shelters: 0 });
+  assert.deepEqual(drawStreet(street, buildNetwork([lines[7]], ORIGIN), null, null), { parked: 0, shelters: 0, bays: 0 });
 
   // A car on the flyover is drawn up on its deck; one on the street below, on the ground.
   const traffic = new Traffic({ seed: 2, most: 0, now: () => MORNING });

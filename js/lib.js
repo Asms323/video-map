@@ -1040,6 +1040,7 @@ export function buildingFootprints(features, box, estimates, skip) {
         kind,
         ...(properties.subtype ? { use: properties.subtype } : {}),
         ...(properties.facade_color ? { colour: properties.facade_color } : {}),
+        ...(properties.roof_color ? { roofColour: properties.roof_color } : {}),
         // Which map tile this copy of the building came with: one that lies across the edge of a tile comes with both.
         ...(Number.isInteger(feature._z) ? { tile: [feature._z, feature._x, feature._y] } : {}),
         polygons,
@@ -1069,7 +1070,7 @@ const PATH_METERS = 2.2;
  * are laid by rule, the same along every street of a kind.
  */
 export const PAVEMENT_METERS = { minor: 2.6, mid: 3.5, main: 4.5 };
-const PAVING = '#d5cfc2'; // paving stones
+const PAVING = '#e2dfd8'; // paving stones: paler and greyer than the bare ground beside them
 const PAVING_EDGE = '#9f9a8e'; // where the pavement ends against the plots
 const KERB = '#f1eee8'; // the kerb stone between the pavement and the road
 
@@ -1234,6 +1235,8 @@ export const VECTOR_SOURCE = 'openmaptiles';
 
 // ── The satellite photo ───────────────────────────────────────────────────
 
+// What the 3D city says of the photo it reads but does not show.
+export const PHOTO_READ_CREDIT = 'Trees, heights and colours read from imagery © Esri, Maxar, Earthstar Geographics';
 // The photo reaches the map by a way of the app's own ("photo://level/row/column"), which knows how
 // sharp the photo comes for each stretch of ground (see photoProtocol in services.js).
 const PHOTO_TILES = 'photo://{z}/{y}/{x}';
@@ -1365,25 +1368,39 @@ export function detailedStyle(base) {
 }
 
 /**
- * The city as a white scale model: every building a white block standing on
- * earth-coloured ground, with grey roads drawn at their real widths. Meant to
- * be looked at tilted, from above.
+ * The ground of the 3D city. All of it is drawn; none of it is a photo. Bare
+ * ground between the buildings is the colour of the sand and dust it is in a
+ * desert city, and whatever the map knows more about has a colour of its own:
+ * lawns and gardens, dry scrub, sand, the grounds of a school or a hospital,
+ * the yards of works and warehouses, the forecourts of shops, paved squares,
+ * playing fields, water, and the swimming pools in the gardens.
  */
-/**
- * How the satellite photo is toned in the 3D city: a little paled from afar,
- * so that it reads as sunlit ground and shadows show on it, and all but as
- * it is from close by, where its detail is: the yards, the parking bays, what
- * is on the roofs. The numbers are the map's own raster settings at the two
- * zooms between which they change. (The roofs show the ground as it is on
- * screen, so they are toned with it.)
- */
-export const GROUND_LOOK = {
-  background: '#d9d2c5',
-  far: { zoom: 15.5, opacity: 0.86, saturation: -0.22, contrast: 0, brightnessMin: 0.14 },
-  near: { zoom: 17.5, opacity: 1, saturation: -0.06, contrast: 0.06, brightnessMin: 0.04 },
+export const GROUND = {
+  plot: '#d1c5aa',
+  shops: '#dbd4c6',
+  works: '#cdc6b8',
+  campus: '#dcd1ba',
+  lawn: '#a6bf8c',
+  scrub: '#bcbd95',
+  wood: '#8fab7b',
+  fields: '#c3c698',
+  sand: '#e3d7b6',
+  rock: '#cbc5b9',
+  pitch: '#97bb84',
+  playground: '#d6c79e',
+  track: '#c58f72',
+  cemetery: '#b7bca4',
+  water: '#8fb4cc',
+  pool: '#62c0d8',
+  poolRim: '#f2efe8',
 };
 
-export function cityModelStyle(base, { buildings = null, pixelRatio = 1 } = {}) {
+/**
+ * The city as a scale model: every building standing on its own outline on
+ * drawn ground, with grey roads at their real widths. Meant to be looked at
+ * tilted, from above.
+ */
+export function cityModelStyle(base, { buildings = null } = {}) {
   const isLine = ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false];
   const isArea = ['match', ['geometry-type'], ['MultiPolygon', 'Polygon'], true, false];
   // Roads in tunnels and on bridges are drawn apart from the ones on the ground.
@@ -1466,13 +1483,15 @@ export function cityModelStyle(base, { buildings = null, pixelRatio = 1 } = {}) 
     ...WALL_DETAILS.flatMap((detail, index) => (detail ? [detail.zoom, pictureName(index, kind)] : [])),
   ];
   const ROOF = '#e9e6de';
-  const groundStops = (name) => ['interpolate', ['linear'], ['zoom'], GROUND_LOOK.far.zoom, GROUND_LOOK.far[name], GROUND_LOOK.near.zoom, GROUND_LOOK.near[name]];
-  const groundPaint = {
-    'raster-opacity': groundStops('opacity'),
-    'raster-saturation': groundStops('saturation'),
-    'raster-contrast': groundStops('contrast'),
-    'raster-brightness-min': groundStops('brightnessMin'),
-  };
+  /** The areas of some kinds in one of the street map's layers, filled with a colour picked by kind. */
+  const areaLayer = (id, layer, kinds, colour) => ({
+    id,
+    type: 'fill',
+    source: VECTOR_SOURCE,
+    'source-layer': layer,
+    filter: ['all', isArea, ['match', ['get', 'class'], kinds, true, false]],
+    paint: { 'fill-color': colour },
+  });
   /** Walls with windows for the features of one map layer that pass a filter. */
   const walls = (id, kind, source, layer, filter, height, floor) => ({
     id,
@@ -1611,11 +1630,9 @@ export function cityModelStyle(base, { buildings = null, pixelRatio = 1 } = {}) 
     },
     sources: {
       [VECTOR_SOURCE]: base.sources[VECTOR_SOURCE],
-      // (The coarse photo first: a map fetches for its sources in the order they are named.)
-      ...(photoUnderlay(pixelRatio) ? { 'imagery-base': photoUnderlay(pixelRatio) } : {}),
-      imagery: photoSource(pixelRatio),
       // The shadows the buildings cast; the app fills this in as the sun and the view move.
-      'city-shade': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+      // (The photo is not shown, but it is read: for the trees, for heights and for colours. Its makers are named for that.)
+      'city-shade': { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, attribution: PHOTO_READ_CREDIT },
       // The landmark towers, modelled by hand as stacks of slabs.
       'city-landmarks': { type: 'geojson', data: landmarkSlabs() },
       // Built by the app around what the map shows: the footbridges and pavilions of metro stations, the fronts of chain stores.
@@ -1626,43 +1643,79 @@ export function cityModelStyle(base, { buildings = null, pixelRatio = 1 } = {}) 
         : {}),
     },
     layers: [
-      { id: 'background', type: 'background', paint: { 'background-color': GROUND_LOOK.background } },
-      // Real ground: the satellite photo, a little paled from afar so that shadows show on it, and all but
-      // as it is from close by, where its detail is: the yards, the parking bays and the paving.
-      // (Under the sharp photo lies the coarse one, which is there at once.)
-      ...(photoUnderlay(pixelRatio) ? [{ id: 'city-ground-base', type: 'raster', source: 'imagery-base', paint: groundPaint }] : []),
-      { id: 'city-ground', type: 'raster', source: 'imagery', paint: groundPaint },
+      // Bare ground: sand and dust.
+      { id: 'background', type: 'background', paint: { 'background-color': GROUND.plot } },
+      // What the ground is used for, where the map says: the forecourts of shops and offices, the yards of
+      // works, the grounds of schools and hospitals. (Where people live it is left as bare ground.)
+      areaLayer('city-land', 'landuse', ['commercial', 'retail', 'industrial', 'garages', 'railway', 'bus_station', 'quarry', 'school', 'university', 'college', 'kindergarten', 'library', 'hospital'], [
+        'match',
+        ['get', 'class'],
+        ['commercial', 'retail'],
+        GROUND.shops,
+        ['industrial', 'garages', 'railway', 'bus_station', 'quarry'],
+        GROUND.works,
+        GROUND.campus,
+      ]),
+      // A nature reserve or a great park: a wash of green over all of it.
       {
         id: 'city-green',
         type: 'fill',
         source: VECTOR_SOURCE,
         'source-layer': 'park',
-        filter: ['match', ['geometry-type'], ['MultiPolygon', 'Polygon'], true, false],
-        paint: { 'fill-color': '#8f9b78', 'fill-opacity': 0.45 },
+        filter: isArea,
+        paint: { 'fill-color': GROUND.lawn, 'fill-opacity': 0.35 },
       },
-      // Lawns, gardens and woods, and the playing fields and playgrounds among them.
+      // What grows on the ground, or does not: lawns and gardens, dry scrub, woods, fields, open sand, rock.
+      areaLayer('city-grass', 'landcover', ['grass', 'wood', 'farmland', 'sand', 'rock', 'wetland'], [
+        'match',
+        ['get', 'class'],
+        'wood',
+        GROUND.wood,
+        'farmland',
+        GROUND.fields,
+        'sand',
+        GROUND.sand,
+        'rock',
+        GROUND.rock,
+        ['match', ['get', 'subclass'], ['scrub', 'shrubbery', 'grassland', 'heath'], GROUND.scrub, GROUND.lawn],
+      ]),
+      // Playing fields and running tracks, playgrounds, graveyards.
+      areaLayer('city-pitch', 'landuse', ['pitch', 'playground', 'track', 'cemetery'], ['match', ['get', 'class'], 'cemetery', GROUND.cemetery, 'playground', GROUND.playground, 'track', GROUND.track, GROUND.pitch]),
+      // Squares and other paved ground for walking on.
       {
-        id: 'city-grass',
+        id: 'city-squares',
         type: 'fill',
         source: VECTOR_SOURCE,
-        'source-layer': 'landcover',
-        filter: ['all', isArea, ['match', ['get', 'class'], ['grass', 'wood', 'farmland'], true, false]],
-        paint: { 'fill-color': ['match', ['get', 'class'], 'wood', '#7f9470', '#9bab82'], 'fill-opacity': 0.5 },
-      },
-      {
-        id: 'city-pitch',
-        type: 'fill',
-        source: VECTOR_SOURCE,
-        'source-layer': 'landuse',
-        filter: ['all', isArea, ['match', ['get', 'class'], ['pitch', 'playground', 'cemetery'], true, false]],
-        paint: { 'fill-color': ['match', ['get', 'class'], 'cemetery', '#a3ad95', '#8fae7c'], 'fill-opacity': 0.5 },
+        'source-layer': 'transportation',
+        filter: ['all', isArea, ['!', inTunnel], ['match', ['get', 'class'], ['path', 'pier'], true, false]],
+        paint: { 'fill-color': PAVING, 'fill-outline-color': PAVING_EDGE },
       },
       {
         id: 'city-water',
         type: 'fill',
         source: VECTOR_SOURCE,
         'source-layer': 'water',
-        paint: { 'fill-color': '#8fa7b8' },
+        filter: ['!=', ['get', 'class'], 'swimming_pool'],
+        paint: { 'fill-color': GROUND.water },
+      },
+      // The swimming pools in the gardens: bright water in a pale rim.
+      {
+        id: 'city-pools',
+        type: 'fill',
+        source: VECTOR_SOURCE,
+        'source-layer': 'water',
+        minzoom: 14,
+        filter: ['==', ['get', 'class'], 'swimming_pool'],
+        paint: { 'fill-color': GROUND.pool },
+      },
+      {
+        id: 'city-pool-rims',
+        type: 'line',
+        source: VECTOR_SOURCE,
+        'source-layer': 'water',
+        minzoom: 15.5,
+        filter: ['==', ['get', 'class'], 'swimming_pool'],
+        paint: { 'line-color': GROUND.poolRim, 'line-width': widthOf(0.7) },
       },
       // Roads underground: only a faint broken trace of where they run.
       lineLayer(

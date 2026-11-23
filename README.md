@@ -17,8 +17,12 @@ the phone: no App Store, no Apple developer account, no Mac.
 - **3D City**, the look it opens with: the city as an **isometric** scale
   model. It is seen corner-on from the classic isometric angle, through a lens
   so long that parallel streets stay parallel. **Every building stands on its
-  own outline**, a house at a time, on the real ground, with grey roads at
-  their real widths.
+  own outline**, a house at a time, with grey roads at their real widths.
+- **All of it drawn, in 3D. No satellite photo is shown.** The ground, the
+  roofs, the walls and everything standing on them is modelled or drawn from
+  map data. The satellite photo is only read, out of sight, for three things
+  no map has: where the trees stand, how tall the buildings are, and what
+  colour their roofs are.
 - **Walls worked out point by point.** Every wall is set out in floors and
   bays, and each point of it is worked out as it is drawn: wall or glass, the
   frame round a window and the sill under it, the shade the window's head
@@ -42,19 +46,22 @@ the phone: no App Store, no Apple developer account, no Mac.
 - **Buildings shade each other.** A tower's shadow does not stop at the next
   wall: it runs up it, across the roof, and on down the other side, on over
   the cars and trees in the street, in step with the shadows on the ground.
-- **A sharp photo of the ground.** The satellite photo under the city is
-  fetched as sharp as the phone's screen can show it: in a city like Riyadh
-  down to about 30 cm to a pixel, where parked cars and the plant on a roof
-  can be made out. (A phone's screen has two or three real pixels to each one
-  a map counts in; a map that does not know that shows the photo stretched
-  and soft.) A coarse copy lies under it and is there at once, so the ground
-  is never bare while the sharp one comes in. The sharp photo takes several
-  times the download, and can be switched off under the map options.
-- **Real roofs.** Every building up to 32 m tall carries its own roof: the
-  satellite photo of the very ground it stands on, lifted onto the building,
-  as sharp as the ground beside it. Its real colour, its tanks, its cooling
-  plant, its skylights. Seen from above, as a city mostly is, that is most of
-  what there is to see of a building.
+- **A roof on every building, modelled.** Each roof is cut along its
+  building's outline and laid inside its parapet, in the colour its real roof
+  has: sand, grey, white, the red of tiles. Low buildings are roofed with
+  concrete slabs, their joints showing from close by; tall ones with gravel;
+  works, sheds and stores with ribbed metal sheet. A parapet has thickness: a
+  coping along its top and an inner side, and it throws a strip of shade on
+  its own roof that grows as the sun sinks.
+- **What stands on a roof.** On a house the room at the head of the stairs, a
+  white water tank, the outdoor halves of its air conditioners in a row, on
+  some an awning to sit under or a few solar panels. On a block more of the
+  same; on a large roof rows of cooling plant; on a tower the lift's machine
+  room, and a mast on the tallest. Each throws its shade across the roof.
+- **Car parks full of cars.** Beside the lanes of a car park, and beside
+  other service lanes that have the room, cars stand in rows of bays, nose
+  or tail to the lane, with the bays of a proper car park marked out in
+  white. Never in a building, on a road, on a pavement or against a tree.
 - **Riyadh's landmarks, modelled by hand.** Kingdom Centre with its arch and
   sky bridge, Al Faisaliah with its golden globe, the PIF Tower, Burj Rafal,
   the twisting Al Majdoul Tower, the TV Tower, the striped water tower and
@@ -112,25 +119,33 @@ the phone: no App Store, no Apple developer account, no Mac.
 - **Heights from shadows.** Few ordinary buildings have a height on record.
   The app looks up the day the satellite photo was taken, works out where the
   sun stood, measures each building's shadow in the photo and stands the
-  building up to match. An estimate; see the limits below. The roofs, the
-  trees and these heights can be switched off together under the map options.
-- **The ground in detail**: the satellite photo itself, shown stronger the
-  closer you look, and from the map data tunnels as a faint trace, metro and
-  railway lines, footpaths, lawns and playing fields.
+  building up to match. An estimate; see the limits below. The trees, these
+  heights and the colours read from the photo can be switched off together
+  under the map options, which also saves the download of the photo.
+- **The ground in detail**, all of it drawn from the map data: bare plots the
+  colour of sand and dust, lawns and gardens, dry scrub, woods, open sand,
+  the grounds of schools and hospitals, the yards of works, the forecourts of
+  shops, paved squares, playing fields and running tracks, ponds, the
+  swimming pools in the gardens; and tunnels as a faint trace, metro and
+  railway lines, footpaths.
 - **Real sunlight.** The model is lit from where the sun actually is at that
   place and time, and every building casts the shadow it casts right now:
   long in the morning and evening, short at noon, none after sunset.
 - Drawing the walls window by window and working out the shadows on them is
   more work for the phone with every picture. If the map moves slowly, both
   can be switched off under the map options ("Detailed walls and shadows");
-  the walls are then plain, with a simple pattern of windows. (On a computer
-  that draws without a graphics chip, at a phone's sharpness, a picture takes
-  8 to 24 per cent longer with them. What they cost on a phone's own
-  graphics chip has not been measured.)
+  the walls are then plain, with a simple pattern of windows, and the roofs
+  stay. (On a computer that draws without a graphics chip, at a phone's
+  sharpness, a picture takes 6 to 33 per cent longer with them. What they
+  cost on a phone's own graphics chip has not been measured.)
 - Four more looks: **Streets** (colours and icons), **Night**, **Satellite**
   (real photos with the names on top) and **Detailed** (the classic
   OpenStreetMap picture). **Auto** shows 3D City by day and Night when the
-  phone is in dark mode.
+  phone is in dark mode. In the Satellite look the photo is fetched as sharp
+  as the phone's screen can show it (in a city like Riyadh down to about
+  30 cm to a pixel), with a coarse copy under it that is there at once; that
+  takes several times the download, and can be switched off under the map
+  options.
 - Your position, direction of travel and speed. The round button switches
   between a view that does not turn (isometric in the 3D city, north-up in
   the other looks) and a **driving view** where the road ahead points up.
@@ -162,7 +177,7 @@ Everything is free and needs no account or key.
 | What | From | Notes |
 | --- | --- | --- |
 | Street map, names, places, road names | [OpenFreeMap](https://openfreemap.org), built from [OpenStreetMap](https://www.openstreetmap.org/copyright) | Drawn on the phone by [MapLibre](https://maplibre.org) |
-| Satellite photos, the ground under the 3D city, and the roofs of its buildings | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. How sharp the photo comes differs from place to place: the service is asked, a square of tiles at a time, and only what it has is fetched. The roofs are filled from the ground as it is on screen, and cost no download of their own. Also read on the phone for trees and shadows, and asked once per area for the day the photo was taken |
+| Satellite photos | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. Shown only in the Satellite look. How sharp the photo comes differs from place to place: the service is asked, a square of tiles at a time, and only what it has is fetched. In the 3D city the photo is never shown: it is read on the phone, at one middling level of sharpness, for trees, shadows and the colours of roofs, and the service is asked once per area for the day the photo was taken |
 | One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
 | Detailed map picture | OpenStreetMap tile servers | [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
 | Place details, speed limits | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits |
@@ -221,21 +236,20 @@ outlines do not say is made up to look right:
   are not the colour of its roof. Where the photo is switched off or shows
   too little, a building gets one of seven pale shades of plaster, picked by
   its number in the map data. A recorded colour is always used as it is.
-- Roofs. A building up to 32 m tall shows the satellite photo of its own roof.
-  The photo is taken a little from the side, so a building leans in it: the
-  taller the building, the further its roof lies from where the outline says,
-  and a strip of its wall or of the street can show along one edge. That is
-  why taller buildings are left out; their roofs are flat and plain, with a
-  stair head, a tank or cooling plant placed by chance. So are all roofs when
-  the photo is switched off or cannot be had. The photo also carries the
-  shadows of the hour it was taken at, which are not those of the hour it is.
-  A roof is filled from the ground as it is on screen. At the very bottom
-  edge of the picture a roof stands over ground that is off screen, and
-  shows a mirror image of the ground just above the edge instead.
+- Roofs. Every roof is drawn flat, inside a parapet 60 cm tall and 30 cm
+  thick: real for nearly every roof in Riyadh, wrong for the few that are
+  pitched or domed. Its colour is the one the satellite photo shows where the
+  sun is on the roof, calmed and evened out; for a building over 40 m, whose
+  roof leans away from its outline in the photo, and wherever the photo is
+  switched off or shows too little, it is one of seven usual shades, picked
+  by the building's number. What a roof is covered with goes by rule (slabs
+  on a low building, gravel on one of 28 m and more, sheet on works and
+  stores). What stands on it is made up: placed by chance, the same way
+  every time for the same building. None of it is what is really up there.
 - A tower's special shape is not known, only its outline and height (the
   landmarks below are the exception). A building recorded in parts is drawn
-  as its parts, and where the parts do not cover all of it the rest shows as
-  the photo on the ground.
+  as its parts, and where the parts do not cover all of it the rest is bare
+  ground.
 
 Landmarks. Eight of Riyadh's are modelled by hand, as stacks of thin slabs
 that follow the building's shape: Kingdom Centre, Al Faisaliah Tower, the PIF
@@ -308,12 +322,20 @@ mosque's dome and minaret stand, and how tall the minaret is, is not known:
 the dome is put in the middle of the roof, the minaret at a corner picked by
 chance, and both are sized to the building.
 
-The photo. How sharp it is depends on what the service has for a place: about
-30 cm to a pixel in Riyadh and other large cities, coarser in small towns and
-open country, where the map shows the sharpest level there is. By a rough
-count a sharp photo is some tens of megabytes of download for an hour's
-driving, where the coarser one is a few; the same streets driven again within
-a day come from the phone's own store.
+The ground. It is drawn from what OpenStreetMap has, and where that has
+nothing the ground is bare: the colour of sand, which in Riyadh is mostly
+right. A lawn, a pool or a paved square is there if somebody mapped it. Not
+drawn at all, because no source has them: garden walls, gates, what is parked
+or stored in a yard, the paving of a forecourt.
+
+The photo. In the Satellite look, how sharp it is depends on what the service
+has for a place: about 30 cm to a pixel in Riyadh and other large cities,
+coarser in small towns and open country, where the map shows the sharpest
+level there is. By a rough count a sharp photo is some tens of megabytes of
+download for an hour's driving, where the coarser one is a few; the same
+streets driven again within a day come from the phone's own store. In the 3D
+city the photo is read at one middling level only, which is a few megabytes
+for an hour's driving, and nothing at all with the reading switched off.
 
 Pavements. Hardly any pavement is in the map data. They are laid by rule: the
 same width along every street of a kind (2.6 m beside a side street, up to
@@ -326,6 +348,12 @@ a given junction really has a zebra crossing is not known.
 
 Parked cars are set out by chance along residential streets, the same way
 every time for the same street. They are not the cars really parked there.
+The same goes for car parks. Their lanes are on the map; the bays beside
+them are laid by rule (2.7 m wide, 5 m deep, on both sides of a lane
+wherever no building, road, pavement or tree is in the way), and about six
+in ten are filled, three in ten beside a service lane that is not marked as
+a car park's. A real car park may have its bays elsewhere, at an angle, or
+under a roof.
 
 The sunlight is worked out on the phone from the date, the time and the place;
 nothing is downloaded for it. Shadows are those of flat-roofed blocks on level
@@ -333,11 +361,12 @@ ground, and clouds are not taken into account. On the ground they are drawn
 as exact outlines. On walls, roofs, cars and trees they are read from a
 picture of the buildings as the sun sees them, in which a spot is about 80 cm
 of ground: fine enough for the shadow of a building, too coarse for that of a
-parapet or a lamp post, and soft at the edge. Only buildings throw these
-shadows, not trees or cars. The landmarks' own models, the chain stores in
-their dress and the metro stations are drawn by the map itself and take no
-shadow from their neighbours. The roofs also keep the shadows that were in
-the satellite photo when it was taken, at another hour.
+parapet or a lamp post, and a little wavy at the edge. Only buildings throw
+these shadows, not trees or cars. The shade of a parapet on its own roof, and
+of what stands on a roof, is worked out apart, as exact patches on that roof.
+The landmarks' own models, the chain stores in their dress and the metro
+stations are drawn by the map itself and take no shadow from their
+neighbours.
 
 ## Put it online (free, from a phone)
 
@@ -425,16 +454,18 @@ js/app.js               the app: layout, video, location, search, place details
 js/map.js               the map: styles, markers, following, taps
 js/life.js              the simulated traffic: street network, vehicles, trains,
                         and the bridges they cross
-js/scene.js             the layers that draw into the 3D scene: the walls, the
-                        roofs, the traffic, the picture the shadows are read from,
-                        and the copy of the ground the roofs are filled from
+js/scene.js             the layer that draws into the 3D scene: the walls, the
+                        roofs, the traffic, and the picture the shadows are
+                        read from
 js/walls.js             the walls: their shape, their measure and their colours
 js/shade.js             the shadows on walls and roofs: what throws them
 js/landmarks.js         the landmarks modelled by hand, as stacks of slabs
 js/dress.js             metro station footbridges and pavilions, chain stores,
                         shop fronts, mosques
-js/roofs.js             the real roofs, cut along the buildings' outlines
-js/sight.js             reading the satellite photo: shadows to heights, trees
+js/roofs.js             the roofs: cut along the buildings' outlines, their
+                        colours and coverings, the shade of their parapets
+js/sight.js             reading the satellite photo: shadows to heights, trees,
+                        the colours of roofs
 js/services.js          the open data services
 js/lib.js               everything that needs no browser: parsing, distances,
                         road matching, place categories, map styles, the

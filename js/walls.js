@@ -18,6 +18,8 @@ const METERS_PER_DEGREE = 111320;
 export const WALL_OUT_METERS = 0.05;
 // How far the walls run up past the roof.
 export const PARAPET_METERS = 0.6;
+// How thick a parapet is: the width of the coping that lies along its top.
+export const PARAPET_THICK_METERS = 0.3;
 // The kinds of front a building can have: its place in this list is what the drawing goes by.
 export const FACADES = ['block', 'house', 'tower', 'shops'];
 const TOWER_FROM_METERS = 60;
@@ -171,7 +173,7 @@ export class WallMesh {
  * that closes it. within: the box the ring was cut to, if it was: a stretch
  * that runs along an edge of that box is a cut and no wall, and is marked so.
  */
-function localRing(ring, origin, squeeze, within = null) {
+export function localRing(ring, origin, squeeze, within = null) {
   const count = ring.length - (ring.length > 1 && ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1] ? 1 : 0);
   const points = [];
   for (let i = 0; i < count; i += 1) {
@@ -192,7 +194,8 @@ function localRing(ring, origin, squeeze, within = null) {
  * outwards; alongFrom and alongTo how far along its wall the stretch begins
  * and ends; and length how long that whole wall is. Distance along a wall is
  * counted rightwards as one stands facing it from outside, whichever way the
- * outline happens to run. A wall carries on round gentle bends and ends at a
+ * outline happens to run (rightwards: whether a stretch runs from its `from`
+ * to its `to` that way). A wall carries on round gentle bends and ends at a
  * corner; at such a bend the wall faces half-way between its two stretches
  * (eastFrom, northFrom at the start of a stretch, eastTo, northTo at its
  * end), so that a rounded front is lit as a curve and not as a row of flat
@@ -265,7 +268,7 @@ export function wallsOfRing(points, hole = false) {
     // (Rightwards as seen from outside is the way (-north, east) of the wall's facing: with the outline, or against it.)
     const withIt = side > 0;
     const alongFrom = withIt ? edge.along : edge.wall - edge.along;
-    out.push({ from: edge.from, to: edge.to, east: edge.east, north: edge.north, eastFrom, northFrom, eastTo, northTo, alongFrom, alongTo: withIt ? alongFrom + edge.length : alongFrom - edge.length, length: edge.wall });
+    out.push({ from: edge.from, to: edge.to, east: edge.east, north: edge.north, eastFrom, northFrom, eastTo, northTo, alongFrom, alongTo: withIt ? alongFrom + edge.length : alongFrom - edge.length, length: edge.wall, rightwards: withIt });
   });
   return out;
 }
@@ -304,14 +307,17 @@ export function wallsOf(mesh, buildings, origin, { top = (building) => building.
           const x1 = wall.to[0] + wall.east * WALL_OUT_METERS;
           const y1 = wall.to[1] + wall.north * WALL_OUT_METERS;
           mesh.room(6);
-          const first = (z, up) => mesh.corner(x0, y0, z, wall.alongFrom, up, wall.length, height, wall.eastFrom, wall.northFrom, red, green, blue, style);
-          const second = (z, up) => mesh.corner(x1, y1, z, wall.alongTo, up, wall.length, height, wall.eastTo, wall.northTo, red, green, blue, style);
-          first(base, 0);
-          second(base, 0);
-          second(base + height, height);
-          first(base, 0);
-          second(base + height, height);
-          first(base + height, height);
+          const from = (z, up) => mesh.corner(x0, y0, z, wall.alongFrom, up, wall.length, height, wall.eastFrom, wall.northFrom, red, green, blue, style);
+          const to = (z, up) => mesh.corner(x1, y1, z, wall.alongTo, up, wall.length, height, wall.eastTo, wall.northTo, red, green, blue, style);
+          // (Every wall's corners are given anticlockwise as seen from outside: by that its inner side is told, and not drawn.)
+          const left = wall.rightwards ? from : to;
+          const right = wall.rightwards ? to : from;
+          left(base, 0);
+          right(base, 0);
+          right(base + height, height);
+          left(base, 0);
+          right(base + height, height);
+          left(base + height, height);
           walls += 1;
           any = true;
         }
@@ -320,6 +326,51 @@ export function wallsOf(mesh, buildings, origin, { top = (building) => building.
     if (any) dressed += 1;
   }
   return { buildings: dressed, walls };
+}
+
+/**
+ * A wall as the map and the app draw it has no thickness. Where it stands up
+ * past the roof as a parapet that shows: so each parapet is given a top, a
+ * coping as wide as a parapet is thick, and behind it an inner side, down to
+ * the roof.
+ *
+ * mesh: a Mesh of coloured corners (see life.js). buildings, origin, top and
+ * colourOf: as for wallsOf(). roof(building): how high its roof lies.
+ * lit(east, north, up): how bright a face that looks that way is (see
+ * faceLight in life.js). Returns the number of stretches of parapet.
+ */
+export function parapetTops(mesh, buildings, origin, { top = (building) => building.height, roof = (building) => building.height, colourOf = () => null, lit = () => 1, thick = PARAPET_THICK_METERS } = {}) {
+  mesh.clear();
+  let stretches = 0;
+  const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
+  for (const building of buildings) {
+    if (building.replaced || building.kind === 'station') continue;
+    const high = top(building);
+    const low = roof(building);
+    if (!(high > low) || !(high - (building.base > 0 ? building.base : 0) > 1)) continue;
+    const [red, green, blue] = colourOf(building) ?? PLASTER;
+    // The coping is of paler stone than the wall under it.
+    const cap = lit(0, 0, 1) * 1.04;
+    for (const polygon of building.polygons) {
+      for (let r = 0; r < polygon.length; r += 1) {
+        for (const wall of wallsOfRing(localRing(polygon[r], origin, squeeze, building.within), r > 0)) {
+          const x0 = wall.from[0] + wall.east * WALL_OUT_METERS;
+          const y0 = wall.from[1] + wall.north * WALL_OUT_METERS;
+          const x1 = wall.to[0] + wall.east * WALL_OUT_METERS;
+          const y1 = wall.to[1] + wall.north * WALL_OUT_METERS;
+          const ix0 = wall.from[0] - wall.east * thick;
+          const iy0 = wall.from[1] - wall.north * thick;
+          const ix1 = wall.to[0] - wall.east * thick;
+          const iy1 = wall.to[1] - wall.north * thick;
+          mesh.face([x0, y0, high], [x1, y1, high], [ix1, iy1, high], [ix0, iy0, high], Math.min(red * cap, 255), Math.min(green * cap, 255), Math.min(blue * cap, 255), 1);
+          const side = lit(-wall.east, -wall.north, 0) * 0.94;
+          mesh.face([ix0, iy0, low], [ix1, iy1, low], [ix1, iy1, high], [ix0, iy0, high], red * side, green * side, blue * side, 1);
+          stretches += 1;
+        }
+      }
+    }
+  }
+  return stretches;
 }
 
 /**

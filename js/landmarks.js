@@ -102,7 +102,7 @@ function kingdomCentre() {
   // The sky bridge: a slim span from leg to leg, not the full depth of the tower.
   slabs.push({ outline: block(openAtTop + 2, 5.5), base: bridge[0], top: bridge[1], paint: '#cdd8e1' });
   // The podium that the tower rises from: the shopping centre and the hotel's wings, four storeys.
-  // (Low and wide: its roof is shown by the satellite photo, like any low building's.)
+  // (Low and wide: its roof is laid and furnished like any other building's.)
   slabs.push({ outline: KINGDOM_PODIUM, base: 0, top: 16, paint: '#e3ddd2', north: true, roof: true });
   return slabs;
 }
@@ -396,9 +396,11 @@ export function landmarkSlabs() {
 }
 
 /**
- * The roofs among the landmarks' slabs that the satellite photo is to be laid
- * on, in the form the roof cutter takes buildings in (see photoRoofs in
- * roofs.js): [{ height, base, replaced, roofTop, polygons }].
+ * The flat roofs among the landmarks' slabs: the wings of a mall at a tower's
+ * foot, the hall of a station. Each is laid and furnished like any other
+ * roof, so they come in the form the roof layer takes buildings in (see
+ * roofDecks in roofs.js): [{ height, base, replaced, roofTop, roofColour,
+ * roofing, polygons }], in the slab's own colour, covered with slabs.
  */
 export function landmarkRoofs() {
   const roofs = [];
@@ -407,7 +409,7 @@ export function landmarkRoofs() {
       if (!slab.roof) continue;
       const ring = slab.outline.map(([u, v]) => place(landmark, u, v, slab.north));
       ring.push(ring[0]);
-      roofs.push({ height: slab.top, base: 0, replaced: true, roofTop: slab.top, polygons: [[ring]] });
+      roofs.push({ height: slab.top, base: 0, replaced: true, roofTop: slab.top, roofColour: slab.paint, roofing: 'slabs', polygons: [[ring]] });
     }
   }
   return roofs;

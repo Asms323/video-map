@@ -235,8 +235,8 @@
 
       <div class="setting">
         <label class="setting-text" for="optPhoto">
-          <span class="setting-name">Roofs, trees and heights from the photo</span>
-          <span class="setting-note">Uses the satellite photo in the 3D city: every low building shows its real roof, trees stand where the photo shows them, and buildings are raised where their shadows show them to be taller. Trees and heights are an estimate.</span>
+          <span class="setting-name">Trees, heights and colours from the photo</span>
+          <span class="setting-note">The 3D city never shows the satellite photo: everything in it is drawn. The app only reads the photo, out of sight: trees stand where it shows them, buildings are raised where their shadows show them to be taller, and roofs and walls take the colours it shows. All of that is an estimate. Switch it off to save mobile data.</span>
         </label>
         <input id="optPhoto" class="switch" type="checkbox" role="switch">
       </div>
@@ -244,7 +244,7 @@
       <div class="setting">
         <label class="setting-text" for="optSharp">
           <span class="setting-name">Sharp satellite photo</span>
-          <span class="setting-note">Fetches the photo as sharp as this screen can show it, for a clear ground and clear roofs. That is several times as much to download; switch it off to save mobile data.</span>
+          <span class="setting-note">For the Satellite look: fetches the photo as sharp as this screen can show it. That is several times as much to download; switch it off to save mobile data.</span>
         </label>
         <input id="optSharp" class="switch" type="checkbox" role="switch">
       </div>
@@ -313,8 +313,8 @@
           Map drawn with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre</a>.
         </p>
         <p>
-          In the 3D city, the ground and the roofs are the satellite photo itself. The landmarks, bridges, metro stations, mosques and shop fronts are simplified models made for this app, not surveys;
-          windows, shop floors, pavements, road markings and crossings are set out by rule to look right, and a wall's colour is worked out from the colour of its roof. A chain's colours are its own; no logos are shown.
+          In the 3D city everything is drawn; no satellite photo is shown. The landmarks, bridges, metro stations, mosques and shop fronts are simplified models made for this app, not surveys;
+          windows, shop floors, pavements, road markings, crossings, what stands on the roofs and the cars in the car parks are set out by rule to look right, and the colours of roofs and walls are worked out from the photo. A chain's colours are its own; no logos are shown.
         </p>
         <p class="version">Video Map <span id="version"></span></p>
       </footer>

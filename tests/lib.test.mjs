@@ -6,7 +6,7 @@ import {
   clamp,
   defaultSplit,
   formatSpeed,
-  GROUND_LOOK,
+  GROUND,
   linkLabel,
   MAX_RECENTS,
   parseStartSeconds,
@@ -14,6 +14,7 @@ import {
   PAVEMENT_METERS,
   PHOTO_BLOCK_TILES,
   PHOTO_MOST_ZOOM,
+  PHOTO_READ_CREDIT,
   PHOTO_SURE_ZOOM,
   photoBlockOf,
   photoInBlock,
@@ -644,14 +645,14 @@ test('placeLayerIds lists every layer whose features are places', () => {
   assert.deepEqual(placeLayerIds(withOverlays(detailedStyle(BASE_STYLE), {})), ['vm-places']);
 });
 
-test('cityModelStyle draws the city as a white model on its real ground', () => {
+test('cityModelStyle draws the city as a model on drawn ground', () => {
   const style = cityModelStyle(BASE_STYLE);
   const ids = style.layers.map((layer) => layer.id);
   const at = (id) => ids.indexOf(id);
 
   // Ground first, then roads, then the buildings standing on them, then the names.
   assert.equal(ids[0], 'background');
-  assert.ok(at('city-ground') < at('city-road-minor'));
+  assert.ok(at('city-land') === 1 && at('city-water') < at('city-road-minor'));
   assert.ok(at('city-road-minor-edge') < at('city-road-minor'), 'kerbs lie under the road surface');
   assert.ok(at('city-road-minor') < at('city-road-big'), 'main roads are drawn over side streets');
   // On the ground: the soft rim at the foot of each building, then the cast shadows.
@@ -676,7 +677,7 @@ test('cityModelStyle draws the city as a white model on its real ground', () => 
   assert.equal(shadows.type, 'fill-extrusion');
   assert.equal(shadows.source, 'city-shade');
   assert.ok(shadows.paint['fill-extrusion-opacity'] < 1, 'one even shade where shadows cross');
-  assert.deepEqual(style.sources['city-shade'], { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  assert.deepEqual(style.sources['city-shade'], { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, attribution: PHOTO_READ_CREDIT });
 
   // Walls have rows of windows: plain from afar, then one picture per zoom level from 16 in.
   // An ordinary building's wall picture is one of seven shades of plaster, picked by the building's number (without one: the first).
@@ -720,7 +721,9 @@ test('cityModelStyle draws the city as a white model on its real ground', () => 
   assert.deepEqual(style.layers[at('city-rail')].paint['line-opacity'], ['interpolate', ['linear'], ['zoom'], 15.1, 1, 15.6, ['case', ['==', ['get', 'brunnel'], 'bridge'], 0, 1]]);
   assert.equal(at('city-bridge-marks'), -1, 'the lines on a bridge are painted on the deck itself');
   assert.ok(at('city-grass') < at('city-road-service-edge') && at('city-rail') < at('city-rail-ties'));
-  assert.match(style.sources.imagery.attribution, /Esri/);
+  // No photo is shown. It is read, though, for trees, heights and colours, and its makers are named for that.
+  assert.ok(!('imagery' in style.sources) && style.layers.every((layer) => layer.type !== 'raster'));
+  assert.match(PHOTO_READ_CREDIT, /Esri/);
   assert.equal(style.sources[VECTOR_SOURCE], BASE_STYLE.sources[VECTOR_SOURCE]);
   // The app's own layers go on top of it like on any other style.
   assert.deepEqual(placeLayerIds(withOverlays(style, { categories: ['fuel'] })), ['poi_r1', 'vm-places']);
@@ -1120,7 +1123,7 @@ test('cityModelStyle draws one building per outline when it is given the buildin
   assert.equal(plain.layers.find((item) => item.id === 'city-parts'), undefined);
 });
 
-test('cityModelStyle traces the metro under ground and shows more of the photo close up', () => {
+test('cityModelStyle traces the metro under ground', () => {
   const style = cityModelStyle(BASE_STYLE);
   const ids = style.layers.map((layer) => layer.id);
   const under = style.layers[ids.indexOf('city-rail-under')];
@@ -1129,11 +1132,45 @@ test('cityModelStyle traces the metro under ground and shows more of the photo c
   assert.ok(JSON.stringify(under.filter).includes('["==",["get","brunnel"],"tunnel"]') && JSON.stringify(under.filter).includes('["!",["has","service"]]'));
   assert.ok(under.paint['line-opacity'] < 0.5 && Array.isArray(under.paint['line-dasharray']));
   assert.ok(JSON.stringify(style.layers[ids.indexOf('city-rail')].filter).includes('["!",["==",["get","brunnel"],"tunnel"]]'));
-  const ground = style.layers[ids.indexOf('city-ground')].paint;
-  // A little paled from afar, all but as it is from close by.
-  assert.deepEqual(ground['raster-opacity'], ['interpolate', ['linear'], ['zoom'], 15.5, 0.86, 17.5, 1]);
-  assert.ok(ground['raster-saturation'].at(-1) > ground['raster-saturation'].at(-3));
-  assert.equal(style.layers[0].paint['background-color'], GROUND_LOOK.background);
+});
+
+test('cityModelStyle draws the ground itself: bare plots, what grows, what is paved, water and pools', () => {
+  const style = cityModelStyle(BASE_STYLE);
+  const ids = style.layers.map((layer) => layer.id);
+  const layer = (id) => style.layers[ids.indexOf(id)];
+  // Bare ground first; then what the land is used for, what grows on it, playing fields, squares, water.
+  assert.equal(style.layers[0].paint['background-color'], GROUND.plot);
+  assert.deepEqual(ids.slice(1, 9), ['city-land', 'city-green', 'city-grass', 'city-pitch', 'city-squares', 'city-water', 'city-pools', 'city-pool-rims']);
+  assert.ok(ids.indexOf('city-pool-rims') < ids.indexOf('city-pavement-edge'), 'all of it under the pavements and the roads');
+  for (const id of ['city-land', 'city-grass', 'city-pitch', 'city-squares', 'city-water', 'city-pools']) {
+    assert.equal(layer(id).type, 'fill', id);
+    assert.equal(layer(id).source, VECTOR_SOURCE, id);
+    assert.equal(layer(id).paint['fill-opacity'], undefined, `${id} is solid: there is no photo to show through`);
+  }
+  // The forecourts of shops, the yards of works, the grounds of schools and hospitals: each its own shade. Homes are left as bare ground.
+  const land = layer('city-land');
+  assert.equal(land['source-layer'], 'landuse');
+  assert.ok(!JSON.stringify(land.filter).includes('residential'));
+  assert.deepEqual(land.paint['fill-color'], ['match', ['get', 'class'], ['commercial', 'retail'], GROUND.shops, ['industrial', 'garages', 'railway', 'bus_station', 'quarry'], GROUND.works, GROUND.campus]);
+  // Lawns, dry scrub, woods, fields, open sand.
+  const grass = layer('city-grass');
+  assert.equal(grass['source-layer'], 'landcover');
+  const colours = JSON.stringify(grass.paint['fill-color']);
+  for (const name of ['lawn', 'scrub', 'wood', 'fields', 'sand', 'rock']) assert.ok(colours.includes(GROUND[name]), name);
+  assert.ok(colours.includes('["scrub","shrubbery","grassland","heath"]'), 'by what kind of green it is');
+  // Squares are paved ground; a pool is not like other water, and has a rim from close by.
+  assert.equal(layer('city-squares')['source-layer'], 'transportation');
+  assert.ok(JSON.stringify(layer('city-squares').filter).includes('"Polygon"'));
+  assert.deepEqual(layer('city-water').filter, ['!=', ['get', 'class'], 'swimming_pool']);
+  assert.deepEqual(layer('city-pools').filter, ['==', ['get', 'class'], 'swimming_pool']);
+  assert.equal(layer('city-pools').paint['fill-color'], GROUND.pool);
+  assert.notEqual(GROUND.pool, GROUND.water);
+  assert.equal(layer('city-pool-rims').type, 'line');
+  assert.ok(layer('city-pool-rims').minzoom > layer('city-pools').minzoom);
+  // Every colour of the ground is a colour, and the paving is paler than the bare ground beside it.
+  for (const [name, colour] of Object.entries(GROUND)) assert.match(colour, /^#[0-9a-f]{6}$/, name);
+  const light = (hex) => parseInt(hex.slice(1, 3), 16) + parseInt(hex.slice(3, 5), 16) + parseInt(hex.slice(5, 7), 16);
+  assert.ok(light(layer('city-pavement').paint['line-color']) > light(GROUND.plot) + 30);
 });
 
 test('photoSource shows the photo at one photo pixel to one real pixel of the screen', () => {
@@ -1145,9 +1182,10 @@ test('photoSource shows the photo at one photo pixel to one real pixel of the sc
   assert.deepEqual([source.type, source.tiles, source.maxzoom], ['raster', ['photo://{z}/{y}/{x}'], 19]);
   assert.equal(PHOTO_MOST_ZOOM, 19);
   assert.match(source.attribution, /Esri/);
-  // Both the looks that show the photo take it this way.
-  assert.deepEqual(cityModelStyle(BASE_STYLE, { pixelRatio: 3 }).sources.imagery, photoSource(3));
-  assert.deepEqual(cityModelStyle(BASE_STYLE).sources.imagery, photoSource(1));
+  // The look that shows the photo takes it this way. (The 3D city shows none.)
+  assert.deepEqual(satelliteStyle(BASE_STYLE, { pixelRatio: 3 }).sources.imagery, photoSource(3));
+  assert.deepEqual(satelliteStyle(BASE_STYLE).sources.imagery, photoSource(1));
+  assert.equal(cityModelStyle(BASE_STYLE, { pixelRatio: 3 }).sources.imagery, undefined);
 });
 
 test('under a sharp photo lies the coarse one, which is there at once', () => {
@@ -1156,7 +1194,7 @@ test('under a sharp photo lies the coarse one, which is there at once', () => {
   assert.deepEqual(photoUnderlay(3), photoUnderlay(2));
   assert.equal(photoUnderlay(1), null, 'none where the photo is no sharper than that');
   assert.equal(photoUnderlay(), null);
-  for (const style of [cityModelStyle(BASE_STYLE, { pixelRatio: 2 }), satelliteStyle(BASE_STYLE, { pixelRatio: 3 })]) {
+  for (const style of [satelliteStyle(BASE_STYLE, { pixelRatio: 2 }), satelliteStyle(BASE_STYLE, { pixelRatio: 3 })]) {
     const ids = style.layers.map((layer) => layer.id);
     const sharp = style.layers.find((layer) => layer.source === 'imagery');
     const under = style.layers.find((layer) => layer.source === 'imagery-base');
@@ -1165,7 +1203,7 @@ test('under a sharp photo lies the coarse one, which is there at once', () => {
     assert.deepEqual(under.paint, sharp.paint, 'toned alike');
     assert.equal(under.type, 'raster');
   }
-  for (const style of [cityModelStyle(BASE_STYLE), satelliteStyle(BASE_STYLE)]) {
+  for (const style of [cityModelStyle(BASE_STYLE, { pixelRatio: 3 }), satelliteStyle(BASE_STYLE)]) {
     assert.ok(!('imagery-base' in style.sources) && !style.layers.some((layer) => layer.source === 'imagery-base'));
   }
 });
@@ -1213,7 +1251,7 @@ test('cityModelStyle lays a pavement along both sides of every street people wal
   // Under every road and its kerb, so that a side street runs through the pavement of the road it meets.
   const firstRoad = Math.min(...ids.map((id, at) => (id.startsWith('city-road-') ? at : Infinity)));
   assert.ok(ids.indexOf('city-pavement-edge') < ids.indexOf('city-pavement') && ids.indexOf('city-pavement') < firstRoad, ids.join(' '));
-  assert.ok(ids.indexOf('city-ground') < ids.indexOf('city-pavement-edge'));
+  assert.ok(ids.indexOf('city-water') < ids.indexOf('city-pavement-edge'));
   // Streets and main roads on the ground; no motorway, service lane, bridge or tunnel.
   const filter = JSON.stringify(paving.filter);
   assert.ok(filter.includes('["match",["get","class"],["minor","busway","secondary","tertiary","primary"],true,false]'), filter);

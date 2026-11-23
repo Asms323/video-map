@@ -3,7 +3,7 @@
 // Only the app's own files are handled here. The map, place data, YouTube
 // and video links are on other sites and always go straight to the network.
 
-const VERSION = '1.11.0';
+const VERSION = '1.12.0';
 const CACHE = `video-map-${VERSION}`;
 const SHELL = [
   './',

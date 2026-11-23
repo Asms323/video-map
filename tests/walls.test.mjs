@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { Mesh } from '../js/life.js';
-import { FACADES, PARAPET_METERS, WALL_OUT_METERS, WallMesh, clipRing, colourOf, facadeOf, footShade, seedOf, tilePieces, wallTone, wallsOf, wallsOfRing } from '../js/walls.js';
+import { FACADES, PARAPET_METERS, PARAPET_THICK_METERS, WALL_OUT_METERS, WallMesh, clipRing, colourOf, facadeOf, footShade, parapetTops, seedOf, tilePieces, wallTone, wallsOf, wallsOfRing } from '../js/walls.js';
 
 const ORIGIN = { lng: 46.67, lat: 24.7 };
 const SQUEEZE = 111320 * Math.cos((24.7 * Math.PI) / 180);
@@ -153,6 +153,52 @@ test('wallsOf lays a wall over each side of a building, up past its roof', () =>
   // What has a front of its own is left alone: a station, and what a model stands in for.
   assert.deepEqual(wallsOf(mesh, [building([[0, 0], [20, 0], [20, 10], [0, 10]], { kind: 'station' }), building([[0, 0], [20, 0], [20, 10], [0, 10]], { replaced: true })], ORIGIN), { buildings: 0, walls: 0 });
   assert.equal(mesh.count, 0);
+});
+
+test('every wall is given anticlockwise as seen from outside, whichever way its outline runs', () => {
+  const square = [[0, 0], [20, 0], [20, 10], [0, 10]];
+  const yard = [[8, 3], [12, 3], [12, 7], [8, 7]];
+  const block = { id: 21, height: 9, base: 0, polygons: [[ring(square), ring(yard)]] };
+  for (const one of [building(square), building(square.slice().reverse()), block, { ...block, polygons: [[ring(square.slice().reverse()), ring(yard.slice().reverse())]] }]) {
+    const mesh = new WallMesh();
+    wallsOf(mesh, [one], ORIGIN);
+    const list = corners(mesh);
+    for (let i = 0; i < list.length; i += 3) {
+      const [a, b, c] = [list[i], list[i + 1], list[i + 2]];
+      // The way the triangle faces, by the order of its corners: the same way its wall faces.
+      const facing = [(b.y - a.y) * (c.z - a.z) - (b.z - a.z) * (c.y - a.y), (b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z)];
+      assert.ok(facing[0] * a.east + facing[1] * a.north > 0, `${JSON.stringify(a)}`);
+    }
+  }
+});
+
+test('parapetTops gives each parapet a coping and an inner side', () => {
+  const mesh = new Mesh();
+  const house = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  const made = parapetTops(mesh, [house], ORIGIN, { top: () => 11.1, roof: () => 10.5, colourOf: () => [200, 100, 50], lit: (east, north, up) => (up > 0 ? 1 : north > 0 ? 0.9 : 0.6) });
+  assert.equal(made, 4, 'one stretch to each wall');
+  assert.equal(mesh.count, 4 * 12, 'a top and an inner side each');
+  assert.equal(PARAPET_THICK_METERS, 0.3);
+  const list = Array.from({ length: mesh.count }, (_, i) => ({ x: mesh.positions[i * 3], y: mesh.positions[i * 3 + 1], z: mesh.positions[i * 3 + 2], red: mesh.colours[i * 4] }));
+  // The south wall's coping: level with the top of the wall, from its outer face to a parapet's thickness in.
+  const coping = list.slice(0, 6);
+  assert.ok(coping.every((corner) => near(corner.z, 11.1, 1e-5) && corner.y >= -WALL_OUT_METERS - 1e-5 && corner.y <= PARAPET_THICK_METERS + 1e-5));
+  assert.ok(near(Math.min(...coping.map((corner) => corner.y)), -WALL_OUT_METERS, 1e-5) && near(Math.max(...coping.map((corner) => corner.y)), PARAPET_THICK_METERS, 1e-5));
+  // Paler than the wall under it, lit from above.
+  assert.equal(coping[0].red, 208);
+  // Its inner side: upright, a parapet's thickness in, from the roof to the coping, looking north across the roof.
+  const inner = list.slice(6, 12);
+  assert.ok(inner.every((corner) => near(corner.y, PARAPET_THICK_METERS, 1e-5) && corner.z >= 10.5 - 1e-5 && corner.z <= 11.1 + 1e-5));
+  assert.ok(near(Math.min(...inner.map((corner) => corner.z)), 10.5, 1e-5) && near(Math.max(...inner.map((corner) => corner.z)), 11.1, 1e-5));
+  assert.equal(inner[0].red, Math.floor(200 * 0.9 * 0.94));
+  // The north wall's inner side looks south: darker, by this light.
+  assert.ok(list.slice(30, 36).every((corner) => near(corner.y, 10 - PARAPET_THICK_METERS, 1e-5) && corner.red === Math.floor(200 * 0.6 * 0.94)));
+  // None where there is no parapet of the app's own, and none along the cut of a map tile.
+  assert.equal(parapetTops(mesh, [building([[0, 0], [20, 0], [20, 10], [0, 10]], { replaced: true }), building([[30, 0], [50, 0], [50, 10], [30, 10]], { kind: 'station' })], ORIGIN, { top: () => 11.1, roof: () => 10.5 }), 0);
+  assert.equal(mesh.count, 0);
+  const [east] = at(20, 0);
+  const cut = { ...house, within: { west: at(-50, 0)[0], south: at(0, -50)[1], east, north: at(0, 50)[1] } };
+  assert.equal(parapetTops(mesh, [cut], ORIGIN, { top: () => 11.1, roof: () => 10.5 }), 3);
 });
 
 test('facadeOf tells towers, houses, blocks with shops and plain blocks apart', () => {

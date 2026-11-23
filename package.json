@@ -1,6 +1,6 @@
 {
   "name": "video-map",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "private": true,
   "type": "module",
   "description": "Video and a live map of where you are, on one screen. A web app for the phone.",

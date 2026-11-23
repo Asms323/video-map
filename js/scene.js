@@ -1,26 +1,18 @@
-// Two layers the app draws for itself inside the map's 3D scene.
-//
-// SceneLayer: everything the app builds and lights for itself, placed in
-// metres around an origin. It shares the buildings' depth, so a car behind
-// a tower is hidden by it. Four kinds of thing are drawn:
-//   - coloured triangles: the traffic, the trees, the bridges, the paint on
-//     the roads;
+// The layer the app draws for itself inside the map's 3D scene: everything
+// it builds and lights for itself, placed in metres around an origin. It
+// shares the buildings' depth, so a car behind a tower is hidden by it. Four
+// kinds of thing are drawn:
 //   - the walls of the buildings, whose every point is worked out where it
 //     is drawn: its floor and bay, glass or wall, sun or shade;
-//   - the roofs, which show the satellite photo of the ground they stand on;
+//   - the roofs, worked out the same way: slabs, gravel or sheet in the
+//     roof's own colour, in the sun or in a neighbour's shadow;
+//   - coloured triangles: the traffic, the trees, the bridges, the paint on
+//     the roads, what stands on the roofs;
 //   - and, unseen, the picture the shadows are read from: the buildings as
 //     the sun sees them (see shade.js).
-//
-// GroundCopy: put right above the photo of the ground, it keeps a copy of the
-// picture as it is at that moment, with nothing but the ground in it. That
-// copy is what the roofs are filled from: each point of a roof shows the
-// ground straight beneath it, exactly as sharp and as toned as the ground
-// beside the building is on screen, at no cost in downloads.
 
 const EARTH_AROUND_METERS = 40075016.686;
 const FRAME_MS = 33; // about 30 pictures a second is smooth enough, and easier on the battery
-// After the ground has changed without the view moving (photo tiles coming in and fading in), it is copied afresh for this long.
-const GROUND_SETTLES_MS = 900;
 
 const PRECISION = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -59,7 +51,7 @@ float inShadow(vec3 point, float margin) {
   return mix(mix(a, b, part.x), mix(c, d, part.x), part.y);
 }`;
 
-// The colour a shadow leaves of what it falls on: as on the ground, where the map lays a dark blue over the photo.
+// The colour a shadow leaves of what it falls on: as on the ground, where the map lays a dark blue over it.
 const SHADOW_TINT = 'vec3(0.078, 0.102, 0.157)';
 const SHADOW_DEPTH = '0.42';
 
@@ -78,8 +70,9 @@ void main() {
   gl_Position = u_matrix * vec4(a_pos, 1.0);
 }`;
 
-// Coloured triangles. Where a building's shadow falls they are darkened; and what is itself the shade of a
-// car or a tree (dark and see-through) is not drawn there at all: in a shadow nothing throws another.
+// Coloured triangles. Where a building's shadow falls they are darkened; and what is itself shade (of a
+// car, a tree, a parapet, a tank on a roof: dark and see-through) is not drawn there at all: in a shadow
+// nothing throws another.
 const FRAGMENT = `${PRECISION}
 ${SHADOW}
 uniform float u_shaded; // whether this part of the scene takes shadows
@@ -98,32 +91,74 @@ void main() {
   gl_FragColor = colour;
 }`;
 
-// A roof: each of its points is drawn where it stands, and shows the ground under it, found where that
-// ground is on screen. (A roof at the bottom edge of the picture stands over ground that is off screen:
-// there the picture is turned back on itself, which gives it more of the same roofs and yards.)
+// A roof. Each point of it knows where on its roof it is (metres along the building and across it), its
+// roof's colour and what the roof is covered with. From that the point's colour is worked out: the slabs
+// and the joints between them, the grain of gravel or the ribs of metal sheet, each fading out as it
+// becomes too fine for the screen; then the light of sun and sky, less the sun where a neighbour's
+// shadow falls.
 const ROOF_VERTEX = `
 attribute vec3 a_pos;
+attribute vec2 a_lay;
+attribute vec4 a_tint;
 uniform mat4 u_matrix;
-varying vec4 v_ground;
 varying vec3 v_world;
+varying vec2 v_lay;
+varying vec4 v_tint;
 void main() {
-  v_ground = u_matrix * vec4(a_pos.xy, 0.0, 1.0);
   v_world = a_pos;
+  v_lay = a_lay;
+  v_tint = a_tint;
   gl_Position = u_matrix * vec4(a_pos, 1.0);
 }`;
 
 const ROOF_FRAGMENT = `${PRECISION}
 ${SHADOW}
-uniform sampler2D u_ground;
+uniform vec3 u_sun;      // the way to the sun: east, north, up
+uniform float u_day;     // 1 by day, 0 by night
+uniform float u_pixel;   // metres of roof to a pixel of the screen
 uniform float u_opacity;
-varying vec4 v_ground;
 varying vec3 v_world;
+varying vec2 v_lay;      // along the building and across it, in metres from its middle
+varying vec4 v_tint;     // the roof's colour; and its covering (x 64) with the building's own number
+
+float chance(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+// A line along the edges of squares a unit across: 1 on the line, 0 off it, as wide as told (in units).
+float lines(float value, float wide) {
+  return 1.0 - smoothstep(0.0, wide, 0.5 - abs(fract(value) - 0.5));
+}
+
 void main() {
-  vec2 at = v_ground.xy / v_ground.w * 0.5 + 0.5;
-  at = 1.0 - abs(1.0 - abs(at));
-  vec3 colour = texture2D(u_ground, at).rgb;
-  colour = mix(colour, ${SHADOW_TINT}, ${SHADOW_DEPTH} * inShadow(v_world, 0.5));
-  gl_FragColor = vec4(colour * u_opacity, u_opacity);
+  float style = floor(v_tint.a * 255.0 + 0.5);
+  float kind = floor(style / 64.0);   // 0 slabs of concrete, 1 gravel, 2 metal sheet
+  float seed = style - kind * 64.0;
+  float gravel = step(0.5, kind) * step(kind, 1.5);
+  float sheet = step(1.5, kind);
+  vec3 colour = v_tint.rgb;
+  // A roof is laid and mended a piece at a time, and no two pieces weather alike: seen from close by.
+  // (Sheet comes all of a piece.)
+  colour *= 1.0 + (0.07 * chance(floor(v_lay / vec2(6.4, 4.8)) + seed) - 0.035) * (1.0 - sheet) * (1.0 - 0.6 * smoothstep(0.15, 0.4, u_pixel));
+  // A line no wider than a pixel is drawn a pixel wide and as much fainter.
+  float thin = 0.75 * u_pixel;
+  // Slabs: a joint every few metres, both ways. Sheet: a rib every metre, along the building.
+  float jointWide = max(0.05, thin);
+  float joints = max(lines(v_lay.x / 3.2, jointWide / 3.2), lines(v_lay.y / 3.2, jointWide / 3.2)) * min(0.05 / thin, 1.0);
+  float ribWide = max(0.04, thin);
+  float ribs = lines(v_lay.y / 1.1, ribWide / 1.1) * min(0.04 / thin, 1.0);
+  colour *= 1.0 - 0.14 * mix(joints * (1.0 - gravel), ribs, sheet);
+  // Gravel: greyer, and grainy from close by.
+  vec3 grey = vec3(dot(colour, vec3(0.3333)));
+  float grain = chance(floor(v_lay / 0.3) + seed) - 0.5;
+  colour = mix(colour, mix(colour, grey, 0.3) * (0.97 + 0.07 * grain * (1.0 - smoothstep(0.05, 0.16, u_pixel))), gravel);
+
+  // The light: the whole sky, and the sun by how high it stands, unless a neighbour is in its way.
+  float sunned = max(u_sun.z, 0.0) * u_day;
+  if (sunned > 0.0) sunned *= 1.0 - inShadow(v_world, 0.5);
+  vec3 sky = vec3(0.63, 0.66, 0.73);
+  vec3 sunlight = mix(vec3(1.0, 0.74, 0.48), vec3(1.0, 0.95, 0.86), smoothstep(0.1, 0.6, u_sun.z)) * 0.5;
+  vec3 light = mix(vec3(0.80, 0.82, 0.88), sky + sunlight * sunned, u_day);
+  gl_FragColor = vec4(min(colour * light, vec3(1.0)) * u_opacity, u_opacity);
 }`;
 
 // A wall. Each point of it knows where on its wall it is (how far along and how far up, in metres), how
@@ -323,84 +358,6 @@ function places(gl, program, attributes, uniforms) {
 
 const SHADOW_UNIFORMS = ['shadow', 'shadowBox', 'shadowFall', 'shadowSize'];
 
-export class GroundCopy {
-  constructor(id) {
-    this.id = id;
-    this.type = 'custom';
-    this.renderingMode = '2d';
-    this.texture = null;
-    this.width = 0;
-    this.height = 0;
-    this.copies = 0; // how many times the picture has been copied, for anyone counting
-    this.view = new Float32Array(16); // the view the copy in hand was made of
-    this.freshUntil = 0;
-    this.wanted = true; // nobody needs the copy when no roof is filled from it
-    this.kept = false; // whether the copy in hand was made while it was wanted, and so has been kept up
-  }
-
-  onAdd() {
-    this.texture = null;
-    this.width = 0;
-    this.height = 0;
-  }
-
-  onRemove(_map, gl) {
-    if (this.texture) gl.deleteTexture(this.texture);
-    this.texture = null;
-  }
-
-  /** The ground is changing without the view moving: copy it afresh for a while. */
-  touch() {
-    this.freshUntil = performance.now() + GROUND_SETTLES_MS;
-  }
-
-  render(gl, args) {
-    if (!this.wanted || gl.isContextLost()) {
-      this.kept = false;
-      return;
-    }
-    const width = gl.drawingBufferWidth;
-    const height = gl.drawingBufferHeight;
-    if (!(width > 0 && height > 0)) return;
-    // The copy in hand still shows the ground as it is, unless the view has moved or the ground has changed.
-    const main = args?.defaultProjectionData?.mainMatrix ?? args?.modelViewProjectionMatrix ?? args;
-    let moved = !this.kept || !this.texture || !gl.isTexture(this.texture) || this.width !== width || this.height !== height || performance.now() < this.freshUntil;
-    this.kept = true;
-    if (main && main.length === 16) {
-      for (let i = 0; i < 16; i += 1) {
-        if (this.view[i] !== main[i]) {
-          moved = true;
-          this.view[i] = main[i];
-        }
-      }
-    } else {
-      moved = true;
-    }
-    if (!moved) return;
-
-    gl.activeTexture(gl.TEXTURE0);
-    if (!this.texture || !gl.isTexture(this.texture)) {
-      // (Gone with the graphics memory, if the phone took that away in the background.)
-      this.texture = gl.createTexture();
-      this.width = 0;
-    }
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    if (this.width !== width || this.height !== height) {
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGB, 0, 0, width, height, 0);
-      this.width = width;
-      this.height = height;
-    } else {
-      gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
-    }
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    this.copies += 1;
-  }
-}
-
 export class SceneLayer {
   /**
    * onFrame(): called before each picture is drawn, to move things on. It
@@ -413,9 +370,8 @@ export class SceneLayer {
     this.onFrame = onFrame;
     this.origin = null;
     this.opacity = 1;
-    this.parts = new Map(); // name → { mesh, buffers, stale, shaded }
-    this.roofs = { mesh: null, buffer: null, stale: true }; // the roofs, filled from the copy of the ground
-    this.ground = null; // the GroundCopy they are filled from
+    this.parts = new Map(); // name → { mesh, buffers, stale, shaded, lifted }
+    this.roofs = { mesh: null, buffers: null, stale: true }; // the roofs, worked out point by point
     this.walls = { mesh: null, buffers: null, stale: true }; // the walls, worked out point by point
     // What the walls are lit and drawn by.
     this.sun = [0.4, -0.6, 0.7]; // the way to the sun: east, north, up
@@ -445,7 +401,7 @@ export class SceneLayer {
     this.program = link(gl, VERTEX, FRAGMENT);
     this.at = places(gl, this.program, ['pos', 'color'], ['matrix', 'opacity', 'shaded', ...SHADOW_UNIFORMS]);
     this.roofProgram = link(gl, ROOF_VERTEX, ROOF_FRAGMENT);
-    this.roofAt = places(gl, this.roofProgram, ['pos'], ['matrix', 'opacity', 'ground', ...SHADOW_UNIFORMS]);
+    this.roofAt = places(gl, this.roofProgram, ['pos', 'lay', 'tint'], ['matrix', 'opacity', 'sun', 'day', 'pixel', ...SHADOW_UNIFORMS]);
     this.wallProgram = link(gl, WALL_VERTEX, WALL_FRAGMENT);
     this.wallAt = places(gl, this.wallProgram, ['pos', 'surf', 'normal', 'tint'], ['matrix', 'opacity', 'sun', 'day', 'eye', 'pixel', 'top', ...SHADOW_UNIFORMS]);
     this.castProgram = link(gl, CAST_VERTEX, CAST_FRAGMENT);
@@ -466,7 +422,7 @@ export class SceneLayer {
       part.buffers = null;
       part.stale = true;
     }
-    this.roofs.buffer = null;
+    this.roofs.buffers = null;
     this.roofs.stale = true;
     this.walls.buffers = null;
     this.walls.stale = true;
@@ -486,8 +442,8 @@ export class SceneLayer {
       }
       part.buffers = null;
     }
-    if (this.roofs.buffer) gl.deleteBuffer(this.roofs.buffer);
-    this.roofs.buffer = null;
+    if (this.roofs.buffers) for (const buffer of Object.values(this.roofs.buffers)) gl.deleteBuffer(buffer);
+    this.roofs.buffers = null;
     if (this.walls.buffers) for (const buffer of Object.values(this.walls.buffers)) gl.deleteBuffer(buffer);
     this.walls.buffers = null;
     const target = this.shadow.target;
@@ -514,12 +470,18 @@ export class SceneLayer {
     this.origin = origin ? { lng: origin.lng, lat: origin.lat } : null;
   }
 
-  /** Give a named part of the scene its triangles (see Mesh in life.js). shaded: false for a part that takes no shadows. */
-  set(name, mesh, { shaded = true } = {}) {
-    const part = this.parts.get(name) ?? { mesh: null, buffers: null, stale: true, shaded: true };
+  /**
+   * Give a named part of the scene its triangles (see Mesh in life.js).
+   * shaded: false for a part that takes no shadows. lifted: 1 for what
+   * stands on the roofs, which is drawn as much nearer the eye as the roofs
+   * themselves are, and 2 for what lies flat on them, nearer still.
+   */
+  set(name, mesh, { shaded = true, lifted = 0 } = {}) {
+    const part = this.parts.get(name) ?? { mesh: null, buffers: null, stale: true, shaded: true, lifted: 0 };
     part.mesh = mesh;
     part.stale = true;
     part.shaded = shaded;
+    part.lifted = lifted;
     this.parts.set(name, part);
   }
 
@@ -527,7 +489,6 @@ export class SceneLayer {
   setRoofs(mesh) {
     this.roofs.mesh = mesh;
     this.roofs.stale = true;
-    if (this.ground) this.ground.wanted = Boolean(mesh && mesh.count > 0);
   }
 
   /** Give the scene its walls: a WallMesh (see walls.js), or one that is empty for none. */
@@ -681,7 +642,10 @@ export class SceneLayer {
     const walls = this.walls.mesh;
     if (walls && walls.count > 0) {
       const at = this.wallAt;
-      gl.disable(gl.CULL_FACE);
+      // (Only the outer side of a wall is drawn: its inner side, where it shows over the roof as a parapet, is a face of its own.)
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.BACK);
+      gl.frontFace(gl.CCW);
       gl.enable(gl.POLYGON_OFFSET_FILL);
       gl.polygonOffset(-1, -3);
       gl.useProgram(this.wallProgram);
@@ -710,6 +674,39 @@ export class SceneLayer {
       for (const where of [at.pos, at.surf, at.normal, at.tint]) gl.disableVertexAttribArray(where);
       gl.disable(gl.POLYGON_OFFSET_FILL);
       gl.polygonOffset(0, 0);
+      gl.disable(gl.CULL_FACE);
+    }
+
+    // The roofs. A roof lies on the slab the map draws on top of its building: it is drawn a touch nearer,
+    // so that the two do not flicker.
+    const roofs = this.roofs.mesh;
+    if (roofs && roofs.count > 0) {
+      const at = this.roofAt;
+      gl.enable(gl.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(-2, -6);
+      gl.useProgram(this.roofProgram);
+      gl.uniformMatrix4fv(at.matrix, false, m);
+      gl.uniform1f(at.opacity, this.opacity);
+      gl.uniform3f(at.sun, this.sun[0], this.sun[1], this.sun[2]);
+      gl.uniform1f(at.day, this.day);
+      gl.uniform1f(at.pixel, this.pixel);
+      this.shadowsFor(gl, at);
+      if (!this.roofs.buffers) this.roofs.buffers = { positions: gl.createBuffer(), lays: gl.createBuffer(), tints: gl.createBuffer() };
+      const buffers = this.roofs.buffers;
+      const send = (buffer, where, data, size, type, normalised) => {
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        if (this.roofs.stale) gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, roofs.count * size), gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(where);
+        gl.vertexAttribPointer(where, size, type, normalised, 0, 0);
+      };
+      send(buffers.positions, at.pos, roofs.positions, 3, gl.FLOAT, false);
+      send(buffers.lays, at.lay, roofs.lays, 2, gl.FLOAT, false);
+      send(buffers.tints, at.tint, roofs.tints, 4, gl.UNSIGNED_BYTE, true);
+      this.roofs.stale = false;
+      gl.drawArrays(gl.TRIANGLES, 0, roofs.count);
+      for (const where of [at.pos, at.lay, at.tint]) gl.disableVertexAttribArray(where);
+      gl.disable(gl.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(0, 0);
     }
 
     gl.useProgram(this.program);
@@ -722,6 +719,11 @@ export class SceneLayer {
       const mesh = part.mesh;
       if (!mesh || mesh.count === 0) continue;
       gl.uniform1f(this.at.shaded, part.shaded ? 1 : 0);
+      // (What is on a roof is drawn as much nearer as the roof was, or the roof would hide the foot of it.)
+      if (part.lifted > 0) {
+        gl.enable(gl.POLYGON_OFFSET_FILL);
+        gl.polygonOffset(-1 - part.lifted, -3 - 3 * part.lifted);
+      }
       if (!part.buffers) part.buffers = { positions: gl.createBuffer(), colours: gl.createBuffer() };
       gl.bindBuffer(gl.ARRAY_BUFFER, part.buffers.positions);
       if (part.stale) gl.bufferData(gl.ARRAY_BUFFER, mesh.positions.subarray(0, mesh.count * 3), gl.DYNAMIC_DRAW);
@@ -731,37 +733,13 @@ export class SceneLayer {
       gl.vertexAttribPointer(this.at.color, 4, gl.UNSIGNED_BYTE, true, 0, 0);
       part.stale = false;
       gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+      if (part.lifted > 0) {
+        gl.disable(gl.POLYGON_OFFSET_FILL);
+        gl.polygonOffset(0, 0);
+      }
     }
     gl.disableVertexAttribArray(this.at.pos);
     gl.disableVertexAttribArray(this.at.color);
-
-    // The roofs, filled from the copy of the ground. Until that copy is there they are left out, and the
-    // plain roofs the map draws show.
-    const roofs = this.roofs.mesh;
-    const ground = this.ground?.texture;
-    if (roofs && roofs.count > 0 && ground && gl.isTexture(ground)) {
-      // A roof lies on the slab the map draws on top of its building: it is drawn a touch nearer, so that the two do not flicker.
-      gl.enable(gl.POLYGON_OFFSET_FILL);
-      gl.polygonOffset(-2, -6);
-      gl.useProgram(this.roofProgram);
-      gl.uniformMatrix4fv(this.roofAt.matrix, false, m);
-      gl.uniform1f(this.roofAt.opacity, this.opacity);
-      this.shadowsFor(gl, this.roofAt);
-      gl.uniform1i(this.roofAt.ground, 0);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, ground);
-      gl.enableVertexAttribArray(this.roofAt.pos);
-      if (!this.roofs.buffer) this.roofs.buffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.roofs.buffer);
-      if (this.roofs.stale) gl.bufferData(gl.ARRAY_BUFFER, roofs.positions.subarray(0, roofs.count * 3), gl.DYNAMIC_DRAW);
-      gl.vertexAttribPointer(this.roofAt.pos, 3, gl.FLOAT, false, 0, 0);
-      this.roofs.stale = false;
-      gl.drawArrays(gl.TRIANGLES, 0, roofs.count);
-      gl.disableVertexAttribArray(this.roofAt.pos);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-      gl.disable(gl.POLYGON_OFFSET_FILL);
-      gl.polygonOffset(0, 0);
-    }
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);

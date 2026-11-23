@@ -35,13 +35,13 @@ import {
 } from './lib.js';
 import { PLAIN_FUEL, brandOf, localKind, mosqueExtras, mosquesAmong, stationExtras, storeExtras } from './dress.js';
 import { STAYED_BRIDGES, landmarkRoofs, landmarkShades, replacedByLandmarks } from './landmarks.js';
-import { Mesh, Traffic, buildNetwork, drawBridges, drawMarks, drawRoofs, drawStreet, drawTraffic, drawTrees, lightFrom, stayedHere, streetDirection, streetNear, trafficLevel } from './life.js';
-import { PHOTO_ROOF_MOST_METERS, RoofMesh, photoRoofs } from './roofs.js';
-import { GroundCopy, SceneLayer } from './scene.js';
+import { Mesh, Traffic, buildNetwork, drawBridges, drawMarks, drawRoofs, drawStreet, drawTraffic, drawTrees, faceLight, lightFrom, stayedHere, streetDirection, streetNear, trafficLevel } from './life.js';
+import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
+import { SceneLayer } from './scene.js';
 import { buildingArchive, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
 import { footprintGrid, heightsFromShadows, passSuns, pavedGrid, photoGrid, roofColours, tilesFor, treesInPhoto } from './sight.js';
 import { CasterMesh, shadowCasters, shadowFall, shadowMapSize } from './shade.js';
-import { PARAPET_METERS, WallMesh, colourOf, footShade, tilePieces, wallTone, wallsOf } from './walls.js';
+import { PARAPET_METERS, PARAPET_THICK_METERS, WallMesh, colourOf, facadeOf, footShade, parapetTops, tilePieces, wallTone, wallsOf } from './walls.js';
 
 export const MAP_TYPES = ['city', 'streets', 'night', 'satellite', 'detailed'];
 
@@ -80,9 +80,6 @@ const METERS_PER_DEGREE = 111320;
 // The traffic lives on the streets of a wider area than the screen, so vehicles
 // are already on their way when they come into view.
 const LIFE_LAYER = 'city-life';
-const GROUND_LAYER = 'city-ground'; // the satellite photo on the ground
-const GROUND_COPY_LAYER = 'city-ground-copy'; // keeps the ground as it is on screen, for the roofs to be filled from
-const PHOTO_SOURCES = new Set(['imagery', 'imagery-base']);
 const LIFE_MIN_ZOOM = 15;
 const LIFE_MARGIN_METERS = 500;
 const LIFE_REACH_METERS = 2200;
@@ -101,24 +98,42 @@ const ON_STREET_METERS = 15;
 // The kinds of place that make a building a shared one: with several of them in it, it is no single chain's.
 const SHOP_CLASSES = new Set(['restaurant', 'fast_food', 'cafe', 'shop', 'grocery', 'clothing_store', 'bank', 'pharmacy', 'bakery', 'car', 'lodging', 'cinema', 'office', 'bar', 'ice_cream', 'beer']);
 
-// The satellite photo is read for trees and for building heights around the
-// view, at the zoom level the map itself shows it at, so little is downloaded twice.
+// The satellite photo is never shown in the 3D city. It is read, around the
+// view: for trees, for building heights, and for the colours of roofs and walls.
 const PHOTO_ZOOM = 17;
 const PHOTO_MIN_ZOOM = 15.5;
 const PHOTO_MARGIN_METERS = 150;
 const PHOTO_REACH_METERS = 700; // never further than this from the middle of the view
 const PHOTO_MOST_TREES = 2500;
-// How far above the slab the map draws on top of every building its photo is laid. Seen through the long
+// How far above the slab the map draws on top of every building its roof is laid. Seen through the long
 // lens of the isometric view the map cannot tell heights much closer than this apart.
 const ROOF_LIFT_METERS = 0.3;
+// The photo is taken a little from the side, and a tall building leans in it: what it shows where the
+// outline says the roof is, is the roof only for buildings no taller than this.
+const ROOF_COLOUR_MOST_METERS = 40;
+const STORE_ROOF = [222, 221, 216]; // the roof of a store drawn in its chain's dress: pale metal sheet
 const HEIGHTS_KEPT = 30000;
 const UNRECORDED_METERS = 5; // the height the street map gives a building whose height nobody recorded
 const ROOF_CAP_METERS = 1.2; // the slab the map draws on top of every building
-const PARKED_MOST = 2500;
+const PARKED_MOST = 4000;
+const BUILT_SQUARE_METERS = 32; // buildings are filed under squares of ground this wide, to be found quickly
+const TRUNK_SQUARE_METERS = 6; // and trees under squares this wide
+const TRUNK_CLEAR_METERS = 1.6; // no car stands this close to the trunk of a tree
 const TREE_CLEAR_METERS = 2; // no tree this close to the edge of a road or a track
 const PATH_CLEAR_METERS = 0.5;
 const breathe = () => new Promise((resolve) => setTimeout(resolve, 0));
 const wait = (ms, value) => new Promise((resolve) => setTimeout(() => resolve(value), ms));
+
+/**
+ * A number that is one outline's own and the same every time: from its
+ * building's number in the map data, or from where it stands. What is made
+ * up for a building (what stands on its roof) is made up from this.
+ */
+const ownNumber = (building, index) => {
+  const [lng, lat] = building.polygons[index][0][0];
+  const from = typeof building.id === 'number' && Number.isFinite(building.id) ? Math.floor(Math.abs(building.id) / 1024) : Math.abs(Math.round(lng * 1e5) * 31 + Math.round(lat * 1e5));
+  return (from % 2147480000) + index * 7919;
+};
 
 /** The lines of a map feature, each [[lng, lat], …]. */
 const lineParts = (geometry) => {
@@ -329,15 +344,14 @@ export class MapView {
     this.wallMesh = new WallMesh(); // the walls, laid over the blocks the map draws
     this.wallsMade = null;
     this.footMesh = new Mesh(); // the shade on the ground at the foot of the walls
+    this.parapetMesh = new Mesh(); // the tops of the parapets, and their inner sides
     this.wallColours = new Map(); // building → the colour of its walls, worked out from its roof in the photo
-    this.roofPhotoMesh = new RoofMesh(); // the roofs themselves, which show the photo of the ground under them
-    this.roofPhotoCut = 0; // how many buildings have one
-    this.roofPhotoShown = false; // whether roofs are being shown by their photo: then nothing made up is put on them
-    this.sharpOn = true; // the photo as sharp as the screen can show it
+    this.roofColours = new Map(); // building → the colour of its roof, as the photo shows it
+    this.deckMesh = new RoofMesh(); // the roofs themselves
+    this.roofShadeMesh = new Mesh(); // the shade on the roofs: of their parapets and of what stands on them
+    this.sharpOn = true; // the photo of the Satellite look as sharp as the screen can show it
     this.detailOn = true; // walls drawn window by window, and shadows on walls and roofs
     this.scene = new SceneLayer(LIFE_LAYER, { onFrame: () => this.moveLife() });
-    this.groundCopy = new GroundCopy(GROUND_COPY_LAYER);
-    this.scene.ground = this.groundCopy;
     // For anyone looking at the scene from outside (the tests do): what it holds.
     this.scene.counts = () => ({ life: this.lifeCounts(), photo: this.photoCounts(), buildings: this.buildingCounts(), detail: this.detailCounts(), busy: { ...this.busy } });
     // How often each piece of work has been done, for anyone wondering what keeps the map from coming to rest.
@@ -405,8 +419,6 @@ export class MapView {
       this.followSun();
     });
     map.on('sourcedata', (event) => {
-      // New pieces of the photo come in, and fade in: the copy of the ground the roofs are filled from follows.
-      if (PHOTO_SOURCES.has(event.sourceId)) this.groundCopy.touch();
       if ((event.sourceId !== VECTOR_SOURCE && event.sourceId !== BUILDING_SOURCE) || !event.tile) return;
       if (event.sourceId === BUILDING_SOURCE) this.archiveTiles += 1;
       this.tilesLoaded += 1;
@@ -437,11 +449,11 @@ export class MapView {
     this.map.triggerRepaint();
   }
 
-  /** Show the satellite photo as sharp as the screen can show it (which takes more of it to fetch), or not. */
+  /** Show the photo of the Satellite look as sharp as the screen can show it (which takes more of it to fetch), or not. */
   setSharp(on) {
     if (this.sharpOn === Boolean(on)) return;
     this.sharpOn = Boolean(on);
-    if (this.type === 'city' || this.type === 'satellite') this.setType(this.type);
+    if (this.type === 'satellite') this.setType(this.type);
   }
 
   /** Switch to one of MAP_TYPES. Resolves true once the new style is on its way to the screen. */
@@ -456,7 +468,7 @@ export class MapView {
         const archive = this.archiveFailed || !window.pmtiles ? Promise.resolve(null) : buildingArchive();
         const [streets, found] = await Promise.all([loadStyle('liberty'), Promise.race([archive, wait(ARCHIVE_WAIT_MS, undefined)])]);
         buildings = found ?? null;
-        base = cityModelStyle(streets, { buildings, pixelRatio: this.photoPixels() });
+        base = cityModelStyle(streets, { buildings });
         if (found === undefined) {
           // Still looking. Once the address is known the city is drawn again, a house at a time.
           archive.then((late) => {
@@ -921,6 +933,8 @@ export class MapView {
     this.roofs = this.buildings ? buildings : [];
     if (!this.scene.origin) this.scene.setOrigin({ lng: centre.lng, lat: centre.lat });
     this.layRoofs();
+    // (And the car parks are filled where these buildings leave room.)
+    if (this.streetMade && this.streetMade.roofs !== this.roofs) this.layStreet();
   }
 
   /**
@@ -935,6 +949,18 @@ export class MapView {
     return colourOf(WALL_TINTS[typeof building.id === 'number' ? Math.abs(building.id) % WALL_TINTS.length : 0]);
   }
 
+  /**
+   * The colour of a building's roof: the one on record, else the one the
+   * photo shows it in, calmed; else null, for one of the usual shades.
+   */
+  roofColourOf(building) {
+    const recorded = building.roofColour ? colourOf(building.roofColour) : null;
+    if (recorded) return recorded;
+    if (building.replaced) return STORE_ROOF;
+    if (!this.photoOn || !(building.height <= ROOF_COLOUR_MOST_METERS)) return null;
+    return this.roofColours.get(building.id) ?? null;
+  }
+
   /** The walls and the shadows on them, for anyone who wants to count them. */
   detailCounts() {
     const made = this.shadowsMade;
@@ -946,56 +972,64 @@ export class MapView {
     };
   }
 
-  /** Whether the roofs are to show the photo, as things stand. */
-  photoRoofsWanted() {
-    return this.photoOn && this.type === 'city' && Boolean(this.buildings);
-  }
-
   /**
-   * Lay the roofs afresh, measured from the scene's origin. A low building's
-   * roof shows the satellite photo of the ground it stands on; the others
-   * are plain, with something made up standing on them, lit by the sun.
+   * Lay the roofs afresh, measured from the scene's origin, with the walls
+   * under them and the shadows on them. Every building gets a roof in its own
+   * colour, with something made up standing on it, lit by the sun.
    */
   layRoofs() {
     this.busy.roofs += 1;
     const origin = this.scene.origin;
-    const shown = this.photoRoofsWanted();
-    this.roofPhotoShown = shown;
     if (!origin || this.type !== 'city' || this.roofs.length === 0) {
-      if (this.roofMesh.count > 0 || this.roofPhotoMesh.count > 0 || this.wallMesh.count > 0) {
+      if (this.roofMesh.count > 0 || this.deckMesh.count > 0 || this.wallMesh.count > 0) {
         this.roofMesh.clear();
-        this.roofPhotoMesh.clear();
+        this.roofShadeMesh.clear();
+        this.deckMesh.clear();
         this.wallMesh.clear();
         this.footMesh.clear();
-        this.scene.set('roofs', this.roofMesh);
+        this.parapetMesh.clear();
+        this.scene.set('roofs', this.roofMesh, { lifted: 1 });
+        this.scene.set('roofshade', this.roofShadeMesh, { lifted: 2 });
+        this.scene.set('parapets', this.parapetMesh, { lifted: 1 });
         this.scene.set('feet', this.footMesh, { shaded: false });
-        this.scene.setRoofs(this.roofPhotoMesh);
+        this.scene.setRoofs(this.deckMesh);
         this.scene.setWalls(this.wallMesh);
         this.scene.setShadows(this.casterMesh, null);
       }
       this.roofsMade = null;
       this.wallsMade = null;
       this.shadowsMade = null;
-      this.roofPhotoCut = 0;
       return;
     }
+    // (A building that lies across the edge of a map tile comes twice over: each copy is cut to its own tile.)
+    const whole = tilePieces(this.roofs, tileBox);
     // The walls: over each block the map draws, walls of the app's own, up past the roof as a parapet.
     const wallTop = ROOF_CAP_METERS + ROOF_LIFT_METERS + PARAPET_METERS;
     this.scene.wallTop = wallTop;
     if (this.detailOn) {
-      // (A building that lies across the edge of a map tile comes twice over: each copy is cut to its own tile.)
-      const whole = tilePieces(this.roofs, tileBox);
-      this.wallsMade = wallsOf(this.wallMesh, whole, origin, { top: (building) => building.height + wallTop, colourOf: (building) => this.wallColourOf(building) });
+      const colourOfWalls = (building) => this.wallColourOf(building);
+      this.wallsMade = wallsOf(this.wallMesh, whole, origin, { top: (building) => building.height + wallTop, colourOf: colourOfWalls });
       footShade(this.footMesh, whole, origin);
+      // (A parapet has a top as wide as it is thick, and an inner side.)
+      const light = lightFrom(this.sun);
+      parapetTops(this.parapetMesh, whole, origin, {
+        top: (building) => building.height + wallTop,
+        roof: (building) => building.height + ROOF_CAP_METERS + ROOF_LIFT_METERS,
+        colourOf: colourOfWalls,
+        lit: (east, north, up) => faceLight(light, east, north, up),
+      });
     } else {
       this.wallMesh.clear();
       this.footMesh.clear();
+      this.parapetMesh.clear();
       this.wallsMade = null;
     }
     this.scene.setWalls(this.wallMesh);
     this.scene.set('feet', this.footMesh, { shaded: false });
+    this.scene.set('parapets', this.parapetMesh, { lifted: 1 });
     // The shadows the buildings throw on each other's walls and roofs, to go with the ones the map lays on the ground.
-    const fall = this.detailOn ? shadowFall(shadowReach(this.sun)) : null;
+    const sunFall = shadowFall(shadowReach(this.sun));
+    const fall = this.detailOn ? sunFall : null;
     // (Of the landmarks and minarets that throw a shadow of their own, only those round here: one far across the city would stretch the picture of the shadows thin.)
     const here = this.shade?.box;
     const near = (one) => {
@@ -1005,36 +1039,46 @@ export class MapView {
     const cast = fall ? shadowCasters(this.casterMesh, [...this.roofs, ...landmarkShades().filter(near), ...this.extraShades.filter(near)], origin, fall) : null;
     this.shadowsMade = cast ? { ...cast, fall, size: shadowMapSize(cast.box), corners: this.casterMesh.count } : null;
     this.scene.setShadows(this.casterMesh, this.shadowsMade);
+
+    // The roofs: one on every building, in its own colour, inside its parapet. (And on the flat roofs among the landmarks' models.)
+    const roofed = [...whole, ...landmarkRoofs().filter(near)];
+    const decks = roofDecks(this.deckMesh, roofed, origin, { cap: ROOF_CAP_METERS, lift: ROOF_LIFT_METERS, colourOf: (building) => this.roofColourOf(building) });
+    this.scene.setRoofs(this.deckMesh);
+    // The shade each parapet throws on its own roof. (Without the app's own walls there is no parapet.)
+    const strips = this.detailOn ? parapetShade(this.roofShadeMesh, whole, origin, sunFall, { cap: ROOF_CAP_METERS, lift: ROOF_LIFT_METERS, parapet: PARAPET_METERS, thick: PARAPET_THICK_METERS }) : 0;
+    if (!this.detailOn) this.roofShadeMesh.clear();
+    // What stands on the roofs, and its shade.
     const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
     const local = [];
-    for (const building of this.roofs) {
-      if (building.base > 0 || building.replaced) continue; // a part that starts above the ground (a bridge between towers, a canopy), or a landmark with a roof of its own
-      // A roof that shows its own photo needs nothing made up put on it. (A station keeps its vault.)
-      if (shown && building.kind !== 'station' && building.height <= PHOTO_ROOF_MOST_METERS) continue;
-      for (const polygon of building.polygons) {
-        if (polygon.length > 1) continue; // a courtyard in the middle: leave its roof bare
+    for (const building of roofed) {
+      if (building.base > 0) continue; // a part that starts above the ground: a bridge between towers, a canopy
+      if (building.replaced && !(building.roofTop > 0)) continue; // the map's block where a landmark's model stands
+      const station = building.kind === 'station';
+      const top = station ? building.height + ROOF_CAP_METERS : (building.roofTop > 0 ? building.roofTop : building.height + ROOF_CAP_METERS) + ROOF_LIFT_METERS;
+      const kind = building.replaced ? 'store' : facadeOf(building);
+      const wall = building.replaced ? null : this.wallColourOf(building);
+      building.polygons.forEach((polygon, index) => {
+        if (polygon.length > 1) return; // a courtyard in the middle: leave its roof bare
         local.push({
           ring: polygon[0].map(([lng, lat]) => [(lng - origin.lng) * squeeze, (lat - origin.lat) * METERS_PER_DEGREE]),
-          top: building.height + ROOF_CAP_METERS,
-          vault: building.kind === 'station',
+          top,
+          vault: station,
+          kind,
+          wall,
+          seed: ownNumber(building, index),
         });
-      }
+      });
     }
-    this.roofsMade = { furnished: drawRoofs(this.roofMesh, local, lightFrom(this.sun)), of: local.length };
-    this.scene.set('roofs', this.roofMesh);
-    // (With the buildings' roofs, the low roofs among the landmarks' models.)
-    if (shown) this.roofPhotoCut = photoRoofs(this.roofPhotoMesh, [...this.roofs, ...landmarkRoofs()], origin, { cap: ROOF_CAP_METERS, lift: ROOF_LIFT_METERS });
-    else {
-      this.roofPhotoMesh.clear();
-      this.roofPhotoCut = 0;
-    }
-    this.scene.setRoofs(this.roofPhotoMesh);
+    const furnished = drawRoofs(this.roofMesh, local, lightFrom(this.sun), { fall: sunFall, shade: this.roofShadeMesh });
+    this.roofsMade = { furnished, of: local.length, decks, strips, corners: this.roofMesh.count };
+    this.scene.set('roofs', this.roofMesh, { lifted: 1 });
+    this.scene.set('roofshade', this.roofShadeMesh, { lifted: 2 });
     this.map.triggerRepaint();
   }
 
   // ── The satellite photo (3D city) ───────────────────────────────────────
 
-  /** Turn reading the photo, for trees and building heights, on or off. */
+  /** Turn reading the photo, for trees, building heights and colours, on or off. (It is never shown.) */
   setPhoto(on) {
     this.photoOn = Boolean(on);
     this.photoMade = null;
@@ -1087,7 +1131,7 @@ export class MapView {
     this.readPhoto({ lng: centre.lng, lat: centre.lat }, half, box);
   }
 
-  /** Fetch the photo of an area and read it: building heights from shadows, and trees. */
+  /** Fetch the photo of an area and read it: building heights from shadows, the colours of roofs, and trees. */
   async readPhoto(origin, half, box) {
     this.busy.photo += 1;
     const request = ++this.photoRequest;
@@ -1159,7 +1203,7 @@ export class MapView {
       if (request !== this.photoRequest) return;
     }
 
-    // The colour of each roof, for its building's walls to go with.
+    // The colour of each roof: for the roof as it is drawn, and for its building's walls to go with.
     let coloured = 0;
     roofColours(tiles, PHOTO_ZOOM, origin, list).forEach((colour, index) => {
       const id = list[index].id;
@@ -1167,12 +1211,16 @@ export class MapView {
       if (!this.wallColours.has(id)) coloured += 1;
       this.wallColours.delete(id); // newest last, so the oldest can be forgotten first
       this.wallColours.set(id, wallTone(colour));
+      this.roofColours.delete(id);
+      this.roofColours.set(id, roofTone(colour));
     });
-    for (const id of this.wallColours.keys()) {
-      if (this.wallColours.size <= HEIGHTS_KEPT) break;
-      this.wallColours.delete(id);
+    for (const colours of [this.wallColours, this.roofColours]) {
+      for (const id of colours.keys()) {
+        if (colours.size <= HEIGHTS_KEPT) break;
+        colours.delete(id);
+      }
     }
-    if (coloured > 0) this.heightsRead += 1; // the walls are laid again, in their colours
+    if (coloured > 0) this.heightsRead += 1; // roofs and walls are laid again, in their colours
     await breathe();
     if (request !== this.photoRequest) return;
 
@@ -1205,11 +1253,13 @@ export class MapView {
     drawTrees(this.treeMesh, local, lightFrom(this.sun), shadowReach(this.sun));
     this.scene.set('trees', this.treeMesh);
     this.treesLit = this.sun;
+    // (No car is parked where a tree stands.)
+    if (this.streetMade && this.streetMade.trees !== this.trees) this.layStreet();
   }
 
   /** What the photo gave, for anyone who wants to count it. */
   photoCounts() {
-    return { on: this.photoOn && this.type === 'city', trees: this.trees.length, heights: this.heights.size, read: this.photoRead ?? null, roofs: this.roofPhotoShown ? { cut: this.roofPhotoCut, corners: this.roofPhotoMesh.count } : null };
+    return { on: this.photoOn && this.type === 'city', trees: this.trees.length, heights: this.heights.size, coloured: this.roofColours.size, read: this.photoRead ?? null };
   }
 
   // ── Traffic (3D city) ───────────────────────────────────────────────────
@@ -1235,14 +1285,6 @@ export class MapView {
         map.addLayer(this.scene, names?.id);
       } else if (!wanted && there) {
         map.removeLayer(LIFE_LAYER);
-      }
-      // Right above the photo of the ground: what is in the picture at that moment is the ground alone.
-      const copying = Boolean(map.getLayer(GROUND_COPY_LAYER));
-      if (wanted && !copying && map.getLayer(GROUND_LAYER)) {
-        const order = map.getLayersOrder();
-        map.addLayer(this.groundCopy, order[order.indexOf(GROUND_LAYER) + 1]);
-      } else if (!wanted && copying) {
-        map.removeLayer(GROUND_COPY_LAYER);
       }
     });
   }
@@ -1376,8 +1418,95 @@ export class MapView {
       this.streetMade = null;
       return;
     }
-    this.streetMade = drawStreet(this.streetMesh, this.traffic.network, lightFrom(this.sun), shadowReach(this.sun), PARKED_MOST);
+    this.streetMade = drawStreet(this.streetMesh, this.traffic.network, lightFrom(this.sun), shadowReach(this.sun), PARKED_MOST, this.builtGround() ?? {});
+    this.streetMade.roofs = this.roofs;
+    this.streetMade.trees = this.trees;
     this.scene.set('street', this.streetMesh);
+  }
+
+  /**
+   * Where the buildings stand, for whatever is put on the open ground between
+   * them: { built(x, y), near(x, y, reach), within }: a test of whether a
+   * spot (in the scene's metres) has a building on it, one of whether a
+   * building stands within reach of it, and the ground [west, south, east,
+   * north] the buildings are known for. Null without buildings of one outline
+   * each.
+   */
+  builtGround() {
+    const origin = this.scene.origin;
+    const box = this.shade?.box;
+    if (!origin || !box || !this.buildings || this.roofs.length === 0) return null;
+    const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
+    const squares = new Map();
+    const squareOf = (cellX, cellY) => (cellX + 32768) * 65536 + (cellY + 32768);
+    for (const building of this.roofs) {
+      if (building.base > 0) continue; // what starts above the ground leaves the ground free
+      for (const polygon of building.polygons) {
+        const ring = polygon[0].map(([lng, lat]) => [(lng - origin.lng) * squeeze, (lat - origin.lat) * METERS_PER_DEGREE]);
+        let west = Infinity;
+        let south = Infinity;
+        let east = -Infinity;
+        let north = -Infinity;
+        for (const [x, y] of ring) {
+          west = Math.min(west, x);
+          east = Math.max(east, x);
+          south = Math.min(south, y);
+          north = Math.max(north, y);
+        }
+        const outline = { ring, west, south, east, north };
+        for (let cellX = Math.floor(west / BUILT_SQUARE_METERS); cellX <= Math.floor(east / BUILT_SQUARE_METERS); cellX += 1) {
+          for (let cellY = Math.floor(south / BUILT_SQUARE_METERS); cellY <= Math.floor(north / BUILT_SQUARE_METERS); cellY += 1) {
+            const key = squareOf(cellX, cellY);
+            if (!squares.has(key)) squares.set(key, []);
+            squares.get(key).push(outline);
+          }
+        }
+      }
+    }
+    // (A tree counts as built on, as far as its trunk goes.)
+    const trunks = new Map();
+    for (const tree of this.trees) {
+      const x = (tree.lng - origin.lng) * squeeze;
+      const y = (tree.lat - origin.lat) * METERS_PER_DEGREE;
+      const key = squareOf(Math.floor(x / TRUNK_SQUARE_METERS), Math.floor(y / TRUNK_SQUARE_METERS));
+      if (!trunks.has(key)) trunks.set(key, []);
+      trunks.get(key).push([x, y]);
+    }
+    const built = (x, y) => {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (const [tx, ty] of trunks.get(squareOf(Math.floor(x / TRUNK_SQUARE_METERS) + dx, Math.floor(y / TRUNK_SQUARE_METERS) + dy)) ?? []) {
+            if (Math.hypot(tx - x, ty - y) < TRUNK_CLEAR_METERS) return true;
+          }
+        }
+      }
+      for (const { ring, west, south, east, north } of squares.get(squareOf(Math.floor(x / BUILT_SQUARE_METERS), Math.floor(y / BUILT_SQUARE_METERS))) ?? []) {
+        if (x < west || x > east || y < south || y > north) continue;
+        let inside = false;
+        for (let i = 1; i < ring.length; i += 1) {
+          const [x0, y0] = ring[i - 1];
+          const [x1, y1] = ring[i];
+          if (y0 > y !== y1 > y && x < x0 + ((y - y0) * (x1 - x0)) / (y1 - y0)) inside = !inside;
+        }
+        if (inside) return true;
+      }
+      return false;
+    };
+    // (Near enough: within reach of the box a building's outline fits in.)
+    const near = (x, y, reach) => {
+      const span = Math.ceil(reach / BUILT_SQUARE_METERS);
+      const cellX = Math.floor(x / BUILT_SQUARE_METERS);
+      const cellY = Math.floor(y / BUILT_SQUARE_METERS);
+      for (let dx = -span; dx <= span; dx += 1) {
+        for (let dy = -span; dy <= span; dy += 1) {
+          for (const { west, south, east, north } of squares.get(squareOf(cellX + dx, cellY + dy)) ?? []) {
+            if (Math.hypot(Math.max(west - x, 0, x - east), Math.max(south - y, 0, y - north)) <= reach) return true;
+          }
+        }
+      }
+      return false;
+    };
+    return { built, near, within: [(box.west - origin.lng) * squeeze, (box.south - origin.lat) * METERS_PER_DEGREE, (box.east - origin.lng) * squeeze, (box.north - origin.lat) * METERS_PER_DEGREE] };
   }
 
   /** Before each picture: move the traffic on and draw it afresh. True while there is something moving. */
@@ -1388,8 +1517,6 @@ export class MapView {
     const zoom = this.map.getZoom();
     // Everything in the scene fades in over the first half zoom level it is shown at.
     this.scene.opacity = Math.min(Math.max((zoom - LIFE_MIN_ZOOM) * 2, 0), 1);
-    // (The copy of the ground is kept only while there are roofs on screen to fill from it.)
-    this.groundCopy.wanted = this.scene.opacity > 0 && this.roofPhotoMesh.count > 0;
     // What the walls are drawn by: where the eye is, and how much wall a pixel of the screen shows.
     const turned = (this.map.getBearing() * Math.PI) / 180;
     const tilted = (this.map.getPitch() * Math.PI) / 180;
@@ -1434,6 +1561,7 @@ export class MapView {
       stations: this.lifeMade?.stations ?? 0,
       busKm: this.traffic.network.busKm ?? 0,
       parked: this.streetMade?.parked ?? 0,
+      bays: this.streetMade?.bays ?? 0,
       shelters: this.streetMade?.shelters ?? 0,
       bridges: this.bridgesMade,
       marks: this.marksMade ? { lines: this.marksMade.lines, crossings: this.marksMade.crossings } : null,

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { LANDMARKS, STAYED_BRIDGES, landmarkShades, landmarkSlabs, replacedByLandmarks } from '../js/landmarks.js';
+import { LANDMARKS, STAYED_BRIDGES, landmarkRoofs, landmarkShades, landmarkSlabs, replacedByLandmarks } from '../js/landmarks.js';
+import { RoofMesh, roofDecks, roofingOf } from '../js/roofs.js';
 
 const METERS = 111320;
 /** Metres east and north of a landmark's middle, for a [lng, lat]. */
@@ -178,4 +179,24 @@ test('the KAFD station: a long white shell with rippling sides under a rolling r
   const covered = (level) => level.reduce((sum, slab) => sum + slab.to - slab.from, 0);
   assert.ok(covered(waves[0]) > covered(waves[1]) && covered(waves[1]) > covered(waves[2]), waves.map(covered).join(' '));
   assert.equal(cut('kafd-station', 2)[0].paint, '#8fa7b8', 'glass at the ground');
+});
+
+test('the flat roofs among the landmarks\' models are laid like any other roof', () => {
+  const roofs = landmarkRoofs();
+  assert.ok(roofs.length >= 1, String(roofs.length));
+  for (const roof of roofs) {
+    // Each says where it lies, in what colour, and that it is laid with slabs: not sheet, as a store's roof would be.
+    assert.ok(roof.replaced && roof.roofTop > 0 && roof.roofTop === roof.height && roof.base === 0);
+    assert.match(roof.roofColour, /^#[0-9a-f]{6}$/i);
+    assert.equal(roofingOf(roof), 'slabs');
+    assert.ok(roof.polygons.length === 1 && roof.polygons[0][0].length >= 4);
+  }
+  // The wings of the mall at the foot of Kingdom Centre are among them, low and wide.
+  const centre = LANDMARKS.find((one) => one.id === 'kingdom-centre');
+  const near = roofs.filter((roof) => Math.hypot(...from(centre, roof.polygons[0][0][0])) < 250);
+  assert.ok(near.length >= 1 && near.every((roof) => roof.roofTop < 40), JSON.stringify(near.map((roof) => roof.roofTop)));
+  // The roof layer takes them as they are.
+  const mesh = new RoofMesh();
+  assert.equal(roofDecks(mesh, roofs, { lng: centre.at[0], lat: centre.at[1] }, { lift: 0.3 }), roofs.length);
+  assert.ok(mesh.count >= roofs.length * 3);
 });

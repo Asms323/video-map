@@ -22,7 +22,7 @@ import {
 import { MAP_TYPES, MapView } from './map.js';
 import { drivingRoute, placeAt, placeDetails, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
 
-const VERSION = '1.11.0';
+const VERSION = '1.12.0';
 const STORE_PREFIX = 'video-map:';
 
 const $ = (id) => document.getElementById(id);
@@ -57,8 +57,8 @@ const DEFAULT_SETTINGS = {
   roadInfo: true, // road name and speed limit
   weather: true,
   traffic: true, // simulated cars, buses and trains in the 3D city
-  photo: true, // roofs, trees and building heights from the satellite photo
-  sharp: true, // the satellite photo as sharp as the screen can show it (more to download)
+  photo: true, // trees, building heights and colours read from the satellite photo (which the 3D city never shows)
+  sharp: true, // the photo of the Satellite look as sharp as the screen can show it (more to download)
   detail: true, // walls drawn window by window, and shadows on walls and roofs (more work for the phone)
   follow: 'north', // how the map follows you: 'north' (the map does not turn) | 'heading'
   splitPortrait: null,
