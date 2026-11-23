@@ -1443,6 +1443,13 @@ export const GROUND = {
 // The dark that is laid over the ground, and how much of the ground it leaves.
 const NIGHT_VEIL = '#070a13';
 const NIGHT_VEIL_MOST = 0.88;
+const NIGHT_VEIL_POWER = 0.55; // how early the dark comes over the ground: half of it is there a fifth of the way into dusk
+/**
+ * How the light the lamps throw on the ground grows with the dark: as this
+ * power of it. (A lamp shows as soon as it is on; what it throws on the road
+ * counts for little while the sky is still light.)
+ */
+export const LAMP_THROW_POWER = 2.5;
 // What a block the map draws is left with by night: its own colour, most of the way to this.
 const NIGHT_BLOCK = '#080b16';
 const NIGHT_BLOCK_DEPTH = 0.86;
@@ -1494,7 +1501,7 @@ export function cityModelStyle(base, { buildings = null, night = 0 } = {}) {
   const dark = clamp(Number(night) || 0, 0, 1);
   const lamps = lampsLit(dark);
   // (A lamp shows as soon as it is on; the light it throws on the road counts for little until it is dark.)
-  const thrown = lamps * dark ** 1.5;
+  const thrown = lamps * dark ** LAMP_THROW_POWER;
   const byNight = dark >= 0.5;
   // (The blocks go dark in four steps: each step has the map lay its buildings out afresh.)
   const dusk = Math.round(dark * NIGHT_BLOCK_STEPS) / NIGHT_BLOCK_STEPS;
@@ -1915,7 +1922,8 @@ export function cityModelStyle(base, { buildings = null, night = 0 } = {}) {
       // ── By night ──
       // The dark itself, laid over the ground and all that is painted on it. (The buildings, and what the app
       // builds, are darkened where they are drawn.)
-      { id: 'city-night', type: 'background', paint: { 'background-color': NIGHT_VEIL, 'background-opacity': NIGHT_VEIL_MOST * dark } },
+      // (The ground goes dark early: at dusk, with the sky still bright, the streets are already in shadow.)
+      { id: 'city-night', type: 'background', paint: { 'background-color': NIGHT_VEIL, 'background-opacity': NIGHT_VEIL_MOST * dark ** NIGHT_VEIL_POWER } },
       // Playing fields under their floodlights, and swimming pools lit from within.
       {
         id: 'city-night-pitch',

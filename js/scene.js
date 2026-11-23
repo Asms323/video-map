@@ -14,7 +14,7 @@
 //   - and, unseen, the picture the shadows are read from: the buildings as
 //     the sun sees them (see shade.js).
 
-import { lampsLit, skyColours } from './lib.js';
+import { LAMP_THROW_POWER, lampsLit, skyColours } from './lib.js';
 
 const EARTH_AROUND_METERS = 40075016.686;
 const FRAME_MS = 33; // about 30 pictures a second is smooth enough, and easier on the battery
@@ -1269,7 +1269,7 @@ export class SceneLayer {
     gl.uniform1f(this.at.night, night);
     // (A lamp shows as soon as it is on. The light it throws on the ground counts for little until it is
     // dark: at dusk the daylight still drowns it.)
-    const thrown = lamps * night ** 1.5;
+    const thrown = lamps * night ** LAMP_THROW_POWER;
     gl.uniform1f(this.at.pixel, pixelPerDepth);
     gl.uniform1f(this.at.depth, depth);
     // A point of light is never drawn smaller than a speck that shows on this screen, nor absurdly large.
