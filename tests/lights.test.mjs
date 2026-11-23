@@ -129,7 +129,7 @@ test('street lamps stand along the roads by rule: how far apart, how tall and on
   const amber = middles[0];
   const white = pools.filter((corner) => Math.abs(corner[1] - 700) < 20).reduce((best, corner) => (corner[3] > best[3] ? corner : best));
   const hex = (text) => [parseInt(text.slice(1, 3), 16), parseInt(text.slice(3, 5), 16), parseInt(text.slice(5, 7), 16)];
-  assert.ok(Math.abs(amber[5] / amber[3] - hex(LAMP_LIGHT.side)[2] / 255) < 0.03 && Math.abs(white[5] / white[3] - hex(LAMP_LIGHT.big)[2] / 255) < 0.03);
+  assert.ok(Math.abs(amber[5] / amber[3] - hex(LAMP_LIGHT.side)[2] / hex(LAMP_LIGHT.side)[0]) < 0.03 && Math.abs(white[5] / white[3] - hex(LAMP_LIGHT.big)[2] / hex(LAMP_LIGHT.big)[0]) < 0.03);
   assert.ok(white[5] / white[3] > amber[5] / amber[3] + 0.2, 'more blue in white light');
 
   // The same lamps every time; and with a limit, the nearest first.

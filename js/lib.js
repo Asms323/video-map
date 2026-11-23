@@ -1451,11 +1451,15 @@ const NIGHT_ROOF_DEPTH = 0.88;
 const NIGHT_TEXT = '#ece8df';
 const NIGHT_TEXT_EDGE = 'rgba(7, 9, 15, 0.85)';
 /**
- * The colour of the street lamps' light, by kind of road. Riyadh's great
- * roads are lit white; its side streets still glow in the amber of sodium
- * lamps, which is what gives the city its colour from the air by night.
+ * The colour of the street lamps' light, by kind of road. Riyadh's lamps
+ * have been changed for white ones: more than half a million of them,
+ * across all the city's municipalities, in the years to 2023. So its great
+ * roads are lit a cool white and its avenues a neutral one, as they show in
+ * any photograph of the city by night now; the amber of the old sodium
+ * lamps is left to the side streets of the districts that have not had the
+ * new ones (led: what a side street has where it has).
  */
-export const LAMP_LIGHT = { big: '#ffe6c4', main: '#ffc27c', side: '#ffb163', led: '#ffe9cc' };
+export const LAMP_LIGHT = { big: '#eef1fb', main: '#fff0dc', side: '#ffb163', led: '#fff0dc' };
 // The roads that have lamps along them.
 const LAMP_CLASSES = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'busway'];
 const GLOW_SPILL_METERS = 4.5; // how far the lamps' light reaches past the edge of the road
@@ -1952,7 +1956,7 @@ export function cityModelStyle(base, { buildings = null, night = 0 } = {}) {
         'city-lamps',
         [['!', inTunnel], ['match', ['get', 'class'], LAMP_CLASSES, true, false]],
         {
-          'line-color': '#ffe9c4',
+          'line-color': '#fff2e0',
           'line-width': widthOfAny(0, ['match', ['get', 'class'], ['motorway', 'trunk'], 4.2, ['primary'], 3.8, ['secondary', 'tertiary'], 3.4, 3]),
           // (A dash of no length with a round end is a dot: one to every ten widths of the line.)
           'line-dasharray': [0, 10],

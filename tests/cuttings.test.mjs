@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { CUTTINGS, PORTAL_DEEP_METERS, drawCuttings, overCutting, sunkAlong } from '../js/cuttings.js';
 import { buildNetwork, drawMarks, heightAlong, lightFrom, Mesh } from '../js/life.js';
+import { LAMP_LIGHT } from '../js/lib.js';
 import { CasterMesh, groundCasters, shadowed } from '../js/shade.js';
 
 const ORIGIN = { lng: 46.67, lat: 24.7 };
@@ -254,16 +255,21 @@ test('in a cutting the sun reaches the road only where the ground beside it lets
   const strengths = new Set(lights.map((corner) => corner[6]));
   assert.deepEqual([...strengths].sort((a, b) => a - b), [Math.floor(255 * 0.17), Math.floor(255 * 0.3)]);
   const onFloor = lights.filter((corner) => corner[6] === Math.floor(255 * 0.3));
-  // (A great road's lamps are the pale white ones: #ffe6c4, here already weakened to three tenths.)
-  assert.ok(onFloor.every((corner) => corner[3] === Math.floor(255 * 0.3) && corner[4] === Math.floor(230 * 0.3) && corner[5] === Math.floor(196 * 0.3)));
+  // (A great road's lamps are the cool white ones, here already weakened to three tenths.)
+  const rgb = (colour) => [1, 3, 5].map((i) => parseInt(colour.slice(i, i + 2), 16));
+  const white = rgb(LAMP_LIGHT.big);
+  assert.ok(white[2] > white[0], 'cool');
+  assert.ok(onFloor.every((corner) => corner[3] === Math.floor(white[0] * 0.3) && corner[4] === Math.floor(white[1] * 0.3) && corner[5] === Math.floor(white[2] * 0.3)));
   assert.ok(onFloor.some((corner) => near(corner[2], -6.45)) && onFloor.every((corner) => corner[2] <= 0.05 + 1e-6 && corner[2] >= -6.45 - 1e-6));
   const onWalls = lights.filter((corner) => corner[6] === Math.floor(255 * 0.17));
   assert.ok(onWalls.some((corner) => corner[2] === 0) && onWalls.every((corner) => near(Math.abs(corner[1]), network.ways.find((way) => !way.hidden).width / 2 + 1.2 - 0.05, 0.01)));
-  // An avenue's are amber.
+  // An avenue's are a neutral white, a little warm.
   const avenue = buildNetwork([line('primary', [[0, 0], [400, 0]], { oneway: 1 }), line('primary', [[400, 0], [520, 0]], { oneway: 1, tunnel: true })], ORIGIN);
   drawCuttings(mesh, banks, avenue, NOON, glow);
   const amber = Array.from({ length: glow.count }, (_, i) => [...glow.colours.subarray(i * 4, i * 4 + 4)]).filter((colour) => colour[3] === Math.floor(255 * 0.3));
-  assert.ok(amber.length > 0 && amber.every((colour) => colour[0] === Math.floor(255 * 0.3) && colour[1] === Math.floor(194 * 0.3) && colour[2] === Math.floor(124 * 0.3)));
+  const neutral = rgb(LAMP_LIGHT.main);
+  assert.ok(neutral[0] > neutral[2] && neutral[2] > 200);
+  assert.ok(amber.length > 0 && amber.every((colour) => colour[0] === Math.floor(neutral[0] * 0.3) && colour[1] === Math.floor(neutral[1] * 0.3) && colour[2] === Math.floor(neutral[2] * 0.3)));
   // Without a mesh for it, no light is laid (and nothing breaks).
   assert.equal(drawCuttings(mesh, banks, avenue, NOON).ways, 1);
 });
