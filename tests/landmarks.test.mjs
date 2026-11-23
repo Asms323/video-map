@@ -43,8 +43,8 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   const data = landmarkSlabs();
   assert.equal(data.type, 'FeatureCollection');
   assert.equal(landmarkSlabs(), data, 'made once');
-  assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station']);
-  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'pif-tower']);
+  assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station']);
+  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower']);
   for (const one of LANDMARKS) {
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
     if (one.model) {
@@ -52,7 +52,8 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
       // real one, and keeps to its plot.
       assert.ok(slabsOf(one.id).every((feature) => feature.properties.t <= 20), one.id);
       const faces = modelOf(one.id);
-      assert.ok(faces.length > 100, `${one.id}: ${faces.length} triangles`);
+      // (The plainest of them, a block of glass with a crown on it, is some thirty triangles.)
+      assert.ok(faces.length > 25, `${one.id}: ${faces.length} triangles`);
       const corners = faces.flatMap((face) => face.corners);
       assert.equal(Math.min(...corners.map((corner) => corner[2])), 0, one.id);
       const top = Math.max(...corners.map((corner) => corner[2]));
@@ -89,14 +90,16 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   }
   // A mesh may hold every model at once, each at its own place; built again, it holds them once.
   const mesh = new ModelMesh();
-  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 6);
+  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 9);
   const corners = mesh.count;
-  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 6);
+  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 9);
   assert.equal(mesh.count, corners);
   // (The PIF Tower stands 2.9 km west and 7.1 km north of there; Kingdom Centre 0.4 km east and 1.3 km north; Hamad Tower 1.3 km east and 0.9 km south.)
   for (const corner of facesOf(mesh).flatMap((face) => face.corners)) {
     // (And the two Al Anoud Towers across the road from that one, and Al Faisaliah a little south and east of it.)
-    assert.ok(Math.hypot(corner[0] + 2880, corner[1] - 7090) < 60 || Math.hypot(corner[0] - 446, corner[1] - 1263) < 60 || Math.hypot(corner[0] - 1297, corner[1] + 883) < 60 || Math.hypot(corner[0] - 1169, corner[1] + 913) < 60 || Math.hypot(corner[0] - 1518, corner[1] + 1091) < 60, JSON.stringify(corner));
+    const spots = [[-2880, 7090], [446, 1263], [1297, -883], [1169, -913], [1518, -1091], [1244, -767], [1242, -317]];
+    // (…the ministry's tower north of Hamad Tower, and the Olaya Towers beyond Tahlia Street.)
+    assert.ok(spots.some(([east, north]) => Math.hypot(corner[0] - east, corner[1] - north) < 75), JSON.stringify(corner));
   }
   assert.ok(JSON.stringify(data).length < 700000, 'small enough to hand to the map in one piece');
 });
@@ -187,7 +190,7 @@ test('by night the landmarks are lit, each in its own way', () => {
   for (const one of LANDMARKS) {
     if (one.model) {
       // (A model: faces that give light of their own, or have rooms with their lamps on.)
-      assert.ok(modelOf(one.id).filter((face) => face.glow > 0 || face.lit > 0).length > 50, one.id);
+      assert.ok(modelOf(one.id).filter((face) => face.glow > 0 || face.lit > 0).length > 10, one.id);
       continue;
     }
     const lit = slabsOf(one.id).filter((feature) => feature.properties.n);
@@ -564,7 +567,7 @@ test('Hamad Tower: a sail of blue glass that narrows to a point along a curve, b
   assert.ok(lamp.length === 1 && near(lamp[0][2], 163.6, 0.01));
   const [lampEast, lampNorth] = own([...from(one, lamp[0]), 0]);
   assert.ok(near(lampEast, 12.5, 0.05) && near(lampNorth, 1, 0.05));
-  // The map's own blocks for it (its two parts, and the outline round both) make way for the model; the ministry next door does not.
+  // The map's own blocks for it (its two parts, and the outline round both) make way for the model; the hotel to the south of it does not.
   const rect = (id, [east, north], halfLong, halfWide) => {
     const ring = [[-halfWide, -halfLong], [halfWide, -halfLong], [halfWide, halfLong], [-halfWide, halfLong], [-halfWide, -halfLong]].map(([x, y]) => {
       const e = east + x * Math.cos(angle) + y * Math.sin(angle);
@@ -573,7 +576,7 @@ test('Hamad Tower: a sail of blue glass that narrows to a point along a curve, b
     });
     return { id, ring };
   };
-  const gone = replacedByLandmarks([rect('sail', [-7.6, 17.25], 21, 16.5), rect('block', [7.6, -17.25], 22.5, 16.5), rect('both', [-4.5, -3.9], 43.5, 30.5), rect('ministry', [-50, 105], 30, 20)]);
+  const gone = replacedByLandmarks([rect('sail', [-7.6, 17.25], 21, 16.5), rect('block', [7.6, -17.25], 22.5, 16.5), rect('both', [-4.5, -3.9], 43.5, 30.5), rect('hotel', [55, -110], 20, 15)]);
   assert.deepEqual([...gone].sort(), ['block', 'both', 'sail']);
 });
 
@@ -632,6 +635,55 @@ test('the Al Anoud Towers: two fins of sand-coloured stone end-on to the road, e
     // One podium under it, two storeys.
     const podium = slabsOf(one.id);
     assert.ok(podium.length === 1 && podium[0].properties.t === 11);
+  }
+});
+
+test('further up King Fahd Road: the ministry\'s white towers with their pyramid, and the two Olaya Towers of dark glass', () => {
+  const hamad = landmark('hamad-tower');
+  const turnOf = (one) => {
+    const angle = (one.bearing * Math.PI) / 180;
+    return ([east, north, up]) => [east * Math.cos(angle) - north * Math.sin(angle), east * Math.sin(angle) + north * Math.cos(angle), up];
+  };
+  // The ministry: 115 m north of Hamad Tower on the same side of the road.
+  const ministry = landmark('islamic-affairs');
+  const [east, north] = from(hamad, ministry.at);
+  assert.ok(near(north, 116, 8) && Math.abs(east) < 70 && ministry.height === 153);
+  const own = turnOf(ministry);
+  const faces = modelOf('islamic-affairs').map((face) => ({ ...face, places: face.corners.map(own) }));
+  // Two towers end to end, 98 m and 112 m, each 28 m by 29 m, striped upright: stone and window by turns.
+  const stone = faces.filter((face) => face.colour === '#e9e8e3');
+  const windows = faces.filter((face) => face.colour === '#2b3a4c' && face.kind === 'glass');
+  assert.ok(stone.length >= 120 && windows.length >= 120 && stone.every((face) => face.kind === 'plain'));
+  const topOf = (list, southern) => Math.max(...list.filter((face) => face.places.every((p) => (p[1] < 0) === southern)).flatMap((face) => face.places.map((p) => p[2])));
+  assert.deepEqual([topOf(stone, true), topOf(stone, false)], [98, 112]);
+  assert.ok(stone.every((face) => face.places.every(([x, y]) => Math.abs(x) <= 14.01 && Math.abs(y) <= 31.01 && Math.abs(y) >= 1.99)));
+  // (Each stripe of stone is 2.1 m wide or so, each window 1.4 m.)
+  const wide = (face) => Math.max(...face.places.map((p) => Math.hypot(p[0], p[1]))) > 0 && Math.max(Math.max(...face.places.map((p) => p[0])) - Math.min(...face.places.map((p) => p[0])), Math.max(...face.places.map((p) => p[1])) - Math.min(...face.places.map((p) => p[1])));
+  assert.ok(stone.every((face) => near(wide(face), 2.1, 0.15)) && windows.filter((face) => face.places.every((p) => Math.abs(p[1]) > 2.01 || Math.abs(p[0]) > 13.9)).every((face) => near(wide(face), 1.4, 0.15) || near(wide(face), 4, 0.01)));
+  // The pyramid of blue glass on the northern tower: 20 m square at its foot, 16 m high; and the mast to 153 m.
+  const blue = faces.filter((face) => face.colour === '#3f79ad');
+  const pyramid = blue.filter((face) => face.places.some((p) => near(p[2], 128, 0.01)));
+  assert.ok(pyramid.length === 4 && pyramid.every((face) => face.places.every(([x, y, z]) => (near(z, 112, 0.01) && near(Math.abs(x), 10, 0.01) && near(Math.abs(y - 16.5), 10, 0.01)) || (near(z, 128, 0.01) && near(x, 0, 0.01) && near(y, 16.5, 0.01)))));
+  assert.ok(near(Math.max(...faces.flatMap((face) => face.places.map((p) => p[2]))), 153, 0.01));
+  // The skylight on the southern tower slants up to the north.
+  const sky = blue.filter((face) => !pyramid.includes(face));
+  assert.ok(sky.length === 2 && near(Math.min(...sky.flatMap((face) => face.places.map((p) => p[2]))), 98.4, 0.01) && near(Math.max(...sky.flatMap((face) => face.places.map((p) => p[2]))), 104.5, 0.01));
+
+  // The Olaya Towers: just north of Tahlia Street, 600 m up the road from Hamad Tower; 203.4 m and 166.3 m.
+  const [tall, short] = [landmark('olaya-tower'), landmark('olaya-tower-2')];
+  assert.ok(near(from(hamad, tall.at)[1], 598, 10) && near(from(hamad, short.at)[1], 535, 10) && near(Math.hypot(...from(tall, short.at)), 64, 3));
+  for (const [one, roof, top] of [[tall, 190, 203.4], [short, 154, 166.3]]) {
+    const mine = turnOf(one);
+    const parts = modelOf(one.id).map((face) => ({ ...face, places: face.corners.map(mine) }));
+    const glass = parts.filter((face) => face.colour === '#22364f');
+    assert.ok(glass.length === 8 && glass.every((face) => face.kind === 'glass' && face.own === 13 && near(face.mirror, 0.55, 1e-6)));
+    const corners = glass.flatMap((face) => face.places);
+    assert.ok(near(Math.max(...corners.map((p) => p[0])), 22, 0.01) && near(Math.max(...corners.map((p) => p[1])), 16, 0.01) && near(Math.max(...corners.map((p) => p[2])), roof, 0.01) && Math.min(...corners.map((p) => p[2])) === 0);
+    // The crown: narrower, lit by night in light that changes colour.
+    const crown = parts.filter((face) => face.colour === '#c3ccd4');
+    assert.ok(crown.length === 8 && crown.every((face) => face.changing && near(face.glow, 0.75, 0.01) && face.places.every(([x, y, z]) => Math.abs(x) <= 17.01 && Math.abs(y) <= 11.51 && z >= roof - 0.01 && z <= top + 0.01)));
+    assert.ok(near(Math.max(...parts.flatMap((face) => face.places.map((p) => p[2]))), top, 0.01));
+    assert.ok(slabsOf(one.id).length === 1 && slabsOf(one.id)[0].properties.t === 13);
   }
 });
 

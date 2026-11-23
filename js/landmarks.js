@@ -442,6 +442,90 @@ function anoudPodium() {
   return [{ outline: block(25, 26, 0, 1), base: 0, top: 11, paint: '#d6ccb2', roof: true }];
 }
 
+/** The four upright faces of a box: face(lower left, lower right, upper right, upper left, the way it looks), each as seen from outside. */
+function boxFaces([x0, x1, y0, y1], z0, z1, face) {
+  face([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [0, -1, 0]);
+  face([x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1], [1, 0, 0]);
+  face([x1, y1, z0], [x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [0, 1, 0]);
+  face([x0, y1, z0], [x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [-1, 0, 0]);
+}
+const NO_LINES = [false, false, false, false];
+
+/**
+ * The Olaya Towers (BDPL Gulf, 2013): two towers of dark blue glass on King
+ * Fahd Road just north of Tahlia Street, 203.4 m and 166.3 m, joined at the
+ * ground by one entrance hall. Each is a plain upright block with a
+ * narrower crown set on it; by night the crowns are lit, in light that
+ * changes colour slowly.
+ *
+ * (Where they stand, and their heights, are as published; little else about
+ * them is, and they are built plainly.)
+ */
+function olayaTower(model, { roof, top }) {
+  const glass = { kind: 'glass', colour: '#22364f', storey: 4.2, bay: 2.8, lit: 0.25, floors: 0.35, mirror: 0.55 };
+  const crown = { kind: 'plain', colour: '#c3ccd4', light: '#ffffff', glow: 0.75, changing: true };
+  const body = [-22, 22, -16, 16];
+  const upper = [-17, 17, -11.5, 11.5];
+  boxFaces(body, 0, roof, (a, b, c, d, out) => model.quad(a, b, c, d, glass, { out, lines: NO_LINES, own: 13 }));
+  boxFaces(upper, roof, top, (a, b, c, d, out) => model.quad(a, b, c, d, crown, { out, lines: NO_LINES }));
+  const deck = { kind: 'plain', colour: '#9aa5ae', open: true };
+  model.flat([[body[0], body[2], roof], [body[1], body[2], roof], [body[1], body[3], roof], [body[0], body[3], roof]], deck, { holes: [[[upper[0], upper[2], roof], [upper[1], upper[2], roof], [upper[1], upper[3], roof], [upper[0], upper[3], roof]]] });
+  model.flat([[upper[0], upper[2], top], [upper[1], upper[2], top], [upper[1], upper[3], top], [upper[0], upper[3], top]], deck);
+  return { beacons: [[upper[0], upper[2], top + 0.6], [upper[1], upper[3], top + 0.6]] };
+}
+const olayaTall = (model) => olayaTower(model, { roof: 190, top: 203.4 });
+const olayaShort = (model) => olayaTower(model, { roof: 154, top: 166.3 });
+/** The hall each of the Olaya Towers stands on: as large as its plot, three storeys. */
+function olayaPodium() {
+  return [{ outline: block(23, 30), base: 0, top: 13, paint: '#c9cdd0', roof: true }];
+}
+
+/**
+ * The tower of the Ministry of Islamic Affairs, on King Fahd Road between
+ * Hamad Tower and Tahlia Street: two white towers end to end, striped from
+ * top to bottom with narrow windows. The southern one, 98 m, ends in a
+ * slanting skylight; the northern, 112 m, carries a pyramid of blue glass
+ * and a mast that reaches 153 m. (Its outline is the street map's, and 24
+ * floors; its heights are measured from a photograph taken along the road.)
+ */
+function ministryTower(model) {
+  const stone = { kind: 'plain', colour: '#e9e8e3', light: '#fff1d6', glow: 0.2 };
+  const glass = { kind: 'glass', colour: '#2b3a4c', storey: 4, bay: 2.4, lit: 0.3, floors: 0.5, mirror: 0.3 };
+  const blue = { kind: 'glass', colour: '#3f79ad', storey: 4, bay: 2.5, lit: 0.6, floors: 0.2, mirror: 0.6 };
+  const white = { kind: 'plain', colour: '#eef0ef' };
+  /** A face striped upright: stone and window by turns, from one end to the other. */
+  const striped = (a, b, c, d, out) => {
+    const long = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const count = Math.max(Math.round(long / 3.5), 1);
+    const at = (low, high, part) => [[low[0] + (high[0] - low[0]) * part, low[1] + (high[1] - low[1]) * part, low[2]], [low[0] + (high[0] - low[0]) * part, low[1] + (high[1] - low[1]) * part, d[2]]];
+    for (let k = 0; k < count; k += 1) {
+      const [p0, p1, p2] = [k / count, (k + 0.6) / count, (k + 1) / count];
+      const [[l0, u0], [l1, u1], [l2, u2]] = [at(a, b, p0), at(a, b, p1), at(a, b, p2)];
+      model.quad(l0, l1, u1, u0, stone, { out, lines: NO_LINES });
+      model.quad(l1, l2, u2, u1, glass, { out, lines: NO_LINES, own: 17 });
+    }
+  };
+  const south = [-14, 14, -31, -2];
+  const north = [-14, 14, 2, 31];
+  boxFaces(south, 0, 98, striped);
+  boxFaces(north, 0, 112, striped);
+  // (Between the two, a lower link.)
+  boxFaces([-11, 11, -2, 2], 0, 80, (a, b, c, d, out) => out[1] === 0 && model.quad(a, b, c, d, glass, { out, lines: NO_LINES, own: 17 }));
+  const roofing = { kind: 'plain', colour: '#c6c8c4', open: true };
+  for (const [[x0, x1, y0, y1], z] of [[south, 98], [north, 112], [[-11, 11, -2, 2], 80]]) model.flat([[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]], roofing);
+  // The southern tower's skylight: a square of glass, slanting up to the north, in a white frame.
+  const sky = [[-8, -27, 98.4], [8, -27, 98.4], [8, -11, 104.5], [-8, -11, 104.5]];
+  model.quad(...sky, blue, { out: [0, -0.4, 1], lines: NO_LINES });
+  model.quad([-8, -11, 98], [8, -11, 98], sky[2], sky[3], white, { out: [0, 1, 0], lines: NO_LINES });
+  for (const x of [-8, 8]) model.facet([x, -27, 98.4], [x, -11, 98], [x, -11, 104.5], white, { out: [x, 0, 0], lines: [false, false, false] });
+  // The northern tower's pyramid, and its mast.
+  const foot = [[-10, 6.5, 112], [10, 6.5, 112], [10, 26.5, 112], [-10, 26.5, 112]];
+  const apex = [0, 16.5, 128];
+  foot.forEach((corner, i) => model.facet(corner, foot[(i + 1) % 4], apex, blue, { out: [(corner[0] + foot[(i + 1) % 4][0]) / 2, (corner[1] + foot[(i + 1) % 4][1]) / 2 - 16.5, 12], lines: [false, true, true] }));
+  boxFaces([-0.35, 0.35, 16.15, 16.85], 126, 153, (a, b, c, d, out) => model.quad(a, b, c, d, white, { out, lines: NO_LINES }));
+  return { beacons: [[0, 16.5, 153.6]] };
+}
+
 // The violet the financial district lights its tower and its station in.
 const PIF_LIGHT = '#a428f5';
 
@@ -959,6 +1043,9 @@ export const LANDMARKS = [
   { id: 'hamad-tower', name: 'Hamad Tower', at: [46.682825, 24.692065], bearing: 342, height: 163, clear: 40, build: hamadPodium, model: hamadTower, nights: { '#dcd8cf': '#4a4334' } },
   { id: 'al-anoud-tower', name: 'Al Anoud Tower', at: [46.681436, 24.692002], bearing: 334, height: 121, clear: 30, build: anoudPodium, model: anoudFirst, nights: { '#d6ccb2': '#4d4433' } },
   { id: 'al-anoud-tower-2', name: 'Al Anoud Tower 2', at: [46.681674, 24.691597], bearing: 334, height: 106, clear: 30, build: anoudPodium, model: anoudSecond, nights: { '#d6ccb2': '#4d4433' } },
+  { id: 'islamic-affairs', name: 'Ministry of Islamic Affairs', at: [46.682305, 24.693105], bearing: 335, height: 153, clear: 38, model: ministryTower },
+  { id: 'olaya-tower', name: 'Olaya Towers (north)', at: [46.682347, 24.697437], bearing: 10, height: 203, clear: 34, build: olayaPodium, model: olayaTall, nights: { '#c9cdd0': '#3c4148' } },
+  { id: 'olaya-tower-2', name: 'Olaya Towers (south)', at: [46.68221, 24.696875], bearing: 10, height: 166, clear: 34, build: olayaPodium, model: olayaShort, nights: { '#c9cdd0': '#3c4148' } },
   { id: 'pif-tower', name: 'PIF Tower', at: [46.641519, 24.763701], bearing: 0, height: 385, clear: 36, model: pifTower },
   { id: 'burj-rafal', name: 'Burj Rafal', at: [46.632342, 24.792398], bearing: 81.6, height: 308, clear: 32, build: burjRafal, nights: { '#84b4c9': '#1a3340', '#96c2d4': '#27485a', '#dfe5e8': '#95a5af' } },
   { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20, height: 232, clear: 30, build: majdoul, nights: { '#eef0f1': '#7b8793', '#4f6478': '#1b2532', '#dfe4e7': '#6d7985' } },
