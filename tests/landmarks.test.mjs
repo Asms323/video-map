@@ -44,7 +44,7 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   assert.equal(data.type, 'FeatureCollection');
   assert.equal(landmarkSlabs(), data, 'made once');
   assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station']);
-  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'pif-tower']);
+  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'pif-tower']);
   for (const one of LANDMARKS) {
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
     if (one.model) {
@@ -89,14 +89,14 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   }
   // A mesh may hold every model at once, each at its own place; built again, it holds them once.
   const mesh = new ModelMesh();
-  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 5);
+  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 6);
   const corners = mesh.count;
-  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 5);
+  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 6);
   assert.equal(mesh.count, corners);
   // (The PIF Tower stands 2.9 km west and 7.1 km north of there; Kingdom Centre 0.4 km east and 1.3 km north; Hamad Tower 1.3 km east and 0.9 km south.)
   for (const corner of facesOf(mesh).flatMap((face) => face.corners)) {
-    // (And the two Al Anoud Towers across the road from that one.)
-    assert.ok(Math.hypot(corner[0] + 2880, corner[1] - 7090) < 60 || Math.hypot(corner[0] - 446, corner[1] - 1263) < 60 || Math.hypot(corner[0] - 1297, corner[1] + 883) < 60 || Math.hypot(corner[0] - 1169, corner[1] + 913) < 60, JSON.stringify(corner));
+    // (And the two Al Anoud Towers across the road from that one, and Al Faisaliah a little south and east of it.)
+    assert.ok(Math.hypot(corner[0] + 2880, corner[1] - 7090) < 60 || Math.hypot(corner[0] - 446, corner[1] - 1263) < 60 || Math.hypot(corner[0] - 1297, corner[1] + 883) < 60 || Math.hypot(corner[0] - 1169, corner[1] + 913) < 60 || Math.hypot(corner[0] - 1518, corner[1] + 1091) < 60, JSON.stringify(corner));
   }
   assert.ok(JSON.stringify(data).length < 700000, 'small enough to hand to the map in one piece');
 });
@@ -195,29 +195,67 @@ test('by night the landmarks are lit, each in its own way', () => {
     const paints = new Set(slabsOf(one.id).map((feature) => feature.properties.c));
     for (const paint of Object.keys(one.nights ?? {})) assert.ok(paints.has(paint), `${one.id}: no slab is painted ${paint}`);
   }
-  // Al Faisaliah's golden ball glows; the glass under its sunshades is dark.
-  const faisaliah = nights('al-faisaliah');
-  assert.ok(bright(faisaliah.get('#d9a23c')) === 255 && bright(faisaliah.get('#56677a')) < 70);
+  // Al Faisaliah's golden globe is lit in every room; of the offices under its sunshades, some.
+  const faisaliah = modelOf('al-faisaliah');
+  assert.ok(faisaliah.filter((face) => face.colour === '#c8922e').every((face) => face.lit === 1) && faisaliah.filter((face) => face.colour === '#3f5266').every((face) => near(face.lit, 0.3, 0.01)));
   // The TV tower's lantern is lit like a lamp, and the KAFD station shines through its shell.
   assert.ok(bright(nights('tv-tower').get('#3f566c')) === 255);
   assert.ok(bright(nights('kafd-station').get('#8fa7b8')) === 255 && bright(nights('kafd-station').get('#e6d9bb')) > 230);
 });
 
-test('Al Faisaliah: a square that narrows to a point, with its golden globe near the top', () => {
-  const widthAt = (z) => cut('al-faisaliah', z).reduce((widest, slab) => Math.max(widest, slab.to - slab.from), 0);
-  const widths = [1, 50, 100, 150].map(widthAt);
-  assert.ok(near(widths[0], 41.2, 0.6) && widths[1] < widths[0] && widths[2] < widths[1] && widths[3] < widths[2] && widths[3] > 16, String(widths));
-  // The floors are banded: pale sunshades and dark glass by turns.
-  const paints = new Set([1, 3.5, 5.4, 7.9].flatMap((z) => cut('al-faisaliah', z).map((slab) => slab.paint)));
-  assert.deepEqual([...paints].sort(), ['#56677a', '#e4e7e9']);
-  // Above the last floor only the four corner beams, and the globe between them.
-  const open = cut('al-faisaliah', 201);
-  const gold = open.filter((slab) => slab.paint === '#d9a23c' || slab.paint === '#e7b955');
-  assert.equal(gold.length, 1);
-  assert.ok(near(gold[0].to - gold[0].from, 14.8, 0.4) && near((gold[0].from + gold[0].to) / 2, 0, 0.2), 'a ball 15 m across at its widest, in the middle');
-  assert.equal(open.length - gold.length, 4, 'four beams');
-  assert.ok(widthAt(193.5) < 8 && widthAt(207) < 14, 'the ball draws in above and below');
-  assert.ok(widthAt(262) < 6 && widthAt(270) <= 1, 'and the spire closes it');
+test('Al Faisaliah: a square that rises to a point in one arc between four corner beams, banded floor by floor, with its golden globe near the top', () => {
+  const one = landmark('al-faisaliah');
+  assert.ok(one.height === 267 && one.clear === 30 && near(one.at[0], 46.68501, 1e-5) && near(one.at[1], 24.6902, 1e-5));
+  const angle = (one.bearing * Math.PI) / 180;
+  const own = ([east, north, up]) => [east * Math.cos(angle) - north * Math.sin(angle), east * Math.sin(angle) + north * Math.cos(angle), up];
+  const faces = modelOf('al-faisaliah').map((face) => ({ ...face, places: face.corners.map(own), looks: face.normals.map(own) }));
+  const halfAt = (z) => 20.6 * (1 - (z / 267) ** 2.8);
+  const lean = (z) => (20.6 * 2.8 * z ** 1.8) / 267 ** 2.8;
+  // 41 m a side at the ground, 24 m at its top floor, nothing at 267 m: one arc.
+  assert.ok(near(halfAt(0) * 2, 41.2, 0.01) && near(halfAt(195) * 2, 24.1, 0.1) && halfAt(267) === 0);
+  // Every storey of its 44 on each of its four faces: a band of pale sunshades, and a strip of dark glass above it.
+  const shades = faces.filter((face) => face.colour === '#e4e7e9');
+  const glass = faces.filter((face) => face.colour === '#3f5266');
+  assert.deepEqual([shades.length, glass.length], [44 * 4 * 2, 44 * 4 * 2]);
+  assert.ok(shades.every((face) => face.kind === 'plain') && glass.every((face) => face.kind === 'glass' && face.own === 3 && near(face.storey, 195 / 44, 1e-4)));
+  for (const face of [...shades, ...glass]) {
+    face.places.forEach(([x, y, z], k) => {
+      // On the arc, and no higher than the top floor; and the light falls on it as on a curve.
+      assert.ok(near(Math.max(Math.abs(x), Math.abs(y)), halfAt(z), 0.02) && z <= 195.01, `${x}, ${y}, ${z}`);
+      const [nx, ny, nz] = face.looks[k];
+      assert.ok(near(nz / Math.hypot(nx, ny), lean(z), 0.01), `${nz / Math.hypot(nx, ny)} at ${z}`);
+    });
+  }
+  const storey = 195 / 44;
+  assert.ok(shades.every((face) => near((Math.max(...face.places.map((p) => p[2])) - Math.min(...face.places.map((p) => p[2]))) / storey, 0.66, 0.01)));
+  // The four corner beams: from the ground to the lantern, each a little proud of the faces; and three ties round the tower.
+  const beams = faces.filter((face) => face.colour === '#eef0f0');
+  assert.ok(beams.every((face) => face.kind === 'plain' && face.light === '#eaf2ff' && near(face.glow, 0.5, 0.01)));
+  const ties = beams.filter((face) => face.places.every(([x, y, z]) => near(Math.max(Math.abs(x), Math.abs(y)), halfAt(z) + 0.7, 0.02)));
+  assert.equal(ties.length, 3 * 4 * 2);
+  assert.deepEqual([...new Set(ties.map((face) => Math.round(face.places.reduce((sum, p) => sum + p[2], 0) / 3 / 4) * 4))].sort((a, b) => a - b), [44, 88, 132]);
+  const tubes = beams.filter((face) => !ties.includes(face));
+  assert.equal(tubes.length, 4 * 34 * 4 * 2);
+  assert.ok(near(Math.min(...tubes.flatMap((face) => face.places.map((p) => p[2]))), 0, 0.001) && near(Math.max(...tubes.flatMap((face) => face.places.map((p) => p[2]))), 240, 0.01));
+  for (const face of tubes) for (const [x, y, z] of face.places) assert.ok(Math.abs(Math.abs(x) - (halfAt(z) + 0.3)) <= 1.31 && Math.abs(Math.abs(y) - (halfAt(z) + 0.3)) <= 1.31, 'at the four corners');
+  // Above the top floor: the roof over it, the observation deck at 200 m, and the globe, with nothing else between the beams.
+  const deck = faces.filter((face) => face.colour === '#d5dadd');
+  assert.ok(deck.length === 4 && deck.every((face) => face.places.every((p) => near(p[2], 200, 0.001))) && deck.some((face) => face.normal[2] > 0.99) && deck.some((face) => face.normal[2] < -0.99));
+  const gold = faces.filter((face) => face.colour === '#c8922e');
+  // (A ball of eight rings of sixteen pieces; at its two poles the pieces are triangles.)
+  assert.equal(gold.length, 8 * 16 * 2 - 32);
+  assert.ok(gold.every((face) => face.kind === 'glass' && face.lit === 1 && face.own === 7 && face.places.every(([x, y, z]) => near(Math.hypot(x, y, z - 217), 12, 0.01))), 'a globe 24 m across, its middle 217 m up');
+  gold.forEach((face) => face.looks.forEach((looks, k) => assert.ok(near(Math.hypot(...looks.map((part, i) => part - (face.places[k][i] - (i === 2 ? 217 : 0)) / 12)), 0, 0.01), 'it looks straight out all round')));
+  // (It fits: where it is widest, the beams stand further from the middle of the tower than it reaches.)
+  assert.ok((halfAt(217) + 0.3) * Math.SQRT2 > 12);
+  const between = faces.filter((face) => face.places.every((p) => p[2] > 201 && p[2] < 239) && !gold.includes(face) && !tubes.includes(face));
+  assert.equal(between.length, 0);
+  // The lantern: the last 27 m, closed in and lit, to the point at 267 m with its red lamp.
+  const lantern = faces.filter((face) => face.colour === '#eef0ef');
+  assert.ok(lantern.length >= 4 * 6 * 2 - 4 && lantern.every((face) => near(face.glow, 0.85, 0.01) && face.places.every((p) => p[2] >= 240 - 0.001)));
+  assert.ok(near(Math.max(...faces.flatMap((face) => face.places.map((p) => p[2]))), 267, 0.001));
+  const lamp = landmarkBeacons().filter((beacon) => Math.hypot(...from(one, beacon)) < 30);
+  assert.ok(lamp.length === 1 && near(lamp[0][2], 267.6, 0.01) && Math.hypot(...from(one, lamp[0])) < 0.1);
 });
 
 test('Al Majdoul turns a quarter of a turn on its way up', () => {

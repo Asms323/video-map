@@ -55,11 +55,6 @@ function stack(slabs, from, to, step, outlineAt, paints, more = {}) {
   }
 }
 
-/** A ball, as discs. */
-function ball(slabs, u, v, z, radius, step, paints) {
-  stack(slabs, z - radius, z + radius, step, (at) => moved(circle(Math.sqrt(Math.max(radius * radius - (at - z) ** 2, 0.04)), 16), u, v), paints);
-}
-
 // ── The towers ────────────────────────────────────────────────────────────
 
 /**
@@ -459,38 +454,119 @@ const KINGDOM_PODIUM = [
 ];
 
 /**
- * Al Faisaliah Tower, 267 m. A square that narrows to a point, held by four
- * corner beams that bow slightly outwards. Thirty office floors show as bands
- * of pale sunshades over dark glass. Above them the beams run on in the open,
- * with the golden glass globe caught between them, and close in a spire.
+ * Al Faisaliah Tower, 267 m (Foster + Partners, 2000): the first of the
+ * city's skyscrapers, between King Fahd Road and Olaya Street. Square in
+ * plan, 41 m a side at the ground, it rises to a point in one smooth arc
+ * between four corner beams. Up to its top floor, 195 m up, every storey
+ * shows as a deep band of pale sunshades over a strip of dark glass, and at
+ * three levels the beams are tied together by a heavier band. Above the top
+ * floor the beams run on in the open: first past the observation deck at
+ * 200 m, then round the golden glass globe that is caught between them (a
+ * restaurant, lit from within by night), and at last together, in a lit
+ * lantern that closes in the tip.
+ *
+ * (Its outline is the street map's; its heights are as published. The
+ * curve of its arc is set so that the globe, 24 m across, fits between the
+ * beams where it hangs.)
  */
-function faisaliah() {
-  const slabs = [];
-  const half = 20.6;
-  const height = 267;
-  const floorsEnd = 176;
-  const halfAt = (z) => half * (1 - (z / height) ** 1.3);
-  const square = (z, more = 0) => block(halfAt(z) + more, halfAt(z) + more);
-  // Each floor: a deep band of sunshades and a strip of glass in its shadow.
-  for (let base = 0; base < floorsEnd; base += 4.4) {
-    slabs.push({ outline: square(base + 1.5), base, top: base + 3, paint: '#e4e7e9' });
-    slabs.push({ outline: square(base + 3.7, -0.5), base: base + 3, top: Math.min(base + 4.4, floorsEnd), paint: '#56677a' });
+function faisaliahTower(model) {
+  const { half, top, floorsTop, storey, curve, deck, globe, lantern } = FAISALIAH;
+  /** Half the width of the tower at a height, to the middle of its corner beams. */
+  const halfAt = (z) => half * (1 - (Math.min(Math.max(z, 0), top) / top) ** curve);
+  /** How fast it draws in: metres for each metre up. */
+  const lean = (z) => (half * curve * Math.max(z, 0) ** (curve - 1)) / top ** curve;
+  const shade = { kind: 'plain', colour: '#e4e7e9', light: '#dfe8f2', glow: 0.16 };
+  const glass = { kind: 'glass', colour: '#3f5266', storey, bay: 3, lit: 0.3, floors: 0, mirror: 0.35 };
+  const beam = { kind: 'plain', colour: '#eef0f0', light: '#eaf2ff', glow: 0.5 };
+  const plain = [false, false, false, false];
+  const SIDES = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // which way each of its four faces looks
+  /** A place on a face: so far along it (-1 to 1, corner to corner), at a height, so far out from it. */
+  const on = ([ox, oy], along, z, out = 0) => {
+    const h = halfAt(z);
+    return [ox * (h + out) - oy * along * h, oy * (h + out) + ox * along * h, z];
+  };
+  /** A strip of a face from one height to another. */
+  const strip = (side, z0, z1, stuff, out = 0, more = {}) => {
+    const [n0, n1] = [z0, z1].map((z) => [side[0], side[1], lean(z)]);
+    model.quad(on(side, -1, z0, out), on(side, 1, z0, out), on(side, 1, z1, out), on(side, -1, z1, out), stuff, { out: [side[0], side[1], 0.2], normals: [n0, n0, n1, n1], lines: plain, ...more });
+  };
+
+  // The floors: to each a band of sunshades, and a strip of glass in its shadow.
+  const floors = Math.round(floorsTop / storey);
+  for (const side of SIDES) {
+    for (let k = 0; k < floors; k += 1) {
+      const z0 = k * storey;
+      strip(side, z0, z0 + storey * 0.66, shade);
+      strip(side, z0 + storey * 0.66, z0 + storey, glass, 0, { own: 3 });
+    }
+    // Where the beams are tied together: a heavier band right round.
+    for (const z of FAISALIAH.ties) strip(side, z - 1.3, z + 1.3, beam, 0.7);
+    // The lantern: the tip closed in between the beams, and lit.
+    const steps = 6;
+    for (let k = 0; k < steps; k += 1) {
+      strip(side, lantern + ((top - lantern) * k) / steps, lantern + ((top - lantern) * (k + 1)) / steps, { kind: 'plain', colour: '#eef0ef', light: '#f4f8ff', glow: 0.85 });
+    }
   }
-  // Where the beams are tied together, a heavier band right round.
-  for (const z of [44, 88, 132]) slabs.push({ outline: square(z, 0.7), base: z - 1.2, top: z + 1.2, paint: '#f5f5f3' });
-  slabs.push({ outline: square(floorsEnd, 0.4), base: floorsEnd, top: floorsEnd + 3, paint: '#f1f2f1' });
-  // The four beams in the open, from the last floor to the foot of the spire.
-  const spireFoot = 244;
-  for (let base = floorsEnd + 3; base < spireFoot; base += 5) {
-    const at = halfAt(base + 2.5);
-    for (const [su, sv] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) slabs.push({ outline: block(1.1, 1.1, su * at, sv * at), base, top: Math.min(base + 5, spireFoot), paint: '#eceeed' });
+  // The roof over the top floor, and the observation deck above it (seen from above, and from below).
+  const level = (z, stuff) => {
+    const h = halfAt(z) - 0.4;
+    const ring = [[-h, -h, z], [h, -h, z], [h, h, z], [-h, h, z]];
+    model.flat(ring, stuff, { out: [0, 0, 1] });
+    model.flat(ring, stuff, { out: [0, 0, -1] });
+  };
+  level(floorsTop, { kind: 'plain', colour: '#c9cfd4' });
+  level(deck, { kind: 'plain', colour: '#d5dadd', light: '#fff0d0', glow: 0.5 });
+
+  // The four corner beams, from the ground to the lantern: each a square tube that follows the arc.
+  const pieces = 34;
+  for (const [sx, sy] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) {
+    for (let k = 0; k < pieces; k += 1) {
+      const z0 = (lantern * k) / pieces;
+      const z1 = (lantern * (k + 1)) / pieces;
+      const at = (z, dx, dy) => {
+        // (It stands a little proud of the faces, and slims towards the top.)
+        const thick = 1.3 * Math.min(Math.max((top - z) / 60, 0.4), 1);
+        const middle = halfAt(z) + 0.3;
+        return [sx * middle + dx * thick, sy * middle + dy * thick, z];
+      };
+      for (const [dx0, dy0, dx1, dy1, looks] of [[1, -1, 1, 1, [1, 0, 0.2]], [1, 1, -1, 1, [0, 1, 0.2]], [-1, 1, -1, -1, [-1, 0, 0.2]], [-1, -1, 1, -1, [0, -1, 0.2]]]) {
+        model.quad(at(z0, dx0, dy0), at(z0, dx1, dy1), at(z1, dx1, dy1), at(z1, dx0, dy0), beam, { out: looks, lines: plain });
+      }
+    }
   }
-  ball(slabs, 0, 0, 201, 7.4, 1.6, ['#d9a23c', '#e7b955']);
-  // The lantern and the spire.
-  stack(slabs, spireFoot, height, 3, (z) => square(z, 0.9), ['#eef0ef', '#dfe3e4']);
-  slabs.push({ outline: block(0.5, 0.5), base: height, top: height + 9, paint: '#d9dcdd' });
-  return slabs;
+
+  // The globe: golden glass, with every room in it lit.
+  // (By night it glows gold: a line of that light round it at every level, over the lamps of its rooms.)
+  const gold = { kind: 'glass', colour: '#c8922e', storey: 3.1, bay: 2.4, lit: 1, floors: 0.4, mirror: 0.5, light: '#ffb23e', glow: 1 };
+  const rings = 8;
+  const around = 16;
+  const globeAt = (i, j) => {
+    const polar = (Math.PI * i) / rings;
+    const turn = (TAU * j) / around;
+    const way = [Math.sin(polar) * Math.cos(turn), Math.sin(polar) * Math.sin(turn), Math.cos(polar)];
+    return { at: [way[0] * globe.radius, way[1] * globe.radius, globe.at + way[2] * globe.radius], way };
+  };
+  for (let i = 0; i < rings; i += 1) {
+    for (let j = 0; j < around; j += 1) {
+      const [a, b, c, d] = [globeAt(i + 1, j), globeAt(i + 1, j + 1), globeAt(i, j + 1), globeAt(i, j)];
+      model.quad(a.at, b.at, c.at, d.at, gold, { out: a.way[2] < -0.99 ? [0, 0, -1] : [a.way[0] + c.way[0], a.way[1] + c.way[1], a.way[2] + c.way[2]], normals: [a.way, b.way, c.way, d.way], lines: plain, own: 7 });
+    }
+  }
+  return { beacons: [[0, 0, top + 0.6]] };
 }
+
+// Al Faisaliah Tower's measures, in metres.
+const FAISALIAH = {
+  half: 20.6, // half its width at the ground
+  top: 267,
+  floorsTop: 195, // its top floor
+  storey: 195 / 44,
+  curve: 2.8, // how it draws in: by this power of the height
+  ties: [44, 88, 132], // where the corner beams are tied together
+  deck: 200, // the observation deck
+  globe: { at: 217, radius: 12 }, // the golden globe: the height of its middle, and its size
+  lantern: 240, // where the tip is closed in
+};
 
 /**
  * The PIF Tower in the King Abdullah Financial District, 385 m (HOK and
@@ -879,17 +955,7 @@ function kafdStation() {
  */
 export const LANDMARKS = [
   { id: 'kingdom-centre', name: 'Kingdom Centre', at: [46.67441, 24.711346], bearing: 63.4, height: 302, clear: 48, build: kingdomPodium, model: kingdomCentre, nights: { '#e3ddd2': '#4a3f2e' } },
-  {
-    id: 'al-faisaliah',
-    name: 'Al Faisaliah Tower',
-    at: [46.68501, 24.6902],
-    bearing: 113.8,
-    height: 267,
-    clear: 30,
-    build: faisaliah,
-    // Floodlit bands over dark glass; and the golden ball, lit from within.
-    nights: { '#e4e7e9': '#5d6670', '#56677a': '#232c3a', '#f5f5f3': '#bcc6d1', '#f1f2f1': '#bcc6d1', '#eceeed': '#909ca8', '#d9a23c': '#ffc45a', '#e7b955': '#ffdb84', '#eef0ef': '#c9d4de', '#dfe3e4': '#b4c0cb', '#d9dcdd': '#aab4be' },
-  },
+  { id: 'al-faisaliah', name: 'Al Faisaliah Tower', at: [46.68501, 24.6902], bearing: 113.8, height: 267, clear: 30, model: faisaliahTower },
   { id: 'hamad-tower', name: 'Hamad Tower', at: [46.682825, 24.692065], bearing: 342, height: 163, clear: 40, build: hamadPodium, model: hamadTower, nights: { '#dcd8cf': '#4a4334' } },
   { id: 'al-anoud-tower', name: 'Al Anoud Tower', at: [46.681436, 24.692002], bearing: 334, height: 121, clear: 30, build: anoudPodium, model: anoudFirst, nights: { '#d6ccb2': '#4d4433' } },
   { id: 'al-anoud-tower-2', name: 'Al Anoud Tower 2', at: [46.681674, 24.691597], bearing: 334, height: 106, clear: 30, build: anoudPodium, model: anoudSecond, nights: { '#d6ccb2': '#4d4433' } },
