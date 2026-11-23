@@ -2,16 +2,20 @@
 //
 // The map data knows a tower only as an outline and a height, so on its own it
 // draws Kingdom Centre as a plain block. The handful of buildings that make
-// the skyline are rebuilt here from photographs: each one as a stack of thin
+// the skyline are rebuilt here from photographs. Most are a stack of thin
 // slabs, the way a model maker stacks sheets of card. A slab is an outline
 // with a bottom and a top; stacking outlines that shrink, turn or part gives
-// a taper, a twist or an arch.
+// a taper, a twist or an arch. One by one they are being rebuilt as true
+// models instead: flat faces that lean and fold, which the light falls on as
+// it does on the real building (see models.js).
 //
 // Where each one stands, which way it is turned and how large its footprint
 // is comes from the buildings data (Overture Maps, release 2026-11-18). Its
 // height is the published one. The shape between is read off photographs.
 //
 // Nothing here touches the browser. Measurements are in metres.
+
+import { Model, ModelMesh } from './models.js';
 
 const TAU = Math.PI * 2;
 const METERS_PER_DEGREE = 111320;
@@ -117,6 +121,8 @@ function kingdomCentre() {
 
 // The light along Kingdom Centre's arch. (The real one changes colour from night to night.)
 const ARCH_LIGHT = '#9fe9ff';
+// The violet the financial district lights its tower and its station in.
+const PIF_LIGHT = '#a428f5';
 
 // The outline of the Kingdom Centre complex, in metres east and north of the tower's middle.
 const KINGDOM_PODIUM = [
@@ -161,28 +167,210 @@ function faisaliah() {
 }
 
 /**
- * The PIF Tower in the King Abdullah Financial District, 385 m: a dark glass
- * crystal. Its sides are large flat facets that lean in by turns, so the plan
- * changes all the way up, and the top is cut at a slant.
+ * The PIF Tower in the King Abdullah Financial District, 385 m (HOK and
+ * Omrania, 2021): a crystal of dark glass, and the tallest building in the
+ * city. It is built as a true model (see models.js), not as slabs.
+ *
+ * Its plan has six equal sides of some 31 m and six corners that are of two
+ * kinds by turns: three apexes, sharp, and between them three pleats, blunt;
+ * so it is as much a triangle with its corners cut as a hexagon, and has
+ * some 2,550 square metres to a floor. It does not taper: it breathes. At
+ * every sixtieth metre of its height the corners change places, the apexes
+ * standing out where the pleats stood out the level before, and between two
+ * such levels every side is two flat triangles, folded along the line from
+ * the corner that stands out below to the one that stands out above. Those
+ * folds are the long diagonals that cross on its faces.
+ *
+ * Beside each apex a cleft runs up the whole height of the tower, dark and
+ * unlit, and at the top it opens into a notch in the crown: sixteen metres
+ * of glass screen that stand round the roof, a little lower to the
+ * south-west. Under the lowest level stands a glass hall, with a canopy
+ * that reaches out past the tower.
+ *
+ * By night a line of violet light runs along the edge of every floor, the
+ * folds are picked out in points of light, and below the top sixty metres
+ * most floors are offices with their lamps on.
+ *
+ * Where it stands is from the buildings data; its height, the shape of its
+ * plan ("apex and pleat points") and the size of its floors are as
+ * published. The count of its levels, how far its corners move, the clefts
+ * and the crown are measured off photographs taken from the north.
  */
-function pifTower() {
-  const slabs = [];
-  const height = 385;
-  // Its outline at the ground, in metres east and north of its middle.
-  const foot = [[-26.2, -4], [-28.4, 4.2], [0.9, 30.2], [22.6, 29.6], [28, -1.8], [9.6, -28.4], [-21.3, -22.4]];
-  const paints = ['#3d5b58', '#456662', '#3d5b58', '#456662', '#6a8a85'];
-  stack(slabs, 0, height, 5, (z) => {
-    const up = z / height;
-    // Alternate corners lean in more than their neighbours, and all of them a little further near the top.
-    const crown = Math.max((up - 0.84) / 0.16, 0);
-    return foot.map(([east, north], i) => {
-      const lean = 1 - up * (i % 2 === 0 ? 0.5 : 0.16);
-      // The slant of the top: everything draws towards the north-east corner.
-      const pull = crown * crown * 0.75;
-      return [east * lean * (1 - pull) + 14 * pull, north * lean * (1 - pull) + 16 * pull];
+function pifTower(model) {
+  const top = 385; // the rim of the crown
+  const roof = 369; // where the crown begins: the highest of the levels at which the corners change places
+  const foot = 10; // the lowest of those levels, over the hall
+  const tiers = 6;
+  const tier = (roof - foot) / tiers;
+  const storey = tier / 14;
+  const apexOut = 33; // how far from the middle an apex stands, between its going in and out
+  const pleatOut = 29.8; // and a pleat
+  const first = 40.7; // degrees clockwise from north to the first apex; the corners follow every 60 degrees
+  const swing = [0.08, 0.04]; // how far in and out an apex goes, as a part of its distance; and a pleat
+  // From an apex along the tower's side to the far edge of its cleft: the cleft widens as it rises, and
+  // most towards the top, where it opens into the notch.
+  const lipAt = (height) => 3 + 4.5 * (Math.min(height, roof) / roof) ** 2;
+  const deep = 3.4; // how deep the cleft is cut
+
+  // The corners: 0, 2, 4 are apexes and 1, 3, 5 pleats, clockwise from the north-east.
+  const corner = (i, by) => {
+    const angle = ((first + i * 60) * Math.PI) / 180;
+    const far = (i % 2 === 0 ? apexOut : pleatOut) * by;
+    return [Math.sin(angle) * far, Math.cos(angle) * far];
+  };
+  // How far out a corner stands at a level, as a part of its usual distance. Levels 0 to 6 are those at
+  // which the corners change places; 7 is the rim of the crown, under which the tower draws in a little.
+  const standing = (i, level) => {
+    if (level > tiers) return i % 2 === 0 ? 0.985 : 0.915;
+    if (level === tiers) return i % 2 === 0 ? 0.99 : 0.93;
+    const out = (level % 2 === 1) === (i % 2 === 0); // apexes stand out at odd levels, pleats at even ones
+    return 1 + (out ? swing[i % 2] : -swing[i % 2]);
+  };
+  // (The rim is highest over the north-eastern apex, and some four metres lower across the roof from it.)
+  const highest = corner(0, standing(0, tiers + 1));
+  const rimAt = ([east, north]) => top - 2.2 * (1 - (0.6 * east + 0.8 * north) / (0.6 * highest[0] + 0.8 * highest[1]));
+  const heightOf = (level, place) => (level > tiers ? rimAt(place) : foot + level * tier);
+  const raised = (place, height) => [place[0], place[1], height];
+  const unit = ([x, y]) => [x / Math.hypot(x, y), y / Math.hypot(x, y)];
+
+  /**
+   * The outline at a level, clockwise: for each apex the pleat before it, then the cleft (its far edge on
+   * the tower's side, its back, and the apex itself). The far edge of a cleft stands still while its apex
+   * goes in and out, so the cleft is wider where the apex stands out than where it stands in.
+   */
+  const outlineAt = (level) => {
+    const sides = [];
+    for (const i of [0, 2, 4]) {
+      const before = (i + 5) % 6;
+      const apex = corner(i, standing(i, level));
+      const pleat = corner(before, standing(before, level));
+      const usual = unit([corner(before, 1)[0] - corner(i, 1)[0], corner(before, 1)[1] - corner(i, 1)[1]]);
+      const lip = lipAt(foot + Math.min(level, tiers) * tier);
+      const still = [corner(i, 1)[0] + usual[0] * lip, corner(i, 1)[1] + usual[1] * lip];
+      const run = [pleat[0] - apex[0], pleat[1] - apex[1]];
+      const part = ((still[0] - apex[0]) * usual[0] + (still[1] - apex[1]) * usual[1]) / (run[0] * usual[0] + run[1] * usual[1]);
+      const edge = [apex[0] + run[0] * part, apex[1] + run[1] * part];
+      // (Going clockwise the inside of the tower is on the right.)
+      const way = unit([-run[0], -run[1]]);
+      const back = [edge[0] + way[1] * deep, edge[1] - way[0] * deep];
+      sides.push({ i, pleat, edge, back, apex, towards: unit(run), after: corner((i + 1) % 6, standing((i + 1) % 6, level)) });
+    }
+    return sides;
+  };
+
+  const violet = PIF_LIGHT;
+  // The glass of each tier: how strongly its floors are lined with light, and what share of them are lit offices.
+  const lit = [0.3, 0.45, 0.55, 0.6, 0.55, 0];
+  const glassOf = (t) => ({ kind: 'glass', colour: '#2f4649', storey, bay: 3, light: violet, glow: t === tiers - 1 ? 1 : 0.8, lit: lit[t], fins: 0.8, ridge: 1 });
+  const cleft = { kind: 'plain', colour: '#1e2b2c' };
+  // (Two bands of floors that are lit before any other as the day ends: a sky lobby and the plant under it.)
+  const bright = { ...glassOf(4), lit: 1 };
+  const bands = [
+    { from: foot + 57 * storey, to: foot + 58 * storey, stuff: bright },
+    { from: foot + 65 * storey, to: foot + 68 * storey, stuff: bright },
+  ];
+
+  /**
+   * One side of the tower between two levels: two flat triangles, folded along the line from the corner
+   * that stands out below to the one that stands out above. from, to: its two ends at the lower level,
+   * clockwise; fromUp, toUp: at the upper one.
+   */
+  const side = (from, to, fromUp, toUp, fromIsOut, stuff, more = {}) => {
+    const out = [-(to[1] - from[1]), to[0] - from[0], 0];
+    const along = { along: [to[0] - from[0], to[1] - from[1]], from: [from[0], from[1]] };
+    if (fromIsOut) {
+      model.facet(from, to, toUp, stuff, { out, ...along, ...more });
+      model.facet(from, toUp, fromUp, stuff, { out, ...along, ...more });
+    } else {
+      model.facet(from, to, fromUp, stuff, { out, ...along, ...more });
+      model.facet(to, toUp, fromUp, stuff, { out, ...along, ...more });
+    }
+  };
+  /** A wall of a cleft between two levels: dark, and no line is drawn along its edges. */
+  const wall = (from, to, fromUp, toUp) => {
+    const out = [-(to[1] - from[1]), to[0] - from[0], 0];
+    model.quad(from, to, toUp, fromUp, cleft, { out, lines: [false, false, false, false] });
+  };
+
+  // From the ground to the lowest level the tower stands straight, behind its hall.
+  for (let level = -1; level < tiers; level += 1) {
+    const low = outlineAt(Math.max(level, 0));
+    const high = outlineAt(level + 1);
+    const z0 = level < 0 ? 0 : heightOf(level);
+    const z1 = level < 0 ? foot : heightOf(level + 1);
+    const t = Math.max(level, 0);
+    const stuff = level < 0 ? { ...glassOf(0), lit: 1 } : glassOf(t);
+    const more = t === 4 ? { bands } : {};
+    low.forEach((here, n) => {
+      const above = level < 0 ? here : high[n];
+      const pleatsOut = t % 2 === 0; // at even levels the pleats stand out, at odd ones the apexes
+      side(raised(here.pleat, z0), raised(here.edge, z0), raised(above.pleat, z1), raised(above.edge, z1), pleatsOut, stuff, more);
+      wall(raised(here.edge, z0), raised(here.back, z0), raised(above.edge, z1), raised(above.back, z1));
+      wall(raised(here.back, z0), raised(here.apex, z0), raised(above.back, z1), raised(above.apex, z1));
+      side(raised(here.apex, z0), raised(here.after, z0), raised(above.apex, z1), raised(above.after, z1), !pleatsOut, stuff, more);
     });
-  }, paints, { north: true });
-  return slabs;
+  }
+
+  // The crown: a screen of glass round the roof, with a notch where each cleft comes up. The screen along
+  // a side of the tower stops short of the cleft, and its end leans away from it; the back wall of the
+  // cleft runs up to the rim at the apex and down to nothing at the far end.
+  const crownGlass = { ...glassOf(tiers - 1), lit: 0 };
+  // (Seen from the roof the screen is the same glass, without its lights.)
+  const inside = { ...crownGlass, light: null, ridge: 0.4, open: true };
+  const eaves = outlineAt(tiers);
+  const rim = outlineAt(tiers + 1);
+  const beacons = [];
+  const screen = (corners, stuff, out, lines) => {
+    if (corners.length === 4) model.quad(...corners, stuff, { out, lines });
+    else model.facet(...corners, stuff, { out, lines: lines.slice(0, 3) });
+    // (And its inner side, towards the roof.)
+    const inner = [-out[0], -out[1], 0];
+    const within = stuff === cleft ? { ...cleft, open: true } : inside;
+    if (corners.length === 4) model.quad(...corners, within, { out: inner, lines: [false, false, true, false] });
+    else model.facet(...corners, within, { out: inner, lines: [false, false, false] });
+  };
+  eaves.forEach((here, n) => {
+    const above = rim[n];
+    const endLow = [here.edge[0] + here.towards[0] * 3, here.edge[1] + here.towards[1] * 3];
+    const endHigh = [above.edge[0] + above.towards[0] * 9, above.edge[1] + above.towards[1] * 9];
+    const outOf = (from, to) => [-(to[1] - from[1]), to[0] - from[0], 0];
+    screen(
+      [raised(here.pleat, roof), raised(endLow, roof), raised(endHigh, rimAt(endHigh)), raised(above.pleat, rimAt(above.pleat))],
+      crownGlass,
+      outOf(here.pleat, here.edge),
+      [true, true, true, true],
+    );
+    screen([raised(here.back, roof), raised(here.apex, roof), raised(above.apex, rimAt(above.apex))], cleft, outOf(here.back, here.apex), [false, false, true]);
+    screen(
+      [raised(here.apex, roof), raised(here.after, roof), raised(above.after, rimAt(above.after)), raised(above.apex, rimAt(above.apex))],
+      crownGlass,
+      outOf(here.apex, here.after),
+      [true, true, true, true],
+    );
+    beacons.push([above.apex[0], above.apex[1], rimAt(above.apex) + 0.6]);
+  });
+  // The roof inside the crown: dark, under its field of solar panels.
+  model.flat(eaves.flatMap((here) => [here.pleat, here.edge, here.back, here.apex]).map((place) => raised(place, roof)), { kind: 'plain', colour: '#3a4858', open: true });
+
+  // At its foot: the glass hall, lit from within, and over it the canopy that reaches out from the tower.
+  const ground = [0, 1, 2, 3, 4, 5].map((i) => corner(i, standing(i, 0)));
+  const wider = (by) => ground.map(([east, north]) => [east * by, north * by]);
+  const hall = wider(1.13);
+  const hallGlass = { kind: 'glass', colour: '#5f7f8d', storey: 5.5, bay: 2.5, lit: 1, ridge: 0.6 };
+  hall.forEach((from, i) => {
+    const to = hall[(i + 1) % 6];
+    model.quad(raised(from, 0), raised(to, 0), raised(to, 11), raised(from, 11), hallGlass, { out: [-(to[1] - from[1]), to[0] - from[0], 0] });
+  });
+  const canopy = wider(1.27);
+  const pale = { kind: 'plain', colour: '#cfd5d8' };
+  model.flat(canopy.map((place) => raised(place, 12.6)), pale);
+  // (Its underside is lit by the lamps of the hall.)
+  model.flat(canopy.map((place) => raised(place, 11)), { kind: 'plain', colour: '#dfe3e4', light: '#ffe9c8', glow: 0.7 }, { out: [0, 0, -1] });
+  canopy.forEach((from, i) => {
+    const to = canopy[(i + 1) % 6];
+    model.quad(raised(from, 11), raised(to, 11), raised(to, 12.6), raised(from, 12.6), pale, { out: [-(to[1] - from[1]), to[0] - from[0], 0], lines: [false, false, false, false] });
+  });
+  return { beacons };
 }
 
 /**
@@ -358,7 +546,8 @@ function kafdStation() {
 /**
  * The landmarks: where each stands ([lng, lat] of the middle of its
  * footprint), which way its long axis points (degrees clockwise from north),
- * and how to build it. clear: within this many metres of its middle the map's
+ * and how to build it: build() gives its slabs, or model(model) builds it as
+ * a true model. clear: within this many metres of its middle the map's
  * own buildings are taken out, so the model does not stand inside a block.
  * shade: a footprint and height for its shadow, where the map data has none.
  */
@@ -375,7 +564,7 @@ export const LANDMARKS = [
     // Floodlit bands over dark glass; and the golden ball, lit from within.
     nights: { '#e4e7e9': '#5d6670', '#56677a': '#232c3a', '#f5f5f3': '#bcc6d1', '#f1f2f1': '#bcc6d1', '#eceeed': '#909ca8', '#d9a23c': '#ffc45a', '#e7b955': '#ffdb84', '#eef0ef': '#c9d4de', '#dfe3e4': '#b4c0cb', '#d9dcdd': '#aab4be' },
   },
-  { id: 'pif-tower', name: 'PIF Tower', at: [46.641519, 24.763678], bearing: 90, height: 385, clear: 34, build: pifTower, nights: { '#3d5b58': '#15262a', '#456662': '#1b3033', '#6a8a85': '#4f8f88' } },
+  { id: 'pif-tower', name: 'PIF Tower', at: [46.641519, 24.763701], bearing: 0, height: 385, clear: 36, model: pifTower },
   { id: 'burj-rafal', name: 'Burj Rafal', at: [46.632342, 24.792398], bearing: 81.6, height: 308, clear: 32, build: burjRafal, nights: { '#84b4c9': '#1a3340', '#96c2d4': '#27485a', '#dfe5e8': '#95a5af' } },
   { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20, height: 232, clear: 30, build: majdoul, nights: { '#eef0f1': '#7b8793', '#4f6478': '#1b2532', '#dfe4e7': '#6d7985' } },
   {
@@ -399,8 +588,8 @@ export const LANDMARKS = [
     height: 34,
     clear: 70,
     build: kafdStation,
-    // Lit from within: light through the glass at its foot and through the bands where the shell is pierced.
-    nights: { '#8fa7b8': '#ffe7b3', '#f5f3ee': '#8b8984', '#e6d9bb': '#f1c36c', '#efe9dc': '#a09a8c', '#ebe5d6': '#6a6861' },
+    // Lit from within, in the district's violet: light through the glass at its foot and through the bands where the shell is pierced.
+    nights: { '#8fa7b8': '#efe0ff', '#f5f3ee': '#8a8798', '#e6d9bb': '#b24dff', '#efe9dc': '#9a93ad', '#ebe5d6': '#66627a' },
   },
 ];
 
@@ -425,7 +614,7 @@ export function landmarkSlabs() {
   if (made) return made;
   const features = [];
   for (const landmark of LANDMARKS) {
-    for (const slab of landmark.build()) {
+    for (const slab of landmark.build?.() ?? []) {
       const ring = slab.outline.map(([u, v]) => place(landmark, u, v, slab.north));
       ring.push(ring[0]);
       const properties = { landmark: landmark.id, b: Math.round(slab.base * 100) / 100, t: Math.round(slab.top * 100) / 100, c: slab.paint };
@@ -439,14 +628,39 @@ export function landmarkSlabs() {
 }
 
 /**
+ * Build the landmarks that are true models into a mesh (a ModelMesh: see
+ * models.js), each where it stands, measured in metres east and north of
+ * origin ({ lng, lat }). Returns how many were built.
+ */
+export function landmarkModels(mesh, origin) {
+  mesh.clear();
+  const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
+  let models = 0;
+  for (const landmark of LANDMARKS) {
+    if (!landmark.model) continue;
+    landmark.model(new Model(mesh, { east: (landmark.at[0] - origin.lng) * squeeze, north: (landmark.at[1] - origin.lat) * METERS_PER_DEGREE, turn: landmark.bearing }));
+    models += 1;
+  }
+  return models;
+}
+
+/**
  * Where the red lamps on top of the tall landmarks are: one on each of a
- * landmark's highest slabs (the two points of Kingdom Centre, a mast), as
- * [lng, lat, height]. Those under 60 m have none.
+ * landmark's highest slabs (the two points of Kingdom Centre, a mast), or
+ * where its model says, as [lng, lat, height]. Those under 60 m have none.
  */
 export function landmarkBeacons() {
   const beacons = [];
   for (const landmark of LANDMARKS) {
     if (!(landmark.height >= 60)) continue;
+    if (landmark.model) {
+      // (A model is measured east and north of its middle, turned with it.)
+      const angle = (landmark.bearing * Math.PI) / 180;
+      for (const [east, north, up] of landmark.model(new Model(new ModelMesh(16))).beacons ?? []) {
+        beacons.push([...place(landmark, east * Math.cos(angle) + north * Math.sin(angle), north * Math.cos(angle) - east * Math.sin(angle), true), up]);
+      }
+      continue;
+    }
     const slabs = landmark.build();
     const top = Math.max(...slabs.map((slab) => slab.top));
     for (const slab of slabs) {
@@ -469,7 +683,7 @@ export function landmarkBeacons() {
 export function landmarkRoofs() {
   const roofs = [];
   for (const landmark of LANDMARKS) {
-    for (const slab of landmark.build()) {
+    for (const slab of landmark.build?.() ?? []) {
       if (!slab.roof) continue;
       const ring = slab.outline.map(([u, v]) => place(landmark, u, v, slab.north));
       ring.push(ring[0]);

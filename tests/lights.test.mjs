@@ -311,8 +311,10 @@ test('a red lamp stands on the mast of every tall tower, and on top of the tall 
   for (const landmark of LANDMARKS) {
     const own = near(landmark);
     if (landmark.height < 60) assert.equal(own.length, 0, landmark.id);
-    else assert.ok(own.length >= 1 && own.every(([, , height]) => height >= landmark.height && height <= landmark.height + 26), `${landmark.id}: ${JSON.stringify(own)}`);
+    else assert.ok(own.length >= 1 && own.every(([, , height]) => height >= landmark.height - (landmark.model ? 5 : 0) && height <= landmark.height + 26), `${landmark.id}: ${JSON.stringify(own)}`);
   }
+  // (The PIF Tower has three: one on the rim of its crown over each apex, the rim being lower to the south-west.)
+  assert.equal(near(LANDMARKS.find((one) => one.id === 'pif-tower')).length, 3);
   assert.equal(near(LANDMARKS.find((one) => one.id === 'kingdom-centre')).length, 2);
   assert.equal(near(LANDMARKS.find((one) => one.id === 'burj-rafal')).length, 2, 'a mast on each horn');
   assert.equal(near(LANDMARKS.find((one) => one.id === 'tv-tower')).length, 1);

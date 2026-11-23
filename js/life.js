@@ -139,13 +139,14 @@ export function seededRandom(seed) {
 // How each kind of road is driven: lanes in one direction, usual speed in
 // metres a second, and vehicles per kilometre of one direction when traffic is
 // normal.
+// (Riyadh's great roads are full for most of the day: most of the traffic is put on them.)
 const ROADS = {
-  motorway: { lanes: 3, speed: 27, perKm: 42 },
-  trunk: { lanes: 3, speed: 22, perKm: 38 },
-  primary: { lanes: 2, speed: 16, perKm: 30 },
-  secondary: { lanes: 2, speed: 13, perKm: 20 },
+  motorway: { lanes: 3, speed: 27, perKm: 62 },
+  trunk: { lanes: 3, speed: 22, perKm: 54 },
+  primary: { lanes: 2, speed: 16, perKm: 38 },
+  secondary: { lanes: 2, speed: 13, perKm: 22 },
   tertiary: { lanes: 1, speed: 11, perKm: 11 },
-  minor: { lanes: 1, speed: 8, perKm: 3.5 },
+  minor: { lanes: 1, speed: 8, perKm: 3 },
   busway: { lanes: 1, speed: 12, perKm: 0 },
   service: { lanes: 1, speed: 5, perKm: 0.8 },
 };
@@ -704,7 +705,7 @@ export function railEntries(network) {
 /** The traffic on a network: cars on the roads, buses along the streets with stops, trains on the rails. */
 export class Traffic {
   /** now(): the clock in milliseconds, which a test can replace. */
-  constructor({ seed = 1, most = 650, now = () => Date.now() } = {}) {
+  constructor({ seed = 1, most = 760, now = () => Date.now() } = {}) {
     this.random = seededRandom(seed);
     this.most = most;
     this.now = now;

@@ -38,9 +38,10 @@ import {
   withOverlays,
 } from './lib.js';
 import { PLAIN_FUEL, brandOf, localKind, mosqueExtras, mosquesAmong, stationExtras, storeExtras } from './dress.js';
-import { STAYED_BRIDGES, landmarkBeacons, landmarkRoofs, landmarkShades, replacedByLandmarks } from './landmarks.js';
-import { drawBeacons, drawLamps, drawRoofLights, drawTrafficLights, shopSpill } from './lights.js';
+import { STAYED_BRIDGES, landmarkBeacons, landmarkModels, landmarkRoofs, landmarkShades, replacedByLandmarks } from './landmarks.js';
+import { drawFarLights, drawLamps, drawRoofLights, drawTrafficLights, lightPoints, shopSpill } from './lights.js';
 import { Mesh, Traffic, buildNetwork, drawBridges, drawMarks, drawRoofs, drawStreet, drawTraffic, drawTrees, faceLight, lightFrom, stayedHere, streetDirection, streetNear, trafficLevel } from './life.js';
+import { ModelMesh } from './models.js';
 import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
 import { SceneLayer } from './scene.js';
 import { buildingArchive, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
@@ -62,13 +63,17 @@ const SHOWN_DAY_FROM_DEGREES = 12; // the real sun does for "day" once it stands
 const NIGHT_STEP = 0.04;
 const WALL_NIGHT_STEPS = 8;
 const LAMPS_MOST = 3000;
+// How wide a point of light is, in metres: the head of a street lamp, a headlight or a tail light, the red
+// lamp on a tower, and one of the city's lights seen from afar. (None is ever drawn smaller than a speck.)
+const POINT_METERS = { lamp: 2.6, vehicle: 1.5, beacon: 3.4, far: 7 };
+const CORNER_LAMPS_FROM_METERS = 60; // a building this tall has a red lamp on each corner of its roof
 
 // Styles drawn on a dark ground need light text on the app's own markers.
 const DARK_TYPES = new Set(['night', 'satellite']);
 
 // How the camera sits while it follows you: how far it leans over (degrees from
 // straight down) and, in the view that does not turn, which way it looks.
-const FLAT_CAMERA = { north: { pitch: 0, bearing: 0 }, heading: { pitch: 55 } };
+const FLAT_CAMERA = { north: { pitch: 0, bearing: 0, lens: 36.87 }, heading: { pitch: 55, lens: 36.87 } };
 
 // The 3D city is drawn isometric, the way an architect draws a model: looking
 // down at the angle where the three edges of a cube all measure the same on
@@ -78,8 +83,19 @@ const ISO_PITCH = 54.7;
 const ISO_BEARING = 45; // looking north-east
 const ISO_LENS = 6; // degrees of view, top to bottom
 const NORMAL_LENS = 36.87; // the map library's own
-const CITY_CAMERA = { north: { pitch: ISO_PITCH, bearing: ISO_BEARING }, heading: { pitch: ISO_PITCH } };
+// Turned the way you travel, the 3D city is seen the way a camera sees it from a tall building or a
+// drone: from low behind you, along the road to the horizon, through an ordinary lens, with the sky
+// over the skyline. Close enough in for the camera to be a hundred metres or so up.
+const SKY_PITCH = 76;
+const SKY_ZOOM = 17.2;
+const SKY_BELOW_MIDDLE = 0.3; // how far below the middle of the picture you are, as a part of its height
+const MOST_PITCH = 82;
+const CITY_CAMERA = { north: { pitch: ISO_PITCH, bearing: ISO_BEARING, lens: ISO_LENS }, heading: { pitch: SKY_PITCH, lens: NORMAL_LENS, zoom: SKY_ZOOM, below: SKY_BELOW_MIDDLE } };
 const cameraOf = (type) => (type === 'city' ? CITY_CAMERA : FLAT_CAMERA);
+// Towards the horizon the air itself shows: what is far off fades into haze (see the scene), from this
+// much tilt on, and fully from a few degrees more.
+const HAZE_FROM_PITCH = 62;
+const HAZE_FULL_PITCH = 70;
 
 // Shadows are worked out for what is on screen and a margin around it, and
 // again once the view leaves that area, new map tiles arrive or the sun moves on.
@@ -99,6 +115,7 @@ const METERS_PER_DEGREE = 111320;
 // are already on their way when they come into view.
 const LIFE_LAYER = 'city-life';
 const LIFE_MIN_ZOOM = 15;
+const MODEL_MIN_ZOOM = 10.5; // the models of the famous buildings show from much further off
 const LIFE_MARGIN_METERS = 500;
 const LIFE_REACH_METERS = 2200;
 const LIFE_LINES = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'busway', 'service', 'rail', 'transit']);
@@ -427,8 +444,15 @@ export class MapView {
     this.lampPostMesh = new Mesh(); // the street lamps: posts, arms and heads
     this.lampLightMesh = new Mesh(); // their light: the lit heads, and the pools on the ground
     this.lampsMade = null;
-    this.lightMesh = new Mesh(); // the lights of the traffic
-    this.spillMesh = new Mesh(); // the light from shop windows on the pavement, and the red lamps on what is tall
+    this.lampHeadMesh = new Mesh(); // and the lit head of each, a point of light
+    this.lightMesh = new Mesh(); // the lights of the traffic: the beams on the road, the lit windows
+    this.carLightMesh = new Mesh(); // and its lamps, white ahead and red behind, each a point of light
+    this.farLightMesh = new Mesh(); // the city's lights beyond where the lamps stand one by one, out to the horizon
+    this.farMade = null;
+    this.beaconMesh = new Mesh(); // the red lamps on what is tall
+    this.modelMesh = new ModelMesh(); // the famous buildings that are true models
+    this.modelsMade = null;
+    this.spillMesh = new Mesh(); // the light from shop windows on the pavement
     this.roofLightMesh = new Mesh(); // the lamps left on up on the roofs
     this.spillMade = null;
     this.groundMade = null; // where the buildings stand, as last worked out (see builtGround)
@@ -450,7 +474,7 @@ export class MapView {
       maxBounds: [[west, south], [east, north]],
       minZoom: 8,
       maxZoom: 19,
-      maxPitch: 70,
+      maxPitch: MOST_PITCH,
       // Photo tiles that have left the screen are kept for coming back to, but not many: sharp ones are small and there are a lot of them.
       maxTileCacheZoomLevels: 2,
       attributionControl: { compact: true },
@@ -630,7 +654,10 @@ export class MapView {
       streetLamps: this.lampsMade?.lamps ?? 0,
       lampWays: this.lampsMade?.ways ?? 0,
       glow: this.lampLightMesh.count,
+      heads: this.lampHeadMesh.count,
+      far: this.farMade?.points ?? 0,
       vehicleLights: this.lightMesh.count,
+      vehicleLamps: this.carLightMesh.count,
       spill: this.spillMade?.strips ?? 0,
       beacons: this.spillMade?.beacons ?? 0,
       roofLamps: this.spillMade?.roofLamps ?? 0,
@@ -709,15 +736,16 @@ export class MapView {
     this.placeLayers = placeLayerIds(style);
     this.map.setStyle(style, { diff: false });
     // Each map type has its own lens and camera angle.
-    this.map.setVerticalFieldOfView(type === 'city' ? ISO_LENS : NORMAL_LENS);
     this.cameraTarget = null;
     if (this.followMode === 'off' || !this.position || !inRiyadh(this.position)) {
       // Not following anyone: the map stays where it is, seen the way this type is seen when it does
       // not turn (the 3D city isometric, the others from straight above with north up).
-      const { pitch, bearing } = cameraOf(type).north;
+      const { pitch, bearing, lens } = cameraOf(type).north;
+      this.map.setVerticalFieldOfView(lens);
       this.map.jumpTo({ pitch, bearing });
     } else {
-      this.moveCamera(false);
+      this.map.setVerticalFieldOfView(cameraOf(type)[this.followMode].lens);
+      this.moveCamera(false, true);
     }
     return true;
   }
@@ -1205,11 +1233,13 @@ export class MapView {
         this.scene.setWalls(this.wallMesh);
         this.scene.setShadows(this.casterMesh, null);
       }
-      if (this.spillMesh.count > 0 || this.roofLightMesh.count > 0) {
+      if (this.spillMesh.count > 0 || this.roofLightMesh.count > 0 || this.beaconMesh.count > 0) {
         this.spillMesh.clear();
         this.roofLightMesh.clear();
+        this.beaconMesh.clear();
         this.scene.set('spill', this.spillMesh, { glow: true });
         this.scene.set('rooflights', this.roofLightMesh, { glow: true, lifted: 2 });
+        this.scene.set('beacons', this.beaconMesh, { glow: true, point: POINT_METERS.beacon });
       }
       this.spillMade = null;
       this.roofsMade = null;
@@ -1298,8 +1328,20 @@ export class MapView {
     for (const [lng, lat, height] of landmarkBeacons()) {
       if (here && lng >= here.west && lng <= here.east && lat >= here.south && lat <= here.north) beacons.push([(lng - origin.lng) * squeeze, (lat - origin.lat) * METERS_PER_DEGREE, height]);
     }
-    this.spillMade = { strips: spilled, beacons: drawBeacons(this.spillMesh, beacons), roofLamps: drawRoofLights(this.roofLightMesh, roofLamps) };
+    // (And on each corner of the roof of whatever is tall: the four corners that reach furthest out.)
+    for (const building of whole) {
+      if (!(building.height >= CORNER_LAMPS_FROM_METERS) || building.replaced || building.base > 0) continue;
+      const top = building.height + ROOF_CAP_METERS + ROOF_LIFT_METERS + PARAPET_METERS + 0.4;
+      for (const polygon of building.polygons) {
+        const corners = polygon[0].map(([lng, lat]) => [(lng - origin.lng) * squeeze, (lat - origin.lat) * METERS_PER_DEGREE]);
+        const furthest = [[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([east, north]) => corners.reduce((best, corner) => (corner[0] * east + corner[1] * north > best[0] * east + best[1] * north ? corner : best)));
+        for (const corner of new Set(furthest)) beacons.push([corner[0], corner[1], top]);
+      }
+    }
+    this.beaconMesh.clear();
+    this.spillMade = { strips: spilled, beacons: lightPoints(this.beaconMesh, beacons), roofLamps: drawRoofLights(this.roofLightMesh, roofLamps) };
     this.scene.set('spill', this.spillMesh, { glow: true });
+    this.scene.set('beacons', this.beaconMesh, { glow: true, point: POINT_METERS.beacon });
     // (Like the shade on the roofs, the light on them is drawn a touch nearer the eye than the roofs are.)
     this.scene.set('rooflights', this.roofLightMesh, { glow: true, lifted: 2 });
     this.map.triggerRepaint();
@@ -1560,14 +1602,17 @@ export class MapView {
       return;
     }
     const lines = [];
+    const farLines = []; // every road there is, near and far, for the lights of the city from afar
     for (const feature of features) {
       const properties = feature.properties ?? {};
       if (!LIFE_LINES.has(properties.class)) continue;
       // A map tile holds its roads a little way past its own edge. Cut to its tile, each
       // stretch of road is there once, and meets the next tile's stretch end to end.
       const tile = Number.isInteger(feature._z) ? tileBox(feature._z, feature._x, feature._y) : null;
+      const lit = tile && properties.brunnel !== 'tunnel' && properties.class !== 'service' && properties.class !== 'rail' && properties.class !== 'transit';
       for (const part of lineParts(feature.geometry)) {
         for (const coordinates of tile ? clipLine(part, tile) : [part]) {
+          if (lit && coordinates.length >= 2) farLines.push({ class: properties.class, tile: [feature._z, feature._x, feature._y], coordinates });
           if (coordinates.length < 2 || !coordinates.some(inBox)) continue;
           lines.push({
             class: properties.class,
@@ -1614,6 +1659,7 @@ export class MapView {
     this.layBridges();
     this.layStreet();
     this.layLamps();
+    this.layFarLights(farLines, box);
     map.triggerRepaint();
   }
 
@@ -1645,19 +1691,43 @@ export class MapView {
    */
   layLamps() {
     if (!this.scene.origin || this.type !== 'city' || !this.network) {
-      if (this.lampPostMesh.count > 0 || this.lampLightMesh.count > 0) {
+      if (this.lampPostMesh.count > 0 || this.lampLightMesh.count > 0 || this.lampHeadMesh.count > 0 || this.farLightMesh.count > 0) {
         this.lampPostMesh.clear();
         this.lampLightMesh.clear();
+        this.lampHeadMesh.clear();
+        this.farLightMesh.clear();
         this.scene.set('lampposts', this.lampPostMesh);
         this.scene.set('lamplight', this.lampLightMesh, { glow: true });
+        this.scene.set('lampheads', this.lampHeadMesh, { glow: true, point: POINT_METERS.lamp });
+        this.scene.set('farlights', this.farLightMesh, { glow: true, point: POINT_METERS.far });
       }
       this.lampsMade = null;
+      this.farMade = null;
       return;
     }
-    const made = drawLamps(this.lampPostMesh, this.lampLightMesh, this.network, lightFrom(this.sun), { most: LAMPS_MOST, built: this.builtGround()?.built ?? null });
+    const made = drawLamps(this.lampPostMesh, this.lampLightMesh, this.network, lightFrom(this.sun), { most: LAMPS_MOST, built: this.builtGround()?.built ?? null, heads: this.lampHeadMesh });
     this.lampsMade = { ...made, roofs: this.roofs };
     this.scene.set('lampposts', this.lampPostMesh);
     this.scene.set('lamplight', this.lampLightMesh, { glow: true });
+    this.scene.set('lampheads', this.lampHeadMesh, { glow: true, point: POINT_METERS.lamp });
+  }
+
+  /**
+   * The city's lights beyond where its lamps stand one by one: a point of
+   * light every so many metres along every road the map has loaded, out to
+   * the horizon. lines: the roads as layLife() read them from the map, each
+   * cut to its own tile; box: the ground the lamps stand on, in degrees.
+   */
+  layFarLights(lines, box) {
+    const origin = this.scene.origin;
+    if (!origin || this.type !== 'city') return;
+    const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
+    const [west, south, east, north] = [(box.west - origin.lng) * squeeze, (box.south - origin.lat) * METERS_PER_DEGREE, (box.east - origin.lng) * squeeze, (box.north - origin.lat) * METERS_PER_DEGREE];
+    const reach = this.lampsMade?.reach ?? 0;
+    // (A lamp stands wherever the streets were read for lamps, as far out as there were lamps to go round.)
+    const skip = (x, y) => x >= west && x <= east && y >= south && y <= north && Math.hypot(x, y) < reach;
+    this.farMade = { points: drawFarLights(this.farLightMesh, lines, origin, { skip }), lines: lines.length };
+    this.scene.set('farlights', this.farLightMesh, { glow: true, point: POINT_METERS.far });
   }
 
   /** Draw the parked cars and the bus shelters afresh, for the streets the traffic runs on. */
@@ -1766,6 +1836,15 @@ export class MapView {
     return ground;
   }
 
+  /** Build the models of the famous buildings afresh, each where it stands from the scene's origin. */
+  layModels() {
+    const origin = this.scene.origin;
+    if (!origin) return;
+    const models = landmarkModels(this.modelMesh, origin);
+    this.modelsMade = { origin, models, faces: this.modelMesh.faces, corners: this.modelMesh.count };
+    this.scene.setModels(this.modelMesh);
+  }
+
   /** Before each picture: move the traffic on and draw it afresh. True while there is something moving. */
   moveLife() {
     const now = performance.now();
@@ -1774,19 +1853,33 @@ export class MapView {
     const zoom = this.map.getZoom();
     // Everything in the scene fades in over the first half zoom level it is shown at.
     this.scene.opacity = Math.min(Math.max((zoom - LIFE_MIN_ZOOM) * 2, 0), 1);
-    // What the walls are drawn by: where the eye is, and how much wall a pixel of the screen shows.
-    const turned = (this.map.getBearing() * Math.PI) / 180;
-    const tilted = (this.map.getPitch() * Math.PI) / 180;
-    this.scene.eye = [-Math.sin(turned) * Math.sin(tilted), -Math.cos(turned) * Math.sin(tilted), Math.cos(tilted)];
-    this.scene.pixel = (EARTH_AROUND_METERS * Math.cos((this.map.getCenter().lat * Math.PI) / 180)) / (512 * 2 ** zoom) / (window.devicePixelRatio || 1);
+    // What the walls are drawn by: how much wall a pixel of the screen shows in the middle of the picture,
+    // and where in the scene that middle is. (Further off a pixel shows more: the scene works that out.)
+    const middle = this.map.getCenter();
+    this.scene.sharp = window.devicePixelRatio || 1;
+    this.scene.pixel = (EARTH_AROUND_METERS * Math.cos((middle.lat * Math.PI) / 180)) / (512 * 2 ** zoom) / this.scene.sharp;
+    // The models of the famous buildings show from far further off than the rest, so they may be wanted
+    // before anything else has given the scene a place to measure from. And they are measured from that
+    // place: built again whenever it moves.
+    this.scene.modelOpacity = Math.min(Math.max((zoom - MODEL_MIN_ZOOM) * 2, 0), 1);
+    // In a view that reaches towards the horizon, what is far off fades into the haze.
+    this.scene.haze = this.type === 'city' ? Math.min(Math.max((this.map.getPitch() - HAZE_FROM_PITCH) / (HAZE_FULL_PITCH - HAZE_FROM_PITCH), 0), 1) : 0;
+    if (this.type === 'city') {
+      if (!this.scene.origin) this.scene.setOrigin({ lng: middle.lng, lat: middle.lat });
+      if (this.modelsMade?.origin !== this.scene.origin) this.layModels();
+    }
+    const from = this.scene.origin;
+    this.scene.focus = from ? [(middle.lng - from.lng) * Math.max(Math.cos((from.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE, (middle.lat - from.lat) * METERS_PER_DEGREE] : [0, 0];
     if (!this.lifeOn || this.type !== 'city' || zoom < LIFE_MIN_ZOOM) {
       if (this.trafficMesh.count > 0) {
         this.trafficMesh.clear();
         this.scene.set('traffic', this.trafficMesh);
       }
-      if (this.lightMesh.count > 0) {
+      if (this.lightMesh.count > 0 || this.carLightMesh.count > 0) {
         this.lightMesh.clear();
+        this.carLightMesh.clear();
         this.scene.set('lights', this.lightMesh, { glow: true });
+        this.scene.set('carlights', this.carLightMesh, { glow: true, point: POINT_METERS.vehicle });
       }
       this.lifeDrawn = 0;
       return false;
@@ -1811,11 +1904,14 @@ export class MapView {
     this.scene.set('traffic', this.trafficMesh);
     // By night everything that moves has its lights on.
     if (lampsLit(this.night) > 0) {
-      drawTrafficLights(this.lightMesh, this.traffic, scale);
+      drawTrafficLights(this.lightMesh, this.traffic, scale, this.carLightMesh);
       this.scene.set('lights', this.lightMesh, { glow: true });
-    } else if (this.lightMesh.count > 0) {
+      this.scene.set('carlights', this.carLightMesh, { glow: true, point: POINT_METERS.vehicle });
+    } else if (this.lightMesh.count > 0 || this.carLightMesh.count > 0) {
       this.lightMesh.clear();
+      this.carLightMesh.clear();
       this.scene.set('lights', this.lightMesh, { glow: true });
+      this.scene.set('carlights', this.carLightMesh, { glow: true, point: POINT_METERS.vehicle });
     }
     return true;
   }
@@ -1887,16 +1983,20 @@ export class MapView {
    * the isometric angle in the 3D city) or 'heading' (tilted, the way you travel is up).
    */
   setFollowMode(mode) {
+    const changed = mode !== this.followMode;
     this.followMode = mode;
     this.cameraTarget = null; // always move, even to the place the camera was last sent
     // While following, zooming keeps you in place instead of drifting away.
     const around = mode === 'off' ? undefined : { around: 'center' };
     this.map.scrollZoom.enable(around);
     this.map.touchZoomRotate.enable(around);
-    this.moveCamera(false);
+    // Each way of following has its own lens. (Left alone, the map keeps the lens it has.)
+    if (mode !== 'off' && this.type) this.map.setVerticalFieldOfView(cameraOf(this.type)[mode].lens);
+    this.moveCamera(false, changed);
   }
 
-  moveCamera(first) {
+  /** first: this is the first position there is. entering: the way of following has just been chosen. */
+  moveCamera(first, entering = false) {
     // (Outside Riyadh there is nothing to follow anyone on: the map stays on the city.)
     if (this.followMode === 'off' || !this.position || !inRiyadh(this.position)) return;
     const map = this.map;
@@ -1904,6 +2004,8 @@ export class MapView {
     const camera = cameraOf(this.type)[this.followMode];
     const bearing = this.followMode === 'heading' ? (this.heading ?? map.getBearing()) : camera.bearing;
     const pitch = camera.pitch;
+    // (A view along the ground wants the camera close: on choosing it the map draws in, if it is further out.)
+    const closeEnough = camera.zoom && (first || entering) ? Math.max(map.getZoom(), camera.zoom) : map.getZoom();
 
     // Standing still sends the same position again and again: leave the map at rest.
     const target = `${this.followMode}|${pitch}|${center[0].toFixed(6)}|${center[1].toFixed(6)}|${bearing.toFixed(1)}`;
@@ -1914,9 +2016,9 @@ export class MapView {
       center,
       bearing,
       pitch,
-      zoom: first ? Math.max(map.getZoom(), pitch > 0 ? 16.5 : 16) : map.getZoom(),
+      zoom: first ? Math.max(closeEnough, pitch > 0 ? 16.5 : 16) : closeEnough,
       // Turned the way you travel, you sit below the middle, so more of what lies ahead is on screen.
-      offset: [0, this.followMode === 'heading' ? Math.round(map.getContainer().clientHeight * 0.2) : 0],
+      offset: [0, this.followMode === 'heading' ? Math.round(map.getContainer().clientHeight * (camera.below ?? 0.2)) : 0],
       duration: first ? 0 : 900,
       easing: (t) => t, // steady, so one position flows into the next
     });
@@ -1965,6 +2067,7 @@ export class MapView {
 
   flyTo(position) {
     const camera = cameraOf(this.type).north;
+    this.map.setVerticalFieldOfView(camera.lens);
     this.map.flyTo({
       center: [position.lng, position.lat],
       zoom: Math.max(this.map.getZoom(), 16),

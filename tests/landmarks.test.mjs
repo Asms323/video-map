@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { LANDMARKS, STAYED_BRIDGES, landmarkRoofs, landmarkShades, landmarkSlabs, replacedByLandmarks } from '../js/landmarks.js';
+import { LANDMARKS, STAYED_BRIDGES, landmarkBeacons, landmarkModels, landmarkRoofs, landmarkShades, landmarkSlabs, replacedByLandmarks } from '../js/landmarks.js';
+import { ModelMesh, cutMesh } from '../js/models.js';
 import { RoofMesh, roofDecks, roofingOf } from '../js/roofs.js';
+import { facesOf } from './model-faces.mjs';
 
 const METERS = 111320;
 /** Metres east and north of a landmark's middle, for a [lng, lat]. */
@@ -28,13 +30,42 @@ function cut(id, z) {
     .sort((a, b) => a.from - b.from);
 }
 const near = (a, b, by) => Math.abs(a - b) <= by;
+/** The landmarks that are true models, built with one of them at the middle of the mesh: its triangles (see facesOf). */
+function modelOf(id) {
+  const one = landmark(id);
+  const mesh = new ModelMesh();
+  landmarkModels(mesh, { lng: one.at[0], lat: one.at[1] });
+  // (Only its own: the others stand kilometres off.)
+  return facesOf(mesh).filter((face) => face.corners.every(([east, north]) => Math.hypot(east, north) < 400));
+}
 
-test('every landmark is a stack of slabs standing where the building stands', () => {
+test('every landmark is a stack of slabs, or a true model, standing where the building stands', () => {
   const data = landmarkSlabs();
   assert.equal(data.type, 'FeatureCollection');
   assert.equal(landmarkSlabs(), data, 'made once');
   assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station']);
+  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['pif-tower']);
   for (const one of LANDMARKS) {
+    assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
+    if (one.model) {
+      // A model: no slabs. It stands on the ground, is as tall as the real one, and keeps to its plot.
+      assert.equal(slabsOf(one.id).length, 0, one.id);
+      assert.equal(one.build, undefined);
+      const faces = modelOf(one.id);
+      assert.ok(faces.length > 100, `${one.id}: ${faces.length} triangles`);
+      const corners = faces.flatMap((face) => face.corners);
+      assert.equal(Math.min(...corners.map((corner) => corner[2])), 0, one.id);
+      const top = Math.max(...corners.map((corner) => corner[2]));
+      assert.ok(top >= one.height - 0.01 && top <= one.height + 25, `${one.id}: ${top} m for ${one.height} m`);
+      assert.ok(Math.max(...corners.map(([east, north]) => Math.hypot(east, north))) < 45, one.id);
+      // Every triangle is a real one, knows which way it looks, and is made of something.
+      for (const face of faces) {
+        assert.ok(near(Math.hypot(...face.normal), 1, 1e-4));
+        assert.ok(['plain', 'glass', 'lamp'].includes(face.kind) && /^#[0-9a-f]{6}$/.test(face.colour));
+        if (face.kind === 'glass') assert.ok(face.storey > 3 && face.storey < 7 && face.bay > 1 && face.bay < 5, JSON.stringify([face.storey, face.bay]));
+      }
+      continue;
+    }
     const slabs = slabsOf(one.id);
     assert.ok(slabs.length > 15, `${one.id}: ${slabs.length} slabs`);
     let top = 0;
@@ -55,8 +86,16 @@ test('every landmark is a stack of slabs standing where the building stands', ()
     assert.equal(lowest, 0, one.id);
     assert.ok(top >= one.height && top <= one.height + 25, `${one.id}: ${top} m for ${one.height} m`);
     assert.ok(furthest < ({ 'kingdom-centre': 180, 'kafd-station': 110 }[one.id] ?? 45), `${one.id}: reaches ${furthest.toFixed(0)} m from its middle`);
-    assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
   }
+  // A mesh may hold every model at once, each at its own place; built again, it holds them once.
+  const mesh = new ModelMesh();
+  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 1);
+  const corners = mesh.count;
+  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 1);
+  assert.equal(mesh.count, corners);
+  // (The PIF Tower stands 2.9 km west and 7.1 km north of there.)
+  const middle = [0, 1].map((k) => facesOf(mesh).flatMap((face) => face.corners).reduce((sum, corner, _, all) => sum + corner[k] / all.length, 0));
+  assert.ok(near(middle[0], -2880, 25) && near(middle[1], 7090, 25), JSON.stringify(middle));
   assert.ok(JSON.stringify(data).length < 700000, 'small enough to hand to the map in one piece');
 });
 
@@ -108,6 +147,11 @@ test('by night the landmarks are lit, each in its own way', () => {
   const bright = (hex) => Math.max(parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16));
   // Every landmark has something that shows by night, and every night colour belongs to a slab that is there.
   for (const one of LANDMARKS) {
+    if (one.model) {
+      // (A model: faces that give light of their own, or have rooms with their lamps on.)
+      assert.ok(modelOf(one.id).filter((face) => face.glow > 0 || face.lit > 0).length > 50, one.id);
+      continue;
+    }
     const lit = slabsOf(one.id).filter((feature) => feature.properties.n);
     assert.ok(lit.length > 10, `${one.id}: ${lit.length} lit slabs`);
     const paints = new Set(slabsOf(one.id).map((feature) => feature.properties.c));
@@ -158,13 +202,207 @@ test('Al Majdoul turns a quarter of a turn on its way up', () => {
   const turned = (a, b) => (((facing(b) - facing(a)) % 90) + 90) % 90;
   assert.ok(near(turned(1, 104), 40, 4), `${turned(1, 104)}° by half way`);
   assert.ok(near(turned(1, 205), 79, 5), `${turned(1, 205)}° near the top`);
-  // PIF Tower: its corners lean in by turns, so it is narrower at the top than at the foot, and its top is off to one side.
-  const foot = cut('pif-tower', 2)[0];
-  const head = cut('pif-tower', 380)[0];
-  assert.ok(head.to - head.from < (foot.to - foot.from) * 0.5 && Math.abs((head.from + head.to) / 2) > 5, JSON.stringify({ foot, head }));
   // Burj Rafal: one oval all the way up, then two horns.
   assert.equal(cut('burj-rafal', 150).length, 1);
   assert.ok(cut('burj-rafal', 300).length >= 2);
+});
+
+test('PIF Tower: a crystal of six sides in six tiers that does not taper, folded along diagonals, cleft at its apexes, under a notched crown', () => {
+  const one = landmark('pif-tower');
+  assert.equal(one.height, 385);
+  const faces = modelOf('pif-tower');
+  const foot = 10; // the lowest level at which its corners change places
+  const tier = (369 - foot) / 6;
+  const storey = tier / 14;
+  const levels = [0, 1, 2, 3, 4, 5, 6].map((level) => foot + level * tier);
+  const body = '#2f4649';
+  const dark = '#1e2b2c';
+  // The skin between the hall at its foot and the crown: glass, and the dark walls of the clefts.
+  const skin = faces.filter((face) => face.corners.every((corner) => corner[2] >= foot - 1e-3 && corner[2] <= 369 + 1e-3) && (face.colour === body || face.colour === dark) && Math.abs(face.normal[2]) < 0.5);
+  const glass = skin.filter((face) => face.colour === body);
+  const clefts = skin.filter((face) => face.colour === dark);
+  assert.ok(glass.every((face) => face.kind === 'glass') && clefts.every((face) => face.kind === 'plain'));
+  // Every triangle spans one tier, from one level to the next: none is cut across by a level, and its
+  // corners lie on levels (but for the two bands of bright floors, where a face is cut once more).
+  const wholeOf = new Map();
+  for (const face of glass) {
+    const heights = face.corners.map((corner) => corner[2]);
+    const t = Math.floor(((Math.min(...heights) + Math.max(...heights)) / 2 - foot) / tier);
+    assert.ok(Math.min(...heights) >= levels[t] - 1e-3 && Math.max(...heights) <= levels[t + 1] + 1e-3, `tier ${t}`);
+    const key = `${t}|${face.normal.map((n) => n.toFixed(4)).join(',')}`;
+    wholeOf.set(key, (wholeOf.get(key) ?? 0) + 1);
+  }
+  // Six tiers; in each, six sides of two flat triangles each: twelve ways of looking, no two alike.
+  for (let t = 0; t < 6; t += 1) assert.equal([...wholeOf.keys()].filter((key) => key.startsWith(`${t}|`)).length, 12, `tier ${t}`);
+
+  /** The outline at a height: the pieces of line where a level plane cuts the skin, and what they enclose. */
+  const outlineAt = (z, of = skin) => {
+    const mesh = new ModelMesh();
+    const pieces = [];
+    for (const face of of) {
+      const crossings = [];
+      for (let k = 0; k < 3; k += 1) {
+        const here = face.corners[k];
+        const next = face.corners[(k + 1) % 3];
+        if (here[2] > z === next[2] > z) continue;
+        const part = (z - here[2]) / (next[2] - here[2]);
+        crossings.push([here[0] + (next[0] - here[0]) * part, here[1] + (next[1] - here[1]) * part]);
+      }
+      if (crossings.length === 2) pieces.push({ ends: crossings, face });
+    }
+    void mesh;
+    // (Seen from its middle the outline never doubles back, so the pieces make a fan of triangles round it.)
+    const area = pieces.reduce((sum, { ends: [a, b] }) => sum + Math.abs(a[0] * b[1] - a[1] * b[0]) / 2, 0);
+    const reach = (degrees) => {
+      // How far out the outline is in a direction (degrees clockwise from north).
+      const way = [Math.sin((degrees * Math.PI) / 180), Math.cos((degrees * Math.PI) / 180)];
+      let far = 0;
+      for (const { ends: [a, b] } of pieces) {
+        const d = [b[0] - a[0], b[1] - a[1]];
+        const across = way[0] * d[1] - way[1] * d[0];
+        if (Math.abs(across) < 1e-9) continue;
+        const t = (a[0] * d[1] - a[1] * d[0]) / across;
+        const s = (a[0] * way[1] - a[1] * way[0]) / across;
+        if (t > 0 && s >= -1e-9 && s <= 1 + 1e-9) far = Math.max(far, t);
+      }
+      return far;
+    };
+    return { pieces, area, reach, length: pieces.reduce((sum, { ends: [a, b] }) => sum + Math.hypot(b[0] - a[0], b[1] - a[1]), 0) };
+  };
+
+  // It does not taper: every floor from the hall to the crown has some 2,550 square metres, as published,
+  // give or take a twelfth (least where it draws in under its crown).
+  const areas = [15, 40, 70, 100, 130, 160, 190, 220, 250, 280, 310, 340, 365].map((z) => outlineAt(z).area);
+  assert.ok(Math.min(...areas) > 2340 && Math.max(...areas) < 2700, areas.map(Math.round).join(' '));
+  assert.equal(Math.min(...areas), areas.at(-1));
+  // Its corners: three apexes (40.7, 160.7 and 280.7 degrees round from north) and three pleats between.
+  const apexes = [40.7, 160.7, 280.7];
+  const pleats = [100.7, 220.7, 340.7];
+  // It breathes: at the odd levels the apexes stand out and the pleats in; at the even ones the other way.
+  for (const level of [1, 2, 3, 4, 5]) {
+    const here = outlineAt(levels[level] + (level % 2 === 0 ? 0.3 : -0.3));
+    // (An apex is measured a hair round from its point, on the side away from its cleft.)
+    for (const degrees of apexes) assert.ok(near(here.reach(degrees + 0.2), 33 * (level % 2 === 1 ? 1.08 : 0.92), 0.25), `apex at level ${level}: ${here.reach(degrees + 0.2).toFixed(2)}`);
+    for (const degrees of pleats) assert.ok(near(here.reach(degrees), 29.8 * (level % 2 === 1 ? 0.96 : 1.04), 0.25), `pleat at level ${level}: ${here.reach(degrees).toFixed(2)}`);
+  }
+  // Its six sides are as good as equal where the corners stand half-way between in and out: some 31 m.
+  const half = outlineAt(levels[2] + tier / 2);
+  const cornersHalf = [...apexes, ...pleats].sort((a, b) => a - b).map((degrees) => [Math.sin((degrees * Math.PI) / 180) * half.reach(degrees + 0.05), Math.cos((degrees * Math.PI) / 180) * half.reach(degrees + 0.05)]);
+  for (let i = 0; i < 6; i += 1) {
+    const next = cornersHalf[(i + 1) % 6];
+    assert.ok(near(Math.hypot(next[0] - cornersHalf[i][0], next[1] - cornersHalf[i][1]), 31.5, 0.8), `side ${i}`);
+  }
+
+  // The folds. Between two levels a side is two flat triangles that meet along the line from the corner
+  // standing out below to the one standing out above: so along that line they look different ways, and
+  // the tower is a ridge there, not a hollow. (Take the side from the eastern pleat to the cleft of the
+  // southern apex, in the tier from level 2, where the pleats stand out, to level 3.)
+  const sideAt = (z, degrees) => outlineAt(z).pieces.filter(({ ends: [a, b], face }) => {
+    const middle = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const round = ((Math.atan2(middle[0], middle[1]) * 180) / Math.PI + 360) % 360;
+    return face.colour === body && round > degrees[0] && round < degrees[1];
+  });
+  const low = sideAt(levels[2] + 6, [101, 152]);
+  const high = sideAt(levels[3] - 6, [101, 152]);
+  assert.equal(new Set(low.map(({ face }) => face.normal.join())).size, 2, 'two triangles to the side');
+  // Low down, most of the side belongs to the triangle that stands on the lower level; high up, to the other.
+  const share = (pieces) => {
+    const byFace = new Map();
+    for (const { ends: [a, b], face } of pieces) byFace.set(face.normal.join(), (byFace.get(face.normal.join()) ?? 0) + Math.hypot(b[0] - a[0], b[1] - a[1]));
+    return byFace;
+  };
+  const [lower] = [...share(low).entries()].sort((a, b) => b[1] - a[1])[0];
+  const [upper] = [...share(high).entries()].sort((a, b) => b[1] - a[1])[0];
+  assert.notEqual(lower, upper);
+  assert.ok(share(low).get(lower) > (share(low).get(upper) ?? 0) * 4 && share(high).get(upper) > (share(high).get(lower) ?? 0) * 4);
+  // A ridge: each of the two looks a little away from the other.
+  const [n1, n2] = [lower, upper].map((key) => key.split(',').map(Number));
+  const across = [n1[1] * n2[2] - n1[2] * n2[1], n1[2] * n2[0] - n1[0] * n2[2], n1[0] * n2[1] - n1[1] * n2[0]];
+  assert.ok(Math.hypot(...across) > 0.03, 'they are not in one plane');
+  // Every glass face of the skin looks outwards; and every line of it is drawn: the folds, the levels, the corners.
+  for (const face of glass) {
+    const middle = [0, 1].map((k) => (face.corners[0][k] + face.corners[1][k] + face.corners[2][k]) / 3);
+    assert.ok(face.normal[0] * middle[0] + face.normal[1] * middle[1] > 0, 'outwards');
+    assert.ok(face.ridge === 1 && face.fins > 0.5);
+  }
+
+  // The clefts: beside each apex, on the side towards the pleat before it, a recess with dark walls, from
+  // the ground to the roof. Its far edge stands still while the apex goes in and out, so it is wide where
+  // the apex stands out and narrow where it stands in.
+  for (const z of [15, 100, 200, 300, 368]) {
+    const cut = outlineAt(z).pieces.filter(({ face }) => face.colour === dark);
+    assert.ok(cut.length >= 6, `${cut.length} pieces of cleft at ${z} m`);
+    for (const degrees of apexes) {
+      const here = cut.filter(({ ends: [a] }) => Math.abs((((Math.atan2(a[0], a[1]) * 180) / Math.PI - degrees + 540) % 360) - 180) < 15);
+      assert.ok(here.length >= 2, `the cleft beside the apex at ${degrees}`);
+      // It is cut into the tower: its walls lie inside the line from the apex to the next pleat round.
+      assert.ok(here.every(({ ends }) => ends.every(([east, north]) => Math.hypot(east, north) < 33 * 1.085)));
+    }
+  }
+  const cleftWide = (z) => outlineAt(z).pieces.filter(({ face, ends: [a] }) => face.colour === dark && Math.abs((((Math.atan2(a[0], a[1]) * 180) / Math.PI - 40.7 + 540) % 360) - 180) < 15).reduce((sum, { ends: [a, b] }) => sum + Math.hypot(b[0] - a[0], b[1] - a[1]), 0);
+  assert.ok(cleftWide(levels[3] - 1) > cleftWide(levels[2] + 1) + 2, `${cleftWide(levels[3] - 1).toFixed(1)} m against ${cleftWide(levels[2] + 1).toFixed(1)} m`);
+  assert.ok(clefts.every((face) => face.ridge === 0 && face.glow === 0), 'no line, no light');
+
+  // The crown: a screen of glass round the roof, from 369 m to a rim that is highest (385 m) over the
+  // north-eastern apex and some four metres lower across the roof from it.
+  const crown = faces.filter((face) => face.corners.some((corner) => corner[2] > 369.5));
+  const rim = crown.flatMap((face) => face.corners).filter((corner) => corner[2] > 375);
+  assert.ok(near(Math.max(...rim.map((corner) => corner[2])), 385, 0.01) && near(Math.min(...rim.map((corner) => corner[2])), 380.6, 0.5), `${Math.min(...rim.map((corner) => corner[2]))}`);
+  // It has an outer side and an inner one, back to back.
+  const outer = crown.filter((face) => !face.open);
+  const inner = crown.filter((face) => face.open);
+  assert.equal(outer.length, inner.length);
+  // Where each cleft comes up there is a notch in it, wider at the rim than at the roof: less of the
+  // outline is left standing the higher the cut.
+  const standing = (z) => outlineAt(z, outer.filter((face) => face.colour === body)).length;
+  assert.ok(standing(371) < outlineAt(365).length - 3 * 6, `${standing(371).toFixed(1)} of ${outlineAt(365).length.toFixed(1)} m`);
+  assert.ok(standing(379.5) < standing(371) - 3 * 2.5, `${standing(379.5).toFixed(1)} against ${standing(371).toFixed(1)}`);
+  // The back wall of each cleft runs up to the rim at the apex and down to nothing at its far end.
+  const backs = outer.filter((face) => face.colour === dark);
+  assert.equal(backs.length, 3);
+  for (const back of backs) assert.equal(back.corners.filter((corner) => corner[2] > 375).length, 1);
+  // The roof inside the crown lies flat at 369 m, looks up and takes no shadow from the block the map has for the tower.
+  const roof = faces.filter((face) => face.normal[2] > 0.99 && face.corners.every((corner) => near(corner[2], 369, 1e-3)));
+  assert.ok(roof.length >= 10 && roof.every((face) => face.open && face.kind === 'plain'));
+  const flat = (corners) => Math.abs((corners[1][0] - corners[0][0]) * (corners[2][1] - corners[0][1]) - (corners[2][0] - corners[0][0]) * (corners[1][1] - corners[0][1])) / 2;
+  assert.ok(near(roof.reduce((sum, face) => sum + flat(face.corners), 0), outlineAt(368.9).area, 30));
+
+  // At its foot: a glass hall, lit from within, and over it a canopy that reaches out past the tower.
+  const hall = faces.filter((face) => face.colour === '#5f7f8d');
+  assert.ok(hall.length === 12 && hall.every((face) => face.kind === 'glass' && face.lit === 1 && face.corners.every((corner) => corner[2] <= 11)));
+  const canopy = faces.filter((face) => face.colour === '#cfd5d8' && face.normal[2] > 0.99);
+  const reachOf = (some) => Math.max(...some.flatMap((face) => face.corners).map(([east, north]) => Math.hypot(east, north)));
+  assert.ok(canopy.every((face) => face.corners.every((corner) => near(corner[2], 12.6, 1e-3))));
+  const footReach = Math.max(...skin.flatMap((face) => face.corners).filter((corner) => corner[2] < foot + 1).map(([east, north]) => Math.hypot(east, north)));
+  assert.ok(reachOf(canopy) > reachOf(hall) + 3 && reachOf(hall) > footReach + 3 && reachOf(canopy) < 45, JSON.stringify([footReach, reachOf(hall), reachOf(canopy)]));
+  const under = faces.filter((face) => face.normal[2] < -0.99);
+  assert.ok(under.length >= 4 && under.every((face) => face.glow > 0.5 && face.light === '#ffe9c8'), 'its underside is lit by the lamps of the hall');
+
+  // By night: a line of violet light along the edge of every floor, strongest on the crown and the tier
+  // under it; offices with their lamps on in every tier but the top one; and two bands of floors that are
+  // lit from end to end.
+  assert.ok(glass.every((face) => face.light === '#a428f5' && near(face.storey, storey, 1e-3) && face.bay === 3));
+  const tierOf = (face) => Math.floor((face.corners.reduce((sum, corner) => sum + corner[2], 0) / 3 - foot) / tier);
+  assert.ok(glass.filter((face) => tierOf(face) === 5).every((face) => face.glow === 1 && face.lit === 0));
+  assert.ok(glass.filter((face) => tierOf(face) < 5).every((face) => near(face.glow, 0.8, 0.003) && face.lit > 0.25));
+  assert.ok(outer.filter((face) => face.colour === body).every((face) => face.glow === 1 && face.lit === 0));
+  const bright = glass.filter((face) => face.lit === 1);
+  assert.ok(bright.length > 20 && bright.every((face) => tierOf(face) === 4));
+  const bands = [[foot + 57 * storey, foot + 58 * storey], [foot + 65 * storey, foot + 68 * storey]];
+  for (const face of bright) {
+    const heights = face.corners.map((corner) => corner[2]);
+    assert.ok(bands.some(([from, to]) => Math.min(...heights) >= from - 1e-3 && Math.max(...heights) <= to + 1e-3));
+  }
+  // (Right round the tower: the bright floors are an unbroken ring but for the clefts.)
+  assert.ok(outlineAt(foot + 66.5 * storey, bright).length > outlineAt(foot + 66.5 * storey, glass).length - 0.01);
+  // And the red lamps: one on the rim over each apex.
+  const lamps = landmarkBeacons().filter(([lng, lat]) => Math.abs(lng - one.at[0]) < 0.001 && Math.abs(lat - one.at[1]) < 0.001);
+  assert.equal(lamps.length, 3);
+  assert.ok(near(Math.max(...lamps.map((lamp) => lamp[2])), 385.6, 0.01) && Math.min(...lamps.map((lamp) => lamp[2])) > 381);
+  for (const lamp of lamps) {
+    const [east, north] = from(one, lamp);
+    assert.ok(near(Math.hypot(east, north), 33 * 0.985, 0.2) && apexes.some((degrees) => near(((Math.atan2(east, north) * 180) / Math.PI + 360) % 360, degrees, 0.5)));
+  }
 });
 
 test('replacedByLandmarks picks the tower\'s own outline, not the block it stands in', () => {

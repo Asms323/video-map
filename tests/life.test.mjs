@@ -150,9 +150,9 @@ test('Traffic fills the roads, drives on the right and obeys one-way streets', (
   const network = buildNetwork([line('primary', [[0, 0], [1000, 0]]), line('trunk', [[0, 300], [1000, 300]], { oneway: 1 }), line('secondary', [[0, 600], [1000, 600]], { oneway: -1 })], ORIGIN);
   const traffic = new Traffic({ seed: 3, now: () => MORNING });
   traffic.setNetwork(network, [0, 0], ORIGIN);
-  // 1 km two-way primary (30 each way), 1 km one-way trunk (38) and 1 km one-way secondary (20).
-  assert.equal(traffic.wanted(), 118);
-  assert.equal(traffic.vehicles.length, 118);
+  // 1 km two-way primary (38 each way), 1 km one-way trunk (54) and 1 km one-way secondary (22).
+  assert.equal(traffic.wanted(), 152);
+  assert.equal(traffic.vehicles.length, 152);
   for (const vehicle of traffic.vehicles) {
     const way = network.ways[vehicle.way];
     assert.ok(vehicle.s >= 0 && vehicle.s <= way.length);
@@ -182,10 +182,10 @@ test('Traffic fills the roads, drives on the right and obeys one-way streets', (
 
   // Half as busy: half as many. The rest fade out and are gone within a second or two.
   traffic.level = 0.5;
-  assert.equal(traffic.wanted(), 59);
+  assert.equal(traffic.wanted(), 76);
   for (let i = 0; i < 12; i += 1) traffic.step(0.25);
   const staying = traffic.vehicles.filter((vehicle) => !vehicle.leaving).length;
-  assert.ok(staying <= 59 * 1.2 + 5 && staying >= 59, String(staying));
+  assert.ok(staying <= 76 * 1.2 + 5 && staying >= 76, String(staying));
   // A big city does not mean thousands of cars to draw.
   assert.equal(new Traffic({ most: 40 }).most, 40);
 });

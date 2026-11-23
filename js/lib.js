@@ -1455,12 +1455,25 @@ const NIGHT_TEXT_EDGE = 'rgba(7, 9, 15, 0.85)';
  * roads are lit white; its side streets still glow in the amber of sodium
  * lamps, which is what gives the city its colour from the air by night.
  */
-export const LAMP_LIGHT = { big: '#ffdcae', main: '#ffc682', side: '#ffb163' };
+export const LAMP_LIGHT = { big: '#ffd29c', main: '#ffc27c', side: '#ffb163' };
 // The roads that have lamps along them.
 const LAMP_CLASSES = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'busway'];
 const GLOW_SPILL_METERS = 4.5; // how far the lamps' light reaches past the edge of the road
-const GLOW_MOST = 0.36; // how strong it is from close by, where the lamps stand in it one by one
+const GLOW_MOST = 0.3; // how strong it is from close by, where the lamps stand in it one by one
 const GLOW_FAR = 0.85; // and from across the city, where it is all there is to see of them
+
+// The sky by day, at the height of dusk and by night: overhead, and where it meets the ground.
+const SKY = { day: ['#86addb', '#e4eaef'], dusk: ['#4c5c92', '#f4bd8e'], night: ['#060a17', '#3d2d2a'] };
+
+/**
+ * The colours of the sky for a darkness of 0 (day) to 1 (night): { overhead,
+ * horizon }. Half-way, with the sun just down, it is dusk.
+ */
+export function skyColours(night) {
+  const dark = clamp(Number(night) || 0, 0, 1);
+  const [from, to, part] = dark < 0.5 ? [SKY.day, SKY.dusk, dark / 0.5] : [SKY.dusk, SKY.night, (dark - 0.5) / 0.5];
+  return { overhead: hexMix(from[0], to[0], part), horizon: hexMix(from[1], to[1], part) };
+}
 
 /**
  * The city as a scale model: every building standing on its own outline on
@@ -1476,6 +1489,8 @@ export function cityModelStyle(base, { buildings = null, night = 0 } = {}) {
   // ground, the lamps, the sky); what cannot (the colour of a block, of a name) changes over half-way through dusk.
   const dark = clamp(Number(night) || 0, 0, 1);
   const lamps = lampsLit(dark);
+  // (A lamp shows as soon as it is on; the light it throws on the road counts for little until it is dark.)
+  const thrown = lamps * dark ** 1.5;
   const byNight = dark >= 0.5;
   // (The blocks go dark in four steps: each step has the map lay its buildings out afresh.)
   const dusk = Math.round(dark * NIGHT_BLOCK_STEPS) / NIGHT_BLOCK_STEPS;
@@ -1719,14 +1734,15 @@ export function cityModelStyle(base, { buildings = null, night = 0 } = {}) {
     sprite: base.sprite,
     // The app replaces this with the real sun for the time and place (see sunLight).
     light: { anchor: 'viewport', position: [1.5, 215, 35], color: '#ffffff', intensity: 0.28 },
-    // (By night: dark overhead, and along the horizon the glow a city of lamps throws into the dust above it.)
+    // The sky, for the views that reach the horizon: blue by day and pale where it meets the ground; at dusk
+    // deep blue over a band of orange; by night dark, with the glow a city of lamps throws into the dust above it.
     sky: {
-      'sky-color': hexMix('#dfe6ec', '#080c1a', dark),
-      'horizon-color': hexMix('#e9ecee', '#3a2c2a', dark),
-      'fog-color': hexMix('#e3e6e8', '#1b1a22', dark),
+      'sky-color': skyColours(dark).overhead,
+      'horizon-color': skyColours(dark).horizon,
+      'fog-color': skyColours(dark).horizon,
       'fog-ground-blend': 0.7,
       'horizon-fog-blend': 0.9,
-      'sky-horizon-blend': 0.9,
+      'sky-horizon-blend': 0.75,
       'atmosphere-blend': 0,
     },
     sources: {
@@ -1926,7 +1942,7 @@ export function cityModelStyle(base, { buildings = null, night = 0 } = {}) {
           // is as wide as the road and what the lamps reach beyond it. Soft from the middle outwards.)
           'line-width': glowWidth(1),
           'line-blur': glowWidth(0.5),
-          'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, GLOW_FAR * lamps, 14, 0.55 * lamps, 16, GLOW_MOST * lamps],
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, GLOW_FAR * thrown, 14, 0.55 * thrown, 16, GLOW_MOST * thrown],
         },
         { minzoom: 9, layout: round },
       ),
