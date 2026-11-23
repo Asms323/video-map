@@ -9,6 +9,7 @@
 import { shadeOnRoof } from './roofs.js';
 
 import { sinkWays, sunkAlong } from './cuttings.js';
+import { GLASS, MATERIALS, SHAPES, allowedNow, chooseParked, chooseVehicle } from './fleet.js';
 
 const METERS_PER_DEGREE = 111320;
 const LANE_METERS = 3.4;
@@ -171,34 +172,17 @@ const JOIN_REACH_METERS = 2.5; // road ends this close together are one junction
 const RAIL_JOIN_REACH_METERS = 1.5; // tracks lie side by side only a few metres apart
 const RAILS = new Set(['rail', 'transit']);
 
-// Vehicles as stacks of boxes. Each box: [from, to] along the length (0 rear,
-// 1 front), share of the width, bottom and top in metres, and what it is made of.
-// Each vehicle is a few boxes: [from, to, share, bottom, top, material, lean]. from and to are how far
-// along the vehicle the box runs (0 its rear, 1 its front), share how much of the width it takes, bottom
-// and top its height in metres. lean, for a cabin: how far its rear, its front and its sides draw in
-// towards the roof (as parts of the vehicle's length and of the box's width), which gives it a sloping
-// windscreen; such a cabin is glass all round under a roof in the body's paint.
-export const VEHICLES = {
-  car: { length: 4.5, width: 1.8, boxes: [[0.04, 0.96, 0.94, 0.02, 0.3, 'tyre'], [0, 1, 1, 0.26, 0.84, 'body'], [0.2, 0.8, 0.92, 0.84, 1.42, 'glass', [0.1, 0.15, 0.16]]] },
-  suv: { length: 4.9, width: 1.95, boxes: [[0.04, 0.96, 0.94, 0.02, 0.36, 'tyre'], [0, 1, 1, 0.32, 1.02, 'body'], [0.1, 0.8, 0.92, 1.02, 1.74, 'glass', [0.03, 0.13, 0.1]]] },
-  van: { length: 5.3, width: 2.0, boxes: [[0, 1, 1, 0.3, 1.15, 'body'], [0.02, 0.9, 0.94, 1.15, 1.95, 'body'], [0.72, 0.93, 0.95, 1.2, 1.8, 'glass']] },
-  truck: { length: 9, width: 2.5, boxes: [[0, 0.74, 1, 0.9, 3.4, 'cargo'], [0.78, 1, 0.96, 0.5, 2.6, 'body'], [0.9, 1.0, 0.97, 1.5, 2.3, 'glass']] },
-  bus: { length: 12, width: 2.55, boxes: [[0, 1, 1, 0.35, 1.3, 'body'], [0.01, 0.99, 0.97, 1.3, 2.5, 'glass'], [0, 1, 1, 2.5, 3.1, 'body']] },
-  coach: { length: 20, width: 2.9, boxes: [[0, 1, 1, 0.5, 1.6, 'body'], [0.02, 0.98, 0.97, 1.6, 2.9, 'glass'], [0, 1, 1, 2.9, 3.6, 'body'], [0.08, 0.92, 0.42, 3.6, 3.9, 'cargo']] },
-};
+// The vehicles themselves (their shapes, their colours, how many there are of each kind and at what
+// hours) are Riyadh's, and are set out in fleet.js.
+export const VEHICLES = SHAPES;
+export { GLASS };
 
-// Paint, as [red, green, blue]. Cars: what is common on the road, most common first.
-const CAR_PAINT = [
-  [238, 238, 234], [238, 238, 234], [238, 238, 234], [238, 238, 234], [205, 208, 212], [205, 208, 212],
-  [150, 155, 162], [40, 42, 48], [40, 42, 48], [196, 180, 150], [150, 34, 40], [38, 70, 130], [226, 226, 222],
-];
+// Paint, as [red, green, blue].
 const BUS_PAINT = [[24, 150, 140], [30, 118, 190], [226, 150, 30]];
-const CARGO_PAINT = [[232, 232, 228], [210, 205, 190], [190, 196, 204]];
 const TRAIN_PAINT = [[240, 242, 244], [132, 142, 156]];
-export const GLASS = [48, 62, 82];
-const TYRE = [30, 31, 35];
 const HEADLIGHTS = [250, 244, 226];
-const TAIL_LIGHTS = [150, 30, 30];
+const TAIL_LIGHTS = [186, 30, 30];
+const LAMP_PROUD_METERS = 0.015; // how far a lamp stands proud of the face it is on
 const VEHICLE_SHADE_LONGEST = 2.5; // a vehicle's shadow is drawn no longer than this many times its height
 
 const TRAIN_CAR_METERS = 21; // a 20 m car and the gap to the next
@@ -823,6 +807,12 @@ export class Traffic {
       return staying;
     };
 
+    // What may not be on the road at this hour drives off: the heavy lorries when their hours end.
+    const { hour, day } = localTime(new Date(this.now()), this.place.lng);
+    for (const vehicle of this.vehicles) {
+      if (!vehicle.leaving && vehicle.type !== 'bus' && !allowedNow(vehicle.type, hour, day)) vehicle.leaving = true;
+    }
+
     const wanted = this.wanted();
     let staying = count(false);
     for (let tries = (wanted - staying) * 3; staying < wanted && tries > 0; tries -= 1) {
@@ -892,19 +882,15 @@ export class Traffic {
   spawn() {
     const vehicle = this.startOn(this.roads, this.roadShares, false);
     if (!vehicle) return null;
-    const random = this.random;
     const way = this.network.ways[vehicle.way];
-    let type = 'car';
-    const roll = random();
-    if (roll < 0.3) type = 'suv';
-    else if (roll < 0.37) type = 'van';
-    else if (roll < 0.37 + (way.lanes >= 2 ? 0.06 : 0.01)) type = 'truck';
-    const paint = pick(CAR_PAINT, random);
-    vehicle.type = type;
-    vehicle.wish = way.speed * (type === 'truck' ? 0.8 : 0.85 + random() * 0.35);
+    // What kind of vehicle, and what colour: as Riyadh's streets have them at this hour (see fleet.js).
+    const { hour, day } = localTime(new Date(this.now()), this.place.lng);
+    const chosen = chooseVehicle(this.random, { lanes: way.lanes, hour, day });
+    vehicle.type = chosen.type;
+    vehicle.wish = way.speed * chosen.pace;
     vehicle.speed = way.speed * 0.8;
-    vehicle.paint = paint;
-    vehicle.cargo = type === 'truck' ? pick(CARGO_PAINT, random) : paint;
+    vehicle.paint = chosen.paint;
+    vehicle.cargo = chosen.cargo;
     return vehicle;
   }
 
@@ -1421,8 +1407,10 @@ export function lightFrom(sun) {
 }
 
 /**
- * Add one vehicle to a mesh: its boxes, and the shade it throws on the road
- * (twelve corners, when the sun is up). (x, y) is its middle, (east, north)
+ * Add one vehicle to a mesh: the shade it throws on the road (twelve
+ * corners, when the sun is up), its boxes (thirty corners each), and its
+ * lamps (six corners each: two ahead and two behind, or one and one on a
+ * motorbike, and none on a train's car). (x, y) is its middle, (east, north)
  * the way it points. reach: what shadowReach() gives, or null. scale: 1 is
  * life size. lift: how high the road is under it, on a bridge.
  */
@@ -1452,11 +1440,18 @@ export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, 
     }
   }
 
-  let bodies = 0;
-  for (const [from, to, share, bottom, top, material, lean] of shape.boxes) {
+  // Which of its boxes carry its lamps: the foremost its headlights, the rearmost its tail lights. (Of
+  // those that are body or load: on a lorry the cab is the one and the back of its load the other.)
+  if (shape.front === undefined) {
+    const solid = shape.boxes.map((box, index) => ({ box, index })).filter(({ box }) => box[5] === 'body' || box[5] === 'cargo');
+    shape.front = solid.reduce((best, one) => (one.box[1] > best.box[1] + 1e-9 ? one : best), solid[0]).index;
+    shape.rear = solid.reduce((best, one) => (one.box[0] < best.box[0] - 1e-9 ? one : best), solid[0]).index;
+  }
+  for (const [from, to, share, bottom, top, material, lean, aside = 0] of shape.boxes) {
     const rear = -halfLength + length * from;
     const front = -halfLength + length * to;
     const side = halfWidth * share;
+    const off = halfWidth * aside; // how far off the middle of the vehicle the box stands
     const low = lift + bottom * scale;
     const high = lift + top * scale;
     // Where the box ends at its top: a cabin draws in towards its roof.
@@ -1464,21 +1459,45 @@ export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, 
     const frontTop = front - length * (lean?.[1] ?? 0);
     const sideTop = side * (1 - (lean?.[2] ?? 0));
     const slope = lean ? 0.55 : 0; // how far a leaning face looks up at the sky
-    const colour = material === 'glass' ? GLASS : material === 'cargo' ? cargo : material === 'tyre' ? TYRE : paint;
-    const first = material === 'body' && bodies === 0; // the body proper carries the lights
-    if (material === 'body') bodies += 1;
-    const at = (along, across, z) => [x + east * along + rightEast * across, y + north * along + rightNorth * across, z];
-    const paintFace = (a, b, c, d, nEast, nNorth, nUp, face = colour, mixed = 0, other = colour) => {
+    const colour = material === 'cargo' ? cargo : MATERIALS[material] ?? paint;
+    const at = (along, across, z) => [x + east * along + rightEast * (across + off), y + north * along + rightNorth * (across + off), z];
+    const paintFace = (a, b, c, d, nEast, nNorth, nUp, face = colour) => {
       const lit = faceLight(light, nEast, nNorth, nUp);
-      mesh.face(a, b, c, d, (face[0] + (other[0] - face[0]) * mixed) * lit, (face[1] + (other[1] - face[1]) * mixed) * lit, (face[2] + (other[2] - face[2]) * mixed) * lit, shown);
+      mesh.face(a, b, c, d, face[0] * lit, face[1] * lit, face[2] * lit, shown);
     };
     // The top: of a cabin, its roof, in the body's paint.
-    paintFace(at(rearTop, -sideTop, high), at(frontTop, -sideTop, high), at(frontTop, sideTop, high), at(rearTop, sideTop, high), 0, 0, 1, lean ? paint : colour);
-    // Front and rear: on the body they carry the lights, pale ahead and red behind.
-    paintFace(at(front, -side, low), at(front, side, low), at(frontTop, sideTop, high), at(frontTop, -sideTop, high), east, north, slope, colour, first ? 0.34 : 0, HEADLIGHTS);
-    paintFace(at(rear, side, low), at(rear, -side, low), at(rearTop, -sideTop, high), at(rearTop, sideTop, high), -east, -north, slope, colour, first ? 0.3 : 0, TAIL_LIGHTS);
+    paintFace(at(rearTop, -sideTop, high), at(frontTop, -sideTop, high), at(frontTop, sideTop, high), at(rearTop, sideTop, high), 0, 0, 1, lean && material === 'glass' ? paint : colour);
+    // Front and rear, and the two sides.
+    paintFace(at(front, -side, low), at(front, side, low), at(frontTop, sideTop, high), at(frontTop, -sideTop, high), east, north, slope);
+    paintFace(at(rear, side, low), at(rear, -side, low), at(rearTop, -sideTop, high), at(rearTop, sideTop, high), -east, -north, slope);
     paintFace(at(rear, side, low), at(front, side, low), at(frontTop, sideTop, high), at(rearTop, sideTop, high), rightEast, rightNorth, slope * 0.5);
     paintFace(at(front, -side, low), at(rear, -side, low), at(rearTop, -sideTop, high), at(frontTop, -sideTop, high), -rightEast, -rightNorth, slope * 0.5);
+  }
+
+  // Its lamps: a pale one at each corner of its front, a red one at each corner of its rear, standing a
+  // touch proud of the face they are on. (A motorbike has one of each, in its middle. A train's cars come
+  // one by one, and none of them knows whether it is the first: they carry none.)
+  if (type === 'coach') return;
+  const single = shape.width < 1;
+  for (const [index, ahead, colour] of [[shape.front, 1, HEADLIGHTS], [shape.rear, -1, TAIL_LIGHTS]]) {
+    const [from, to, share, bottom, top, , lean, aside = 0] = shape.boxes[index];
+    const tall = top - bottom;
+    // On a low body they sit in its upper half; on a tall cab or a load, at its foot.
+    const [z0, z1] = tall <= 1 ? [bottom + tall * 0.52, bottom + tall * 0.84] : [bottom + 0.06, bottom + 0.3];
+    const side = halfWidth * share;
+    const off = halfWidth * aside;
+    /** Where the face is at a height: a leaning one draws in towards its top. */
+    const faceAt = (z) => {
+      const up = (z - bottom) / tall;
+      const leans = ahead > 0 ? lean?.[1] ?? 0 : lean?.[0] ?? 0;
+      return { along: ahead > 0 ? -halfLength + length * (to - leans * up) + LAMP_PROUD_METERS : -halfLength + length * (from + leans * up) - LAMP_PROUD_METERS, wide: side * (1 - (lean?.[2] ?? 0) * up) };
+    };
+    const [foot, head] = [faceAt(z0), faceAt(z1)];
+    const lit = faceLight(light, east * ahead, north * ahead, 0);
+    const at = (along, across, z) => [x + east * along + rightEast * (across + off), y + north * along + rightNorth * (across + off), lift + z * scale];
+    for (const [inner, outer] of single ? [[-0.34, 0.34]] : [[-0.98, -0.56], [0.56, 0.98]]) {
+      mesh.face(at(foot.along, foot.wide * inner, z0), at(foot.along, foot.wide * outer, z0), at(head.along, head.wide * outer, z1), at(head.along, head.wide * inner, z1), colour[0] * lit, colour[1] * lit, colour[2] * lit, shown);
+    }
   }
 }
 
@@ -1518,6 +1537,7 @@ function drawBox(mesh, x, y, east, north, halfLength, halfWidth, low, high, colo
 // Which streets have cars parked along them, and how full their kerbs are.
 const PARKING = { minor: 0.3, tertiary: 0.22 };
 const PARKING_SLOT_METERS = 6;
+const PARKED_ROOM_METERS = 5.4; // nothing longer than this stands at a kerb or in a bay
 const PARKING_FROM_CORNER_METERS = 9;
 const SHELTER_PAINT = [224, 228, 232];
 const SHELTER_ROOF = [70, 82, 100];
@@ -1606,15 +1626,14 @@ export function drawStreet(mesh, network, light, reach, most = 2500, { built = n
     for (const side of [1, -1]) {
       for (let s = PARKING_FROM_CORNER_METERS + random() * PARKING_SLOT_METERS; s < way.length - PARKING_FROM_CORNER_METERS; s += PARKING_SLOT_METERS) {
         const there = random() < PARKING[way.class];
-        const kind = random();
-        const paint = pick(CAR_PAINT, random);
+        const standing = chooseParked(random(), random(), PARKED_ROOM_METERS);
         // Nobody parks in a bus stop.
         if (!there || parked >= most || way.stops.some((stop) => stop.kerb === side && Math.abs(stop.at - s) < 14)) continue;
         pointAlong(way, s, spot);
         // On the right of the street a car faces the way the street runs, on the left the other way, unless the street is one-way.
         const facing = side === 1 || way.oneway === 1 ? 1 : -1;
         const turned = way.oneway === -1 ? -facing : facing;
-        drawVehicle(mesh, kind < 0.32 ? 'suv' : kind < 0.38 ? 'van' : 'car', spot[0] + spot[3] * side * aside, spot[1] - spot[2] * side * aside, spot[2] * turned, spot[3] * turned, paint, paint, 1, light, reach);
+        drawVehicle(mesh, standing.type, spot[0] + spot[3] * side * aside, spot[1] - spot[2] * side * aside, spot[2] * turned, spot[3] * turned, standing.paint, standing.cargo, 1, light, reach);
         parked += 1;
       }
     }
@@ -1631,8 +1650,7 @@ export function drawStreet(mesh, network, light, reach, most = 2500, { built = n
     for (const side of [1, -1]) {
       for (let s = BAY_FROM_END_METERS; s <= way.length - BAY_FROM_END_METERS; s += BAY_WIDE_METERS) {
         const car = random() < full;
-        const kind = random();
-        const paint = pick(CAR_PAINT, random);
+        const standing = chooseParked(random(), random(), PARKED_ROOM_METERS);
         const noseOut = random() < 0.7; // most drive straight in
         pointAlong(way, s, spot);
         // Out from the lane, to its right or to its left; and the bay's middle, where a car would stand.
@@ -1657,7 +1675,7 @@ export function drawStreet(mesh, network, light, reach, most = 2500, { built = n
         }
         if (!car || parked >= most) continue;
         const turned = noseOut ? 1 : -1;
-        drawVehicle(mesh, kind < 0.36 ? 'suv' : kind < 0.42 ? 'van' : 'car', x, y, outX * turned, outY * turned, paint, paint, 1, light, reach);
+        drawVehicle(mesh, standing.type, x, y, outX * turned, outY * turned, standing.paint, standing.cargo, 1, light, reach);
         const key = squareOf(Math.floor(x / SPOT), Math.floor(y / SPOT));
         if (!stood.has(key)) stood.set(key, []);
         stood.get(key).push([x, y]);

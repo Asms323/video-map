@@ -160,7 +160,27 @@ test('Traffic fills the roads, drives on the right and obeys one-way streets', (
     if (way.oneway === -1) assert.equal(vehicle.forward, false);
     assert.ok(Object.hasOwn(VEHICLES, vehicle.type));
   }
-  assert.ok(traffic.vehicles.some((vehicle) => vehicle.type === 'suv') && traffic.vehicles.some((vehicle) => vehicle.type === 'truck'));
+  // They are Riyadh's vehicles (see fleet.js): saloons above all, SUVs and pick-ups among them; and at eight in the
+  // morning of a working day not one heavy lorry, for the city keeps them out by day.
+  const kinds = (list) => new Set(list.map((vehicle) => vehicle.type));
+  assert.ok(['car', 'sedan', 'crossover', 'suv', 'pickup'].every((kind) => kinds(traffic.vehicles).has(kind)), [...kinds(traffic.vehicles)].join(' '));
+  assert.ok(!kinds(traffic.vehicles).has('truck') && !kinds(traffic.vehicles).has('tanker'));
+  assert.ok(traffic.vehicles.every((vehicle) => vehicle.wish > 0 && vehicle.paint.length === 3 && vehicle.cargo.length === 3));
+  // In the small hours they are let in, and are a good part of what moves on the wide roads.
+  const byNight = new Traffic({ seed: 3, now: () => NIGHT });
+  byNight.level = 4; // (as many vehicles as by day, to count among)
+  byNight.setNetwork(network, [0, 0], ORIGIN);
+  const lorries = byNight.vehicles.filter((vehicle) => vehicle.type === 'truck');
+  assert.ok(lorries.length > byNight.vehicles.length * 0.03 && lorries.length < byNight.vehicles.length * 0.2, `${lorries.length} of ${byNight.vehicles.length}`);
+  // When their hours end, those on the road drive off.
+  let clock = NIGHT;
+  const turning = new Traffic({ seed: 3, now: () => clock });
+  turning.level = 4;
+  turning.setNetwork(network, [0, 0], ORIGIN);
+  assert.ok(turning.vehicles.some((vehicle) => vehicle.type === 'truck' && !vehicle.leaving));
+  clock = MORNING;
+  turning.fill();
+  assert.ok(turning.vehicles.filter((vehicle) => vehicle.type === 'truck').every((vehicle) => vehicle.leaving));
   assert.ok(!traffic.vehicles.some(isBus), 'no bus where the map has no bus stop');
   assert.equal(traffic.wantedBuses(), 0);
 
@@ -542,16 +562,18 @@ test('a vehicle is drawn as lit boxes, with its shade on the road joined to it',
   assert.equal(faceLight(light, 0, 1, 0), 0.65, 'a face turned away keeps 65%');
   assert.equal(faceLight(null, 0, 0, 1), 0.8, 'even light at night');
 
-  // A car at (10, 20) pointing north, with the sun in the south: its shade (four triangles), and 3 boxes of 5
-  // faces (its tyres, its body, its cabin).
+  // A car at (10, 20) pointing north, with the sun in the south: its shade (four triangles), 3 boxes of 5
+  // faces (its tyres, its body, its cabin), and its four lamps.
   drawVehicle(mesh, 'car', 10, 20, 0, 1, [200, 100, 50], [200, 100, 50], 1, light, { bearing: 0, factor: 1 });
   const SHADE = 12;
-  assert.equal(mesh.count, SHADE + 3 * 5 * 6);
+  const BOXES = 3 * 5 * 6;
+  const LAMPS = 4 * 6;
+  assert.equal(mesh.count, SHADE + BOXES + LAMPS);
   assert.deepEqual(VEHICLES.car.boxes.map((box) => box[5]), ['tyre', 'body', 'glass']);
   const xs = [];
   const ys = [];
   const zs = [];
-  for (let i = SHADE; i < mesh.count; i += 1) {
+  for (let i = SHADE; i < SHADE + BOXES; i += 1) {
     xs.push(mesh.positions[i * 3]);
     ys.push(mesh.positions[i * 3 + 1]);
     zs.push(mesh.positions[i * 3 + 2]);
@@ -573,7 +595,7 @@ test('a vehicle is drawn as lit boxes, with its shade on the road joined to it',
   // With the sun low and to one side the shade is longer, but no longer than two and a half times the car's height; still it starts under the car.
   const evening = new Mesh();
   drawVehicle(evening, 'car', 10, 20, 0, 1, [200, 100, 50], [200, 100, 50], 1, light, { bearing: 90, factor: 3.4 });
-  assert.equal(evening.count, SHADE + 3 * 5 * 6);
+  assert.equal(evening.count, SHADE + BOXES + LAMPS);
   const eastmost = Math.max(...Array.from({ length: SHADE }, (_, i) => evening.positions[i * 3]));
   const westmost = Math.min(...Array.from({ length: SHADE }, (_, i) => evening.positions[i * 3]));
   assert.ok(near(eastmost, 10 + 0.9 + 2.5 * 1.42, 1e-4) && near(westmost, 10 - 0.9, 1e-4), `${westmost} to ${eastmost}`);
@@ -582,11 +604,20 @@ test('a vehicle is drawn as lit boxes, with its shade on the road joined to it',
   assert.ok(mesh.colours[SHADE * 4] < 40 && mesh.colours[SHADE * 4 + 1] < 40, 'tyres');
   const bodyTop = SHADE + 30;
   assert.deepEqual(Array.from(mesh.colours.subarray(bodyTop * 4, bodyTop * 4 + 4)), [Math.floor(200 * top), Math.floor(100 * top), Math.floor(50 * top), 255]);
-  // Its front is paler than its paint (the headlights), its rear redder (the tail lights).
+  // Its front and its rear are of its paint, like its sides. Its lamps: two pale ones ahead, at the corners of its
+  // nose, and two red ones behind, at the corners of its tail; in the upper half of its body, a touch proud of it.
   const face = (index) => Array.from(mesh.colours.subarray((bodyTop + index * 6) * 4, (bodyTop + index * 6) * 4 + 3));
   const [front, rear, side] = [face(1), face(2), face(3)];
-  assert.ok(front[2] / front[0] > side[2] / side[0] * 1.5, `paler ahead: ${front} against ${side}`);
-  assert.ok(rear[1] / rear[0] < side[1] / side[0] * 0.9, `redder behind: ${rear} against ${side}`);
+  assert.ok(near(front[1] / front[0], side[1] / side[0], 0.02) && near(rear[1] / rear[0], side[1] / side[0], 0.02), `${front} and ${rear} against ${side}`);
+  const lamp = Array.from({ length: LAMPS }, (_, i) => {
+    const at = SHADE + BOXES + i;
+    return { x: mesh.positions[at * 3], y: mesh.positions[at * 3 + 1], z: mesh.positions[at * 3 + 2], paint: Array.from(mesh.colours.subarray(at * 4, at * 4 + 3)) };
+  });
+  const [ahead, behind] = [lamp.slice(0, 12), lamp.slice(12)];
+  assert.ok(ahead.every((corner) => near(corner.y, 20 + 2.25 + 0.015, 1e-4) && corner.paint[2] > corner.paint[0] * 0.85 && corner.paint[0] > 150), 'pale, on its nose');
+  assert.ok(behind.every((corner) => near(corner.y, 20 - 2.25 - 0.015, 1e-4) && corner.paint[0] > corner.paint[1] * 4), 'red, on its tail');
+  assert.ok(lamp.every((corner) => corner.z > 0.26 + 0.58 * 0.5 && corner.z < 0.84 && Math.abs(corner.x - 10) > 0.9 * 0.5 && Math.abs(corner.x - 10) < 0.9));
+  assert.ok(ahead.some((corner) => corner.x < 10) && ahead.some((corner) => corner.x > 10) && behind.some((corner) => corner.x < 10) && behind.some((corner) => corner.x > 10), 'one at each corner');
   // The cabin: glass all round, under a roof in the body's paint, and drawn in towards the roof.
   const cabin = SHADE + 60;
   assert.deepEqual(Array.from(mesh.colours.subarray(cabin * 4, cabin * 4 + 3)), [Math.floor(200 * top), Math.floor(100 * top), Math.floor(50 * top)]);
@@ -602,10 +633,10 @@ test('a vehicle is drawn as lit boxes, with its shade on the road joined to it',
   // Half shown: half as solid. Larger than life: larger. No sun: no shade.
   const faint = new Mesh();
   drawVehicle(faint, 'bus', 0, 0, 1, 0, [100, 100, 100], [0, 0, 0], 0.5, null, null, 1.5);
-  assert.equal(faint.count, 3 * 5 * 6);
+  assert.equal(faint.count, 3 * 5 * 6 + LAMPS);
   assert.equal(faint.colours[3], 127);
   let longest = 0;
-  for (let i = 0; i < faint.count; i += 1) longest = Math.max(longest, Math.abs(faint.positions[i * 3]));
+  for (let i = 0; i < 3 * 5 * 6; i += 1) longest = Math.max(longest, Math.abs(faint.positions[i * 3]));
   assert.ok(near(longest, (12 * 1.5) / 2, 1e-4));
 });
 
@@ -620,7 +651,8 @@ test('drawTraffic draws every vehicle that can be seen, and none in a tunnel', (
   const above = traffic.vehicles.filter((vehicle) => vehicle.way === 0).length;
   assert.equal(drawn, above);
   assert.ok(above > 10 && traffic.vehicles.length > above, 'the tunnel carries traffic too, out of sight');
-  assert.equal(mesh.count, above * 90);
+  // (Each box of a vehicle is five faces of six corners; and it has four lamps of six, or two if it is a motorbike.)
+  assert.equal(mesh.count, traffic.vehicles.filter((vehicle) => vehicle.way === 0).reduce((sum, vehicle) => sum + VEHICLES[vehicle.type].boxes.length * 30 + (VEHICLES[vehicle.type].width < 1 ? 12 : 24), 0));
   for (let i = 0; i < mesh.count; i += 1) assert.ok(Math.abs(mesh.positions[i * 3 + 1]) < 20, 'only the open road is drawn');
   assert.deepEqual(traffic.counts(), { vehicles: traffic.vehicles.length, buses: traffic.vehicles.filter((v) => v.type === 'bus').length, trains: 0, ways: 2 });
   // Drawing again starts from an empty mesh.
@@ -724,11 +756,14 @@ test('cars are parked along residential streets, the same way every time, and ev
   // Some 47 places on each kerb of the one open residential street, three in ten taken. None on the main road, in the tunnel or in the yard.
   assert.ok(made.parked >= 15 && made.parked <= 45, String(made.parked));
   assert.equal(made.shelters, 2);
-  assert.equal(mesh.count, made.parked * 90 + 2 * 4 * 30, 'a car is three boxes, a shelter four');
+  // (A parked vehicle is three boxes of thirty corners, or four: a pick-up with its bed, a taxi with its light; and four
+  // lamps of six. A shelter is four boxes.)
+  const parkedCorners = mesh.count - 2 * 4 * 30;
+  assert.ok(parkedCorners >= made.parked * 114 && parkedCorners <= made.parked * 144 && parkedCorners % 6 === 0, `${parkedCorners} corners for ${made.parked} vehicles`);
   const corner = (i) => [mesh.positions[i * 3], mesh.positions[i * 3 + 1], mesh.positions[i * 3 + 2]];
   let north = 0;
   let south = 0;
-  for (let i = 0; i < made.parked * 90; i += 1) {
+  for (let i = 0; i < parkedCorners; i += 1) {
     const [x, y, z] = corner(i);
     // At the kerb: between 1.8 m and 3.9 m from the middle of a 7 m street, clear of its corners, on the ground.
     assert.ok(Math.abs(y) > 1.8 && Math.abs(y) < 3.9 && x > 6 && x < 294 && z > 0.01 && z < 2, `${x}, ${y}, ${z}`);
@@ -739,10 +774,10 @@ test('cars are parked along residential streets, the same way every time, and ev
       south += 1;
     }
   }
-  assert.ok(north > 0 && south > 0 && (north + south) % 90 === 0, 'on both kerbs');
+  assert.ok(north > 0 && south > 0 && (north + south) % 6 === 0, 'on both kerbs');
   // The shelters stand behind the kerb at their stops, as tall as a shelter.
   const shelter = { x: [], y: [], z: [] };
-  for (let i = made.parked * 90; i < mesh.count; i += 1) {
+  for (let i = parkedCorners; i < mesh.count; i += 1) {
     const [x, y, z] = corner(i);
     shelter.x.push(x);
     shelter.y.push(y);
@@ -757,7 +792,7 @@ test('cars are parked along residential streets, the same way every time, and ev
   assert.deepEqual(Array.from(again.positions.subarray(0, again.count * 3)), Array.from(mesh.positions.subarray(0, mesh.count * 3)));
   // With the sun out every car has a shade as well; and the cars can be capped.
   drawStreet(again, network, lightFrom({ azimuth: 180, altitude: 50 }), { bearing: 0, factor: 1 });
-  assert.equal(again.count, made.parked * 102 + 2 * 4 * 30);
+  assert.equal(again.count, parkedCorners + made.parked * 12 + 2 * 4 * 30);
   assert.deepEqual(drawStreet(again, network, null, null, 5), { parked: 5, shelters: 2, bays: 0 });
   assert.deepEqual(drawStreet(again, buildNetwork([], ORIGIN), null, null), { parked: 0, shelters: 0, bays: 0 });
   assert.equal(again.count, 0);
@@ -782,7 +817,9 @@ test('in a car park cars stand in bays beside the lanes, wherever there is room 
   // Bays are 2.7 m wide, from 7 m in to 7 m short of the end: 32 to a side. The car park's lane has them
   // on its north side only, as far as the building (20); the other lane on both sides (64).
   const lineCorners = 20 * 6; // a line between the bays of the car park proper, which are marked
-  assert.equal(mesh.count, made.bays * 90 + lineCorners);
+  // (A parked vehicle: three boxes of thirty corners, or four, and four lamps of six.)
+  const bayCorners = mesh.count - lineCorners;
+  assert.ok(bayCorners >= made.bays * 114 && bayCorners <= made.bays * 144 && bayCorners % 6 === 0, `${bayCorners} corners for ${made.bays} vehicles`);
   assert.ok(made.bays >= 20 && made.bays <= 45, `six in ten of 20, three in ten of 64: ${made.bays}`);
   const rows = { park: 0, laneSouth: 0, laneNorth: 0, lines: 0 };
   for (let i = 0; i < mesh.count; i += 1) {
@@ -804,24 +841,26 @@ test('in a car park cars stand in bays beside the lanes, wherever there is room 
   }
   assert.equal(rows.lines, lineCorners);
   assert.ok(rows.park > 0 && rows.laneSouth > 0 && rows.laneNorth > 0, JSON.stringify(rows));
-  assert.ok(rows.park / 90 >= 8 && rows.park / 90 <= 17, `about six bays in ten taken: ${rows.park / 90}`);
-  // No two cars share a spot: their middles are at least a bay apart.
+  // No two cars share a spot: their middles are at least a bay apart. (Each vehicle ends with its two red tail
+  // lamps, twelve corners: that is where the next begins.)
+  const tailLamp = (i) => mesh.colours[i * 4] === Math.floor(186 * 0.8) && mesh.colours[i * 4 + 1] === Math.floor(30 * 0.8) && mesh.colours[i * 4 + 2] === Math.floor(30 * 0.8);
   const middles = [];
-  for (let i = 0; i + 90 <= mesh.count; ) {
+  let sum = [0, 0, 0];
+  for (let i = 0; i < mesh.count; ) {
     if (near(mesh.positions[i * 3 + 2], 0.16, 1e-6) && near(mesh.positions[(i + 5) * 3 + 2], 0.16, 1e-6)) {
       i += 6;
       continue;
     }
-    let x = 0;
-    let y = 0;
-    for (let k = 30; k < 60; k += 1) {
-      x += mesh.positions[(i + k) * 3] / 30;
-      y += mesh.positions[(i + k) * 3 + 1] / 30;
+    sum = [sum[0] + mesh.positions[i * 3], sum[1] + mesh.positions[i * 3 + 1], sum[2] + 1];
+    if (tailLamp(i) && tailLamp(i - 11) && !tailLamp(i - 12)) {
+      middles.push([sum[0] / sum[2], sum[1] / sum[2]]);
+      sum = [0, 0, 0];
     }
-    middles.push([x, y]);
-    i += 90;
+    i += 1;
   }
   assert.equal(middles.length, made.bays);
+  const inPark = middles.filter(([, y]) => Math.abs(y - 5.5) <= 2.7).length;
+  assert.ok(inPark >= 8 && inPark <= 17, `about six bays in ten taken: ${inPark}`);
   for (let a = 0; a < middles.length; a += 1) {
     for (let b = a + 1; b < middles.length; b += 1) assert.ok(Math.hypot(middles[a][0] - middles[b][0], middles[a][1] - middles[b][1]) > 2.5);
   }
@@ -853,7 +892,7 @@ test('in a car park cars stand in bays beside the lanes, wherever there is room 
   // The cars can be capped, and each has its shade when the sun is out.
   assert.equal(drawStreet(again, network, null, null, 7, { built, within }).bays, 7);
   drawStreet(again, network, lightFrom({ azimuth: 180, altitude: 50 }), { bearing: 0, factor: 1 }, 2500, { built, within });
-  assert.equal(again.count, made.bays * 102 + lineCorners);
+  assert.equal(again.count, bayCorners + made.bays * 12 + lineCorners);
 });
 
 test('on a residential street the moving cars keep clear of the parked ones', () => {

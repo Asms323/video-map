@@ -144,6 +144,23 @@ map opens on the city and keeps to it, and places are looked for in it.
   streets. This is a simulation to bring the model to life, **not
   live traffic**: where each vehicle is, is made up. It can be switched off
   under the map options.
+- **The cars are Riyadh's.** What drives and stands parked is what Riyadh
+  has, in about the shares it has it: small and middle-sized saloons first
+  of all (what Saudi Arabia buys most: the Accent, the Yaris, the Camry and
+  their like), then SUVs, the middle-sized and the big square 4x4s, then
+  pick-ups with an open bed, vans, small hatchbacks, light lorries with a
+  box behind the cab, tankers, and motorbikes with a rider and a box of
+  somebody's order. Six cars in ten are white, two silver or grey, one
+  black; the big 4x4s are black more often, and working vehicles nearly all
+  white. **Taxis are green**, with their light on the roof. Now and then a
+  **patrol car** passes: black with white doors (Public Security) or white
+  with green (the traffic police), red and blue lamps on its roof; or an
+  ambulance, white with a red band. **Heavy lorries come only when the city
+  lets them in**: not from 6 in the morning until 9 at night on working
+  days (Sunday to Thursday), nor from 5 until 9 at the weekend, so they are
+  a sight of the night; the tankers stay away in the rush hours. There are
+  more delivery bikes at lunch and from supper into the night. No vehicle
+  is drawn after any one make, and none carries a badge or a name.
 - **Buses where buses run.** A bus only drives along a street that has a bus
   stop on the map (and on along the same street between stops), in the lane by
   the kerb, and pulls in at every stop on its side of the street, where a
@@ -545,6 +562,14 @@ Watch video only when parked, or let a passenger watch.
 - The night is a picture of how Riyadh looks after dark, not a record of it:
   which rooms are lit, where each lamp post stands and what colour a tower's
   lights are is set out by rule, the same every night.
+- The cars: which kinds there are, and that most are white, follows what is
+  sold in Saudi Arabia and what a Saudi dealers' guide says of colours; the
+  exact shares are an estimate, for no register of what is on Riyadh's
+  roads is published. That taxis are green is the transport authority's
+  rule, but the shade here is a guess at it; so is which parts of a patrol
+  car are black and which white. The lorries' hours are those the traffic
+  police publish for ordinary weeks; in Ramadan they differ, and that is
+  not followed.
 - The sky: the sun, the moon, the stars and the planets are where they
   really are (the moon and the planets to within a degree or so). The clouds
   are as many as the weather service says there are in each layer, but which

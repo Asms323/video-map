@@ -321,7 +321,8 @@ export function vehicleLights(glow, type, x, y, east, north, shown = 1, scale = 
   const at = (along, across) => [x + east * along + rightEast * across, y + north * along + rightNorth * across];
   if (type !== 'coach') {
     // (A train's cars come one by one, and none of them knows whether it is the first: they carry no lamps.)
-    for (const side of [-1, 1]) {
+    // (A motorbike has one lamp ahead and one behind.)
+    for (const side of shape.width < 1 ? [0] : [-1, 1]) {
       const [fx, fy] = at(halfLength + 0.06, side * halfWidth * 0.62);
       const [bx, by] = at(-halfLength - 0.06, side * halfWidth * 0.66);
       if (points) {
@@ -331,6 +332,16 @@ export function vehicleLights(glow, type, x, y, east, north, shown = 1, scale = 
       } else {
         disc(glow, fx, fy, lift + 0.72 * scale, 0.8 * scale, HEADLIGHT, shown, 5);
         disc(glow, bx, by, lift + 0.82 * scale, 0.58 * scale, TAIL_LIGHT, 0.9 * shown, 5);
+      }
+    }
+    // What else it carries: the light on a taxi's roof, the red and blue of a patrol car.
+    for (const [along, aside, height, colour] of shape.lamps ?? []) {
+      const [lx, ly] = at(-halfLength + length * along, halfWidth * aside);
+      if (points) {
+        points.room(1);
+        points.glow(lx, ly, lift + height * scale, colour[0], colour[1], colour[2], shown);
+      } else {
+        disc(glow, lx, ly, lift + height * scale, 0.5 * scale, colour, shown, 5);
       }
     }
     // The beam: on the road from the bumper forward, widening and fading.

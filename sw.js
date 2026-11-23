@@ -27,6 +27,7 @@ const SHELL = [
   './js/shade.js',
   './js/map.js',
   './js/life.js',
+  './js/fleet.js',
   './js/lights.js',
   './js/scene.js',
   './js/sight.js',
