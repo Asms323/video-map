@@ -98,3 +98,40 @@ test('drawRoadside: a slip road has neither barrier nor kerb, and where an avenu
   const up = points.filter((point) => point[0] < 400);
   assert.ok(up.length > 0 && up.every((point) => point[2] >= 0 && point[2] <= 0.2 + 1e-6), 'on the street before the dip');
 });
+
+test('drawFootbridges: a roofed walkway six metres over the road, on piers that keep off the carriageway, with a tower at each end', async () => {
+  const { drawFootbridges } = await import('../js/roadside.js');
+  // A motorway of two carriageways along y = 0 and y = 24, and a footbridge across both from y = -30 to y = 54,
+  // which the map has in two lengths (it crosses the edge of a tile at y = 12).
+  const network = buildNetwork([line('motorway', [[0, 0], [600, 0]], { oneway: 1 }), line('motorway', [[600, 24], [0, 24]], { oneway: 1 })], ORIGIN);
+  const walk = (points) => ({ coordinates: points.map(([x, y]) => [ORIGIN.lng + x * EAST, ORIGIN.lat + y * NORTH]) });
+  const walks = [walk([[300, -30], [300, 12]]), walk([[300, 12], [300, 54]])];
+  const mesh = new Mesh();
+  const made = drawFootbridges(mesh, walks, network, ORIGIN, NOON);
+  assert.equal(made.bridges, 2);
+  assert.ok(Math.abs(made.metres - 84) < 0.01 && made.towers === 2 && made.piers >= 2, JSON.stringify(made));
+  const points = corners(mesh);
+  // The walkway: 3.4 m wide, its floor 5.9 m up, a roof 2.75 m over the floor (standing out 30 cm each side).
+  const walkway = points.filter((point) => point[1] > -29 && point[1] < 53);
+  const floor = walkway.filter((point) => Math.abs(point[2] - 5.9) < 1e-3);
+  assert.ok(floor.length > 0 && floor.every((point) => Math.abs(point[0] - 300) <= 1.7 + 1e-3));
+  assert.ok(Math.abs(Math.max(...walkway.map((point) => point[2])) - (5.9 + 2.75 + 0.16)) < 1e-3);
+  assert.ok(walkway.filter((point) => point[2] > 8.6).every((point) => Math.abs(point[0] - 300) <= 2 + 1e-3));
+  // Nothing of it comes lower than 5.35 m over a carriageway: no pier stands in one.
+  const width = network.ways[0].width;
+  const low = points.filter((point) => point[2] < 5.9 - 0.55 - 1e-3);
+  assert.ok(low.length > 0 && low.every((point) => Math.abs(point[1]) > width / 2 + 0.8 && Math.abs(point[1] - 24) > width / 2 + 0.8), 'clear of both carriageways');
+  // The piers stand on the ground: in the median, and beside the road.
+  const feet = points.filter((point) => point[2] === 0 && point[1] > -29 && point[1] < 53);
+  assert.ok(feet.length > 0 && feet.some((point) => point[1] > width / 2 && point[1] < 24 - width / 2), 'one in the median');
+  // A tower at each end of the whole bridge, and none where its two lengths meet: beyond the end, taller than the roof.
+  const towers = points.filter((point) => point[2] > 5.9 + 2.75 + 0.3);
+  assert.ok(towers.length > 0 && towers.every((point) => point[1] <= -29.7 + 1e-3 || point[1] >= 53.7 - 1e-3));
+  assert.ok(towers.some((point) => point[1] < -33) && towers.some((point) => point[1] > 57) && towers.every((point) => Math.abs(point[0] - 300) <= 2.7 + 1e-3));
+  // The glazing is see-through; the rest is solid.
+  const solid = Array.from({ length: mesh.count }, (_, i) => mesh.colours[i * 4 + 3]);
+  assert.deepEqual([...new Set(solid)].sort((a, b) => a - b), [127, 255]);
+  // No footbridges: nothing.
+  assert.deepEqual(drawFootbridges(mesh, [], network, ORIGIN, NOON), { bridges: 0, metres: 0, towers: 0, piers: 0 });
+  assert.equal(mesh.count, 0);
+});

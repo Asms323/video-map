@@ -45,7 +45,7 @@ import { drawFarLights, drawLamps, drawRoofLights, drawTrafficLights, lightPoint
 import { Mesh, Traffic, buildNetwork, drawBridges, drawMarks, drawRoofs, drawStreet, drawTraffic, drawTrees, faceLight, lightFrom, stayedHere, streetDirection, streetNear, trafficLevel } from './life.js';
 import { ModelMesh } from './models.js';
 import { plotWalls } from './plots.js';
-import { drawRoadside, medianPalms } from './roadside.js';
+import { drawFootbridges, drawRoadside, medianPalms } from './roadside.js';
 import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
 import { SceneLayer } from './scene.js';
 import { buildingArchive, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
@@ -458,6 +458,9 @@ export class MapView {
     this.plotMesh = new Mesh(); // the walls round the houses
     this.roadsideMesh = new Mesh(); // barriers, sign gantries and the kerbs of medians
     this.roadsideMade = null;
+    this.footbridgeMesh = new Mesh(); // the footbridges over the great roads
+    this.footbridges = []; // the footpaths the map marks as bridges, round here
+    this.footbridgesMade = null;
     this.cuttingMesh = new Mesh(); // the floors and walls of the roads that run below the ground
     this.bankMesh = new Mesh(); // the ground beside them, which hides what is behind it
     this.cuttingGlowMesh = new Mesh(); // and the lamps' light on their floors and walls by night
@@ -1639,8 +1642,18 @@ export class MapView {
     }
     const lines = [];
     const farLines = []; // every road there is, near and far, for the lights of the city from afar
+    const walks = []; // the footbridges: footpaths the map marks as bridges
     for (const feature of features) {
       const properties = feature.properties ?? {};
+      if (properties.class === 'path' && properties.brunnel === 'bridge') {
+        const tile = Number.isInteger(feature._z) ? tileBox(feature._z, feature._x, feature._y) : null;
+        for (const part of lineParts(feature.geometry)) {
+          for (const coordinates of tile ? clipLine(part, tile) : [part]) {
+            if (coordinates.length >= 2 && coordinates.some(inBox)) walks.push({ coordinates });
+          }
+        }
+        continue;
+      }
       if (!LIFE_LINES.has(properties.class)) continue;
       // A map tile holds its roads a little way past its own edge. Cut to its tile, each
       // stretch of road is there once, and meets the next tile's stretch end to end.
@@ -1682,6 +1695,7 @@ export class MapView {
       ? [(before.lng - origin.lng) * squeeze * METERS_PER_DEGREE, (before.lat - origin.lat) * METERS_PER_DEGREE]
       : [0, 0];
     this.network = buildNetwork(lines, origin, { busStops: [...busStops.values()], stations: [...stations.values()] });
+    this.footbridges = walks;
     if (this.lifeOn) {
       this.traffic.level = trafficLevel(new Date(), centre.lng);
       this.traffic.view = null; // set again, from the new origin, before the next step
@@ -1727,6 +1741,8 @@ export class MapView {
         this.scene.set('bridges', this.bridgeMesh);
         this.scene.set('marks', this.markMesh);
         this.scene.set('roadside', this.roadsideMesh);
+        this.footbridgeMesh.clear();
+        this.scene.set('footbridges', this.footbridgeMesh);
         this.cuttingGlowMesh.clear();
         this.scene.set('cuttings', this.cuttingMesh);
         this.scene.set('banks', this.bankMesh, { mask: true });
@@ -1736,6 +1752,7 @@ export class MapView {
       this.bridgesMade = 0;
       this.marksMade = null;
       this.roadsideMade = null;
+      this.footbridgesMade = null;
       this.cuttingsMade = null;
       return;
     }
@@ -1745,6 +1762,9 @@ export class MapView {
     // the yellow-and-black kerb of an avenue's median.
     this.roadsideMade = drawRoadside(this.roadsideMesh, this.network, lightFrom(this.sun));
     this.scene.set('roadside', this.roadsideMesh);
+    // The footbridges over the great roads: roofed walkways, with a tower for the stairs and the lift at each end.
+    this.footbridgesMade = drawFootbridges(this.footbridgeMesh, this.footbridges, this.network, this.scene.origin, lightFrom(this.sun));
+    this.scene.set('footbridges', this.footbridgeMesh);
     // The great roads that run below the ground: King Fahd Road through the centre, and every road where
     // it goes down into a tunnel.
     this.cuttingsMade = drawCuttings(this.cuttingMesh, this.bankMesh, this.network, lightFrom(this.sun), this.cuttingGlowMesh);
