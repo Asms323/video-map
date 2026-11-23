@@ -5,7 +5,9 @@
 // with the lamp posts behind it, service roads alongside, and every
 // kilometre or so a gantry across the carriageway carrying the green signs.
 // The avenues between the districts have a raised median instead, its kerb
-// painted yellow and black, planted with a row of date palms. None of this
+// painted yellow and black, planted with a row of date palms; and where a
+// great road has a wide median of its own (King Fahd Road through Al Olaya),
+// that is planted too, two rows deep. None of this
 // is on the map: it is stood by rule along the roads the map has, and only
 // where there is room for it.
 //
@@ -31,8 +33,10 @@ const KERB_UP_METERS = 0.2;
 const KERB_BLACK = [44, 44, 46];
 const KERB_YELLOW = [236, 190, 44];
 const KERB_STEP_METERS = 4; // two metres yellow, two black
-const PALM_ROADS = new Set(['trunk', 'primary', 'secondary']);
+const PALM_ROADS = new Set(['motorway', 'trunk', 'primary', 'secondary']);
 const PALM_EVERY_METERS = 16;
+const GREAT_PALM_EVERY_METERS = 9; // down the middle of a great road they stand closer, and two abreast where there is room
+const TWO_ROWS_FROM_METERS = 7;
 const PALM_RADIUS_METERS = 2.3;
 const MEDIAN_LEAST_METERS = 2.6; // a median narrower than this has no room for a palm
 const MEDIAN_MOST_METERS = 26;
@@ -191,8 +195,9 @@ export function medianPalms(network, { built = null, most = 1500 } = {}) {
   network.ways.forEach((way, index) => {
     if (palms.length >= most || !onGround(way) || !PALM_ROADS.has(way.class)) return;
     const side = medianSide(way);
-    if (side === 0 || way.length < FROM_END_METERS * 2 + PALM_EVERY_METERS) return;
-    for (let s = FROM_END_METERS + ((index * 7) % PALM_EVERY_METERS); s < way.length - FROM_END_METERS && palms.length < most; s += PALM_EVERY_METERS) {
+    const every = way.class === 'motorway' ? GREAT_PALM_EVERY_METERS : PALM_EVERY_METERS;
+    if (side === 0 || way.length < FROM_END_METERS * 2 + every) return;
+    for (let s = FROM_END_METERS + ((index * 7) % every); s < way.length - FROM_END_METERS && palms.length < most; s += every) {
       if (way.sunk && heightAlong(way, s) < -0.3) continue; // the median of a cutting is down in it
       pointAlong(way, s, spot);
       const [x, y, east, north] = spot;
@@ -219,18 +224,22 @@ export function medianPalms(network, { built = null, most = 1500 } = {}) {
       if (!other || gap < MEDIAN_LEAST_METERS || gap > MEDIAN_MOST_METERS) continue;
       // (One row to a median: stood from the carriageway that comes first in the network.)
       if (network.ways.indexOf(other) < index) continue;
-      const px = x + outEast * (way.width / 2 + gap / 2);
-      const py = y + outNorth * (way.width / 2 + gap / 2);
-      if (built && built(px, py)) continue;
-      // Not on any road at all: a turning lane, a U-turn through the median.
-      let clear = true;
-      for (const candidate of near(px, py)) {
-        if (nearestOn(candidate, px, py).distance < candidate.width / 2 + 0.9) {
-          clear = false;
-          break;
+      // (Down the wide median of a great road, two rows of them.)
+      const rows = way.class === 'motorway' && gap >= TWO_ROWS_FROM_METERS ? [-gap / 5, gap / 5] : [0];
+      for (const row of rows) {
+        const px = x + outEast * (way.width / 2 + gap / 2 + row);
+        const py = y + outNorth * (way.width / 2 + gap / 2 + row);
+        if (built && built(px, py)) continue;
+        // Not on any road at all: a turning lane, a U-turn through the median.
+        let clear = true;
+        for (const candidate of near(px, py)) {
+          if (nearestOn(candidate, px, py).distance < candidate.width / 2 + 0.9) {
+            clear = false;
+            break;
+          }
         }
+        if (clear) palms.push({ x: px, y: py, radius: PALM_RADIUS_METERS, palm: true });
       }
-      if (clear) palms.push({ x: px, y: py, radius: PALM_RADIUS_METERS, palm: true });
     }
   });
   return palms;

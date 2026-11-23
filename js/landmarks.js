@@ -206,6 +206,148 @@ function kingdomPodium() {
   return [{ outline: KINGDOM_PODIUM, base: 0, top: 16, paint: '#e3ddd2', north: true, roof: true }];
 }
 
+/**
+ * Hamad Tower, 163 m: the blue sail beside King Fahd Road, next to Al
+ * Faisaliah. Two parts stand end to end along the road on one podium. The
+ * northern one is the sail. Square at its foot, it narrows upwards along a
+ * curve in both directions at once: so its two upright faces of blue glass
+ * (to the south and to the east) are each the shape of a sail, and its other
+ * two sides are a curved back that leans in from the road and ends in a
+ * point 163 m up, over the corner where the upright faces meet. The side of
+ * the back that looks over the road is clad in grey metal with a slit of
+ * window to each floor. The southern part is a plain block of 25 floors,
+ * 98 m high. Both are held in a white frame that shows on the glass: a beam
+ * every four floors, and a cross of braces between each beam and the next.
+ *
+ * (Its outlines are the street map's; its heights and its curve were
+ * measured from a photograph taken along the road. What cannot be seen from
+ * there, the far sides, is built to match the near ones.)
+ */
+function hamadTower(model) {
+  const { top, roof, tier, braced, edge, wide, deep, south, block } = HAMAD;
+  /** How much of its foot the sail still has at a height: all of it on the ground, none at its point. */
+  const share = (z) => 1 - (Math.min(Math.max(z, 0), top) / top) ** HAMAD.curve;
+  const west = (z) => edge - wide * share(z); // where the back meets the southern face
+  const north = (z) => south + deep * share(z); // and where it meets the eastern one
+  /** How fast the back leans in at a height: metres across for each metre up, for each metre of the foot. */
+  const lean = (z) => (HAMAD.curve * Math.max(z, 0) ** (HAMAD.curve - 1)) / top ** HAMAD.curve;
+
+  const glass = { kind: 'glass', colour: '#2a548a', storey: tier / 4, bay: 3.1, lit: 0.22, floors: 0.45, mirror: 0.5 };
+  const frame = { kind: 'plain', colour: '#e4e7e8', light: '#dfe9ff', glow: 0.3 };
+  const back = { kind: 'plain', colour: '#b3b8bc' };
+  const slit = { kind: 'plain', colour: '#1d2a38' };
+  const plain = [false, false, false, false];
+  const PROUD = 0.35; // how far the frame stands out from the glass
+  /** A member of the frame from one place to another, so thick, on a face that looks a given way. */
+  const bar = (p, q, out, thick = 0.9) => {
+    const run = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+    let side = [out[1] * run[2] - out[2] * run[1], out[2] * run[0] - out[0] * run[2], out[0] * run[1] - out[1] * run[0]];
+    const size = Math.hypot(side[0], side[1], side[2]);
+    if (!(size > 1e-6)) return;
+    side = side.map((part) => ((part / size) * thick) / 2);
+    // (Nothing of it goes into the ground.)
+    const corner = (at, sign) => [at[0] + side[0] * sign + out[0] * PROUD, at[1] + side[1] * sign + out[1] * PROUD, Math.max(at[2] + side[2] * sign + out[2] * PROUD, 0)];
+    model.quad(corner(p, -1), corner(q, -1), corner(q, 1), corner(p, 1), frame, { out, lines: plain });
+  };
+  /** One tier of an upright face: its glass, the beam at its foot, and the cross of braces. Corners from the lower left, as seen from outside. */
+  const panel = (lowLeft, lowRight, highRight, highLeft, out, crossed = true, beam = true) => {
+    model.quad(lowLeft, lowRight, highRight, highLeft, glass, { out, lines: plain, own: 5 });
+    // (No beam along the ground: the frame stands on the podium.)
+    if (beam && lowLeft[2] > 1) bar(lowLeft, lowRight, out);
+    if (!crossed) return;
+    bar(lowLeft, highRight, out, 0.75);
+    bar(lowRight, highLeft, out, 0.75);
+  };
+
+  // ── The sail ──
+  // Its two upright faces: braced for eight tiers, and unbroken glass from there to the point.
+  const SOUTH = [0, -1, 0];
+  const EAST = [1, 0, 0];
+  const slices = [];
+  for (let k = 0; k < braced; k += 1) slices.push([k * tier, (k + 1) * tier, true]);
+  const above = braced * tier;
+  const steps = 5;
+  for (let k = 0; k < steps; k += 1) slices.push([above + ((top - above) * k) / steps, above + ((top - above) * (k + 1)) / steps, false]);
+  for (const [z0, z1, crossed] of slices) {
+    // (Over the last brace there is one beam more, and then nothing but glass.)
+    const beam = crossed || z0 === above;
+    panel([west(z0), south, z0], [edge, south, z0], [edge, south, z1], [west(z1), south, z1], SOUTH, crossed, beam);
+    panel([edge, south, z0], [edge, north(z0), z0], [edge, north(z1), z1], [edge, south, z1], EAST, crossed, beam);
+    // The frame runs up the curved edge of each, and up the corner where the two meet.
+    bar([west(z0), south, z0], [west(z1), south, z1], SOUTH, 1.1);
+    bar([edge, north(z0), z0], [edge, north(z1), z1], EAST, 1.1);
+    bar([edge, south, z0], [edge, south, z1], SOUTH, 1.1);
+    bar([edge, south, z0], [edge, south, z1], EAST, 1.1);
+  }
+  // Its back, floor by floor: the side over the road in grey metal with its slits, the side to the north in glass.
+  const floor = tier / 4;
+  const floors = Math.round(top / floor);
+  for (let k = 0; k < floors; k += 1) {
+    const z0 = (top * k) / floors;
+    const z1 = (top * (k + 1)) / floors;
+    const [n0, n1] = [z0, z1].map((z) => [-1, 0, wide * lean(z)]);
+    model.quad([west(z0), north(z0), z0], [west(z0), south, z0], [west(z1), south, z1], [west(z1), north(z1), z1], back, { out: [-1, 0, 0.3], normals: [n0, n0, n1, n1], lines: plain });
+    const [m0, m1] = [z0, z1].map((z) => [0, 1, deep * lean(z)]);
+    model.quad([edge, north(z0), z0], [west(z0), north(z0), z0], [west(z1), north(z1), z1], [edge, north(z1), z1], glass, { out: [0, 1, 0.3], normals: [m0, m0, m1, m1], lines: plain, own: 5 });
+    // (A slit of window to each floor, two along the back, where the back is still long enough to hold them.)
+    const middle = (z0 + z1) / 2;
+    const long = north(middle) - south;
+    if (long < 9) continue;
+    const slope = wide * lean(middle);
+    const size = Math.hypot(1, slope);
+    const out = [-1 / size, 0, slope / size];
+    const up = [slope / size, 0, 1 / size]; // up the back
+    for (const part of [0.3, 0.64]) {
+      const at = [west(middle) + out[0] * 0.12, south + long * part, middle + out[2] * 0.12];
+      const corner = (dy, du) => [at[0] + up[0] * du, at[1] + dy, at[2] + up[2] * du];
+      model.quad(corner(-1.3, -0.45), corner(1.3, -0.45), corner(1.3, 0.45), corner(-1.3, 0.45), slit, { out, lines: plain });
+    }
+  }
+
+  // ── The block ──
+  const [bWest, bEast, bSouth, bNorth] = block;
+  const half = (bSouth + bNorth) / 2;
+  for (let k = 0; k < Math.round(roof / tier); k += 1) {
+    const z0 = k * tier;
+    const z1 = z0 + tier;
+    panel([bWest, bSouth, z0], [bEast, bSouth, z0], [bEast, bSouth, z1], [bWest, bSouth, z1], SOUTH);
+    for (const [y0, y1] of [[bSouth, half], [half, bNorth]]) {
+      panel([bWest, y1, z0], [bWest, y0, z0], [bWest, y0, z1], [bWest, y1, z1], [-1, 0, 0]);
+      panel([bEast, y0, z0], [bEast, y1, z0], [bEast, y1, z1], [bEast, y0, z1], EAST);
+    }
+    // (Its northern face shows only where the sail does not stand against it.)
+    model.quad([bEast, bNorth, z0], [bWest, bNorth, z0], [bWest, bNorth, z1], [bEast, bNorth, z1], glass, { out: [0, 1, 0], lines: plain, own: 5 });
+  }
+  // The frame's posts at its corners and half-way along its sides, the beam round its roof, and the roof.
+  for (const [x, y, out] of [[bWest, bSouth, SOUTH], [bEast, bSouth, SOUTH], [bWest, bSouth, [-1, 0, 0]], [bWest, half, [-1, 0, 0]], [bWest, bNorth, [-1, 0, 0]], [bEast, bSouth, EAST], [bEast, half, EAST], [bEast, bNorth, EAST]]) {
+    bar([x, y, 0], [x, y, roof], out, 1.1);
+  }
+  bar([bWest, bSouth, roof], [bEast, bSouth, roof], SOUTH);
+  bar([bWest, bNorth, roof], [bWest, bSouth, roof], [-1, 0, 0]);
+  bar([bEast, bSouth, roof], [bEast, bNorth, roof], EAST);
+  model.flat([[bWest, bSouth, roof], [bEast, bSouth, roof], [bEast, bNorth, roof], [bWest, bNorth, roof]], { kind: 'plain', colour: '#aab2b9', open: true });
+  return { beacons: [[edge, south, top + 0.6]] };
+}
+
+// Hamad Tower's measures, in metres. (East is away from the road; north, along it towards Kingdom Centre.)
+const HAMAD = {
+  top: 163, // the point of the sail
+  roof: 98, // the roof of the block: six tiers of four floors
+  tier: 98 / 6,
+  braced: 8, // how many tiers of the sail are braced
+  curve: 2.9, // how the sail narrows: by this power of the height
+  edge: 12.5, // the sail's upright corner: east of the middle…
+  south: 1, // …and north of it
+  wide: 28, // the sail at its foot, across the road's line
+  deep: 39, // and along it
+  block: [-10.5, 17.5, -41, 0.4], // the block: west, east, south, north
+};
+
+/** The podium both parts of Hamad Tower stand on: two storeys of entrance halls and car park, as long as the two together. */
+function hamadPodium() {
+  return [{ outline: block(43.5, 30.5, -2.3, 5.5), base: 0, top: 9, paint: '#dcd8cf', roof: true }];
+}
+
 // The violet the financial district lights its tower and its station in.
 const PIF_LIGHT = '#a428f5';
 
@@ -649,6 +791,7 @@ export const LANDMARKS = [
     // Floodlit bands over dark glass; and the golden ball, lit from within.
     nights: { '#e4e7e9': '#5d6670', '#56677a': '#232c3a', '#f5f5f3': '#bcc6d1', '#f1f2f1': '#bcc6d1', '#eceeed': '#909ca8', '#d9a23c': '#ffc45a', '#e7b955': '#ffdb84', '#eef0ef': '#c9d4de', '#dfe3e4': '#b4c0cb', '#d9dcdd': '#aab4be' },
   },
+  { id: 'hamad-tower', name: 'Hamad Tower', at: [46.682825, 24.692065], bearing: 342, height: 163, clear: 40, build: hamadPodium, model: hamadTower, nights: { '#dcd8cf': '#4a4334' } },
   { id: 'pif-tower', name: 'PIF Tower', at: [46.641519, 24.763701], bearing: 0, height: 385, clear: 36, model: pifTower },
   { id: 'burj-rafal', name: 'Burj Rafal', at: [46.632342, 24.792398], bearing: 81.6, height: 308, clear: 32, build: burjRafal, nights: { '#84b4c9': '#1a3340', '#96c2d4': '#27485a', '#dfe5e8': '#95a5af' } },
   { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20, height: 232, clear: 30, build: majdoul, nights: { '#eef0f1': '#7b8793', '#4f6478': '#1b2532', '#dfe4e7': '#6d7985' } },

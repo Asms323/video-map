@@ -100,6 +100,7 @@ const cameraOf = (type) => (type === 'city' ? CITY_CAMERA : FLAT_CAMERA);
 // much tilt on, and fully from a few degrees more.
 const HAZE_FROM_PITCH = 62;
 const HAZE_FULL_PITCH = 70;
+const PLACES_GONE_PITCH = 82; // tilted this far the places' markers are put away; four degrees short of it they are all there
 
 // Shadows are worked out for what is on screen and a margin around it, and
 // again once the view leaves that area, new map tiles arrive or the sun moves on.
@@ -1959,6 +1960,20 @@ export class MapView {
     });
   }
 
+  /**
+   * Show the markers of the places this strongly (0 to 1). In a view along the ground they pile up along
+   * the horizon, each as large as the one at your feet, across the skyline: there they are put away.
+   */
+  fadePlaces(shown) {
+    this.whenStyled((map) => {
+      if (!map.getLayer('vm-places')) return;
+      if (this.placesShown === shown && (map.getPaintProperty('vm-places', 'icon-opacity') ?? 1) === shown) return;
+      map.setPaintProperty('vm-places', 'icon-opacity', shown);
+      map.setPaintProperty('vm-places', 'text-opacity', shown);
+      this.placesShown = shown;
+    });
+  }
+
   /** Build the models of the famous buildings afresh, each where it stands from the scene's origin. */
   layModels() {
     const origin = this.scene.origin;
@@ -1989,6 +2004,7 @@ export class MapView {
     // written along the roads fade out.
     this.scene.haze = this.type === 'city' ? Math.min(Math.max((this.map.getPitch() - HAZE_FROM_PITCH) / (HAZE_FULL_PITCH - HAZE_FROM_PITCH), 0), 1) : 0;
     this.fadeRoadNames(Math.round((1 - this.scene.haze) * 4) / 4);
+    this.fadePlaces(Math.round(Math.min(Math.max((PLACES_GONE_PITCH - this.map.getPitch()) / 4, 0), 1) * 4) / 4);
     if (this.type === 'city') {
       if (!this.scene.origin) this.scene.setOrigin({ lng: middle.lng, lat: middle.lat });
       if (this.modelsMade?.origin !== this.scene.origin) this.layModels();

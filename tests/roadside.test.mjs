@@ -135,3 +135,20 @@ test('drawFootbridges: a roofed walkway six metres over the road, on piers that 
   assert.deepEqual(drawFootbridges(mesh, [], network, ORIGIN, NOON), { bridges: 0, metres: 0, towers: 0, piers: 0 });
   assert.equal(mesh.count, 0);
 });
+
+test('medianPalms: down the wide median of a great road the palms stand closer, two rows deep; a narrow one has none', () => {
+  // King Fahd Road through Al Olaya: two carriageways with 12 m of median between them.
+  const width = buildNetwork([line('motorway', [[0, 0], [10, 0]], { oneway: 1 })], ORIGIN).ways[0].width;
+  const apart = width + 12;
+  const network = buildNetwork([line('motorway', [[0, 0], [900, 0]], { oneway: 1 }), line('motorway', [[900, apart], [0, apart]], { oneway: 1 })], ORIGIN);
+  const palms = medianPalms(network);
+  assert.ok(palms.length > 150 && palms.every((palm) => palm.palm), `${palms.length}`);
+  // Two rows, a fifth of the median's width either side of its middle: 2.4 m; nine metres from one palm to the next.
+  const rows = [...new Set(palms.map((palm) => Math.round((palm.y - apart / 2) * 10) / 10))].sort((a, b) => a - b);
+  assert.deepEqual(rows, [-2.4, 2.4]);
+  const first = palms.filter((palm) => palm.y < apart / 2).map((palm) => palm.x).sort((a, b) => a - b);
+  for (let i = 1; i < first.length; i += 1) assert.ok(Math.abs(first[i] - first[i - 1] - 9) < 0.01);
+  // A ring road's carriageways stand close together with a barrier between: no room, no palms.
+  const tight = buildNetwork([line('motorway', [[0, 0], [900, 0]], { oneway: 1 }), line('motorway', [[900, width + 2], [0, width + 2]], { oneway: 1 })], ORIGIN);
+  assert.equal(medianPalms(tight).length, 0);
+});
