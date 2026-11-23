@@ -32,6 +32,7 @@ import {
   satelliteStyle,
   shadowReach,
   sunLight,
+  skyColours,
   sunPosition,
   tileBox,
   wallImage,
@@ -48,9 +49,11 @@ import { plotWalls } from './plots.js';
 import { drawFootbridges, drawRoadside, medianPalms } from './roadside.js';
 import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
 import { SceneLayer } from './scene.js';
-import { buildingArchive, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
+import { aircraftOverRiyadh, buildingArchive, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
 import { footprintGrid, heightsFromShadows, passSuns, pavedGrid, photoGrid, roofColours, tilesFor, treesInPhoto } from './sight.js';
 import { CasterMesh, groundCasters, shadowCasters, shadowFall, shadowMapSize } from './shade.js';
+import { Flights } from './flights.js';
+import { CLOUD_LAYERS, cloudDrift, cloudLayersOf, cloudsNear, drawAircraft, drawClouds, drawHeavens, drawStars, moonAt, planetsAt, starPoints, starsAt, sunBetween } from './sky.js';
 import { PARAPET_METERS, PARAPET_THICK_METERS, WallMesh, colourOf, facadeOf, footShade, parapetTops, tilePieces, wallTone, wallsOf } from './walls.js';
 
 export const MAP_TYPES = ['city', 'streets', 'night', 'satellite', 'detailed'];
@@ -90,7 +93,7 @@ const NORMAL_LENS = 36.87; // the map library's own
 // Turned the way you travel, the 3D city is seen the way a camera sees it from a tall building or a
 // drone: from low behind you, along the road to the horizon, through an ordinary lens, with the sky
 // over the skyline. Close enough in for the camera to be a hundred metres or so up.
-const SKY_PITCH = 76;
+const SKY_PITCH = 78;
 const SKY_ZOOM = 17.2;
 const SKY_BELOW_MIDDLE = 0.3; // how far below the middle of the picture you are, as a part of its height
 const MOST_PITCH = 82;
@@ -100,6 +103,18 @@ const cameraOf = (type) => (type === 'city' ? CITY_CAMERA : FLAT_CAMERA);
 // much tilt on, and fully from a few degrees more.
 const HAZE_FROM_PITCH = 62;
 const HAZE_FULL_PITCH = 70;
+// The sky has things in it (see sky.js): put afresh round the eye with every picture, once the view is
+// tilted far enough to show any sky at all.
+const SKY_FROM_PITCH = 40;
+const SKY_POINT_PIXELS = 2.4; // how wide the faintest star, or an aircraft's lamp, is drawn
+const SKY_SLOW_MS = 60000; // what stands in the sky (the sun's colours, the moon, the stars, the clouds) is set out afresh this often,
+const SKY_MOVED_METERS = 1500; // or when the eye has moved this far,
+const SKY_NIGHT_STEP = 0.01; // or the light has changed by this much
+const SKY_EAST_METERS = Math.cos((24.7 * Math.PI) / 180) * 111320; // a degree east, over Riyadh
+// The parts of the sky, in the order they are drawn in: the furthest first.
+const SKY_CLOUD_PARTS = ['skyhigh', 'skymid', 'skylow'];
+const SKY_GRAIN_WRAP_METERS = 262144;
+const FLIGHTS_ASK_MS = 15000; // how often the feed of live aircraft is given the chance to be asked
 const PLACES_GONE_PITCH = 82; // tilted this far the places' markers are put away; four degrees short of it they are all there
 
 // Shadows are worked out for what is on screen and a margin around it, and
@@ -460,6 +475,22 @@ export class MapView {
     this.roadsideMesh = new Mesh(); // barriers, sign gantries and the kerbs of medians
     this.roadsideMade = null;
     this.footbridgeMesh = new Mesh(); // the footbridges over the great roads
+    // The sky (see sky.js), in the order it is drawn in, the furthest first:
+    this.skyWashMesh = new Mesh(); // the Earth's shadow, rising opposite the sun as it goes down
+    this.skyGlowMesh = new Mesh(); // its light: the glare round the sun, the glow where it goes down, the shine round the moon
+    this.skySunMesh = new Mesh(); // the sun's own disc, which shows through the haze
+    this.skyStarMesh = new Mesh(); // the stars and the planets
+    this.skyMoonMesh = new Mesh(); // the moon's face
+    this.skyCloudMeshes = [new Mesh(), new Mesh(), new Mesh()]; // the clouds: high, middle and low
+    this.skyPlaneMesh = new Mesh(); // the aircraft and their trails
+    this.skyPlaneLampMesh = new Mesh(); // and their lamps
+    this.skyMade = null;
+    this.skyKept = null; // what of the sky is set out only now and then
+    this.skyOrdered = false; // whether the scene has had the parts of the sky, in their order
+    this.weather = null; // what is known of the weather: how much cloud, the wind
+    this.sunlight = 1; // how much of the sun gets through the clouds
+    this.flights = new Flights(); // the aircraft: live where a feed has them, the airport's typical traffic otherwise
+    this.flightsAskedAt = 0;
     this.footbridges = []; // the footpaths the map marks as bridges, round here
     this.footbridgesMade = null;
     this.cuttingMesh = new Mesh(); // the floors and walls of the roads that run below the ground
@@ -495,7 +526,8 @@ export class MapView {
       maxPitch: MOST_PITCH,
       // Photo tiles that have left the screen are kept for coming back to, but not many: sharp ones are small and there are a lot of them.
       maxTileCacheZoomLevels: 2,
-      attributionControl: { compact: true },
+      // (The aircraft are the OpenSky Network's wherever its receivers have any to report; it asks to be named.)
+      attributionControl: { compact: true, customAttribution: 'Live aircraft, where any are known: The OpenSky Network' },
     });
     const map = this.map;
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
@@ -604,7 +636,7 @@ export class MapView {
 
   /** The 3D city's style for a darkness, with the app's own drawings on top. */
   cityStyleFor(night) {
-    return withOverlays(cityModelStyle(this.cityBase, { buildings: this.buildings, night }), {
+    return withOverlays(cityModelStyle(this.cityBase, { buildings: this.buildings, night, sunlight: this.sunlight }), {
       categories: this.categories,
       dark: night >= 0.5,
       accuracy: this.accuracyData(),
@@ -623,7 +655,9 @@ export class MapView {
     if (this.type !== 'city' || !this.cityBase || !this.cityStyle) return;
     const made = this.cityStyle.night;
     const ends = (night === 0 || night === 1) && night !== made; // day and night themselves are always reached exactly
-    if (Math.abs(night - made) < NIGHT_STEP && night >= 0.5 === made >= 0.5 && !ends) return;
+    // (The clouds count too: under them the shadows on the ground are fainter.)
+    const clouded = Math.abs((this.cityStyle.sunlight ?? 1) - this.sunlight) > 0.02;
+    if (Math.abs(night - made) < NIGHT_STEP && night >= 0.5 === made >= 0.5 && !ends && !clouded) return;
     this.whenStyled((map) => {
       if (!map.getLayer('city-night')) return; // the style is still on its way
       const next = this.cityStyleFor(night);
@@ -639,6 +673,7 @@ export class MapView {
       }
       map.setSky(next.sky);
       next.night = night;
+      next.sunlight = this.sunlight;
       this.cityStyle = next;
       this.busy.night += 1;
     });
@@ -706,7 +741,7 @@ export class MapView {
         const [streets, found] = await Promise.all([loadStyle('liberty'), Promise.race([archive, wait(ARCHIVE_WAIT_MS, undefined)])]);
         buildings = found ?? null;
         cityBase = streets;
-        base = cityModelStyle(streets, { buildings, night });
+        base = cityModelStyle(streets, { buildings, night, sunlight: this.sunlight });
         if (found === undefined) {
           // Still looking. Once the address is known the city is drawn again, a house at a time.
           archive.then((late) => {
@@ -749,7 +784,7 @@ export class MapView {
       route: this.routeData(),
     });
     this.cityBase = cityBase;
-    this.cityStyle = cityBase ? { ...style, night } : null;
+    this.cityStyle = cityBase ? { ...style, night, sunlight: this.sunlight } : null;
     if (cityBase) this.repaintWalls(night);
     this.placeLayers = placeLayerIds(style);
     this.map.setStyle(style, { diff: false });
@@ -2011,6 +2046,7 @@ export class MapView {
     }
     const from = this.scene.origin;
     this.scene.focus = from ? [(middle.lng - from.lng) * Math.max(Math.cos((from.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE, (middle.lat - from.lat) * METERS_PER_DEGREE] : [0, 0];
+    this.moveSky();
     if (!this.lifeOn || this.type !== 'city' || zoom < LIFE_MIN_ZOOM) {
       if (this.trafficMesh.count > 0) {
         this.trafficMesh.clear();
@@ -2055,6 +2091,180 @@ export class MapView {
       this.scene.set('carlights', this.carLightMesh, { glow: true, point: POINT_METERS.vehicle });
     }
     return true;
+  }
+
+  /**
+   * What is known of the weather, for the sky: { cloud (how much of it is covered, 0 to 1), cloudLow,
+   * cloudMid, cloudHigh (the same for each layer of cloud), windFrom (degrees), windSpeed (m/s),
+   * visibility (m) }, any of which may be missing; or null.
+   */
+  setWeather(weather) {
+    this.weather = weather ?? null;
+    // Under cloud the sun throws a weaker shadow: on the ground, and on every wall and roof.
+    this.sunlight = 0.12 + 0.88 * sunBetween(cloudLayersOf(this.weather));
+    this.scene.sunlight = this.sunlight;
+    this.applyNight(this.night);
+    this.map?.triggerRepaint();
+  }
+
+  /** The parts of the sky as the scene has them, in the order they are drawn in: [name, mesh, how]. */
+  skyParts() {
+    return [
+      ['skywash', this.skyWashMesh, { sky: true, shaded: false }],
+      ['skyglow', this.skyGlowMesh, { sky: true, glow: true }],
+      ['skystars', this.skyStarMesh, { sky: true, glow: true, point: SKY_POINT_PIXELS }],
+      ['skymoon', this.skyMoonMesh, { sky: true, shaded: false }],
+      ...SKY_CLOUD_PARTS.map((name, index) => [name, this.skyCloudMeshes[index], { sky: true, shaded: false }]),
+      ['skyplanes', this.skyPlaneMesh, { sky: true, shaded: false }],
+      ['skyplanelamps', this.skyPlaneLampMesh, { sky: true, glow: true, point: SKY_POINT_PIXELS }],
+      ['skysun', this.skySunMesh, { sky: true, glow: true, late: true }],
+    ];
+  }
+
+  /**
+   * Set the sky out for where the eye now is. What stands in it (the sun and the colours of its going
+   * down, the moon, the stars, the clouds the weather has) is set out afresh only now and then: in
+   * between, each layer of cloud is moved along on the wind as a whole. What moves fast is drawn with
+   * every picture: the aircraft (while the city's traffic is shown) and the twinkling of the stars.
+   */
+  moveSky() {
+    const origin = this.scene.origin;
+    if (this.type !== 'city' || !origin || !this.sun || this.map.getPitch() < SKY_FROM_PITCH || this.map.getZoom() < LIFE_MIN_ZOOM) {
+      if (this.skyMade) {
+        for (const [name, mesh, how] of this.skyParts()) {
+          mesh.clear();
+          this.scene.set(name, mesh, how);
+        }
+        this.skyMade = null;
+        this.skyKept = null;
+      }
+      return;
+    }
+    const parts = new Map(this.skyParts().map(([name, mesh, how]) => [name, [mesh, how]]));
+    if (!this.skyOrdered) {
+      // (The scene draws the parts of the sky in the order it first had them in: so it has them all, once, in theirs.)
+      for (const [name, [mesh, how]] of parts) this.scene.set(name, mesh, how);
+      this.skyOrdered = true;
+    }
+    const now = Date.now();
+    const seconds = now / 1000;
+    const eye = this.scene.eye;
+    const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
+    const place = { lng: origin.lng + eye[0] / squeeze, lat: origin.lat + eye[1] / METERS_PER_DEGREE };
+    const weather = this.weather ?? {};
+    const wind = { windFrom: weather.windFrom ?? 315, windSpeed: weather.windSpeed ?? 4 };
+    const cover = cloudLayersOf(this.weather);
+    let kept = this.skyKept;
+    const stale =
+      !kept ||
+      kept.origin !== origin ||
+      kept.weather !== this.weather ||
+      Math.abs(now - kept.at) > SKY_SLOW_MS ||
+      Math.abs(this.night - kept.night) > SKY_NIGHT_STEP ||
+      Math.hypot(eye[0] - kept.eye[0], eye[1] - kept.eye[1], eye[2] - kept.eye[2]) > SKY_MOVED_METERS;
+    // (Measured from a new spot, every cloud has to be drawn again at once: or for a moment some would stand where they were.)
+    const moved = Boolean(kept) && kept.origin !== origin;
+    if (stale) {
+      const date = new Date(now);
+      const moon = moonAt(date, place.lng, place.lat);
+      const heavens = drawHeavens({ wash: this.skyWashMesh, glow: this.skyGlowMesh, disc: this.skySunMesh, face: this.skyMoonMesh }, { eye, sun: this.sun, night: this.night, moon, cover });
+      // (No star shows by day: none is looked up.)
+      const dusk = this.night > 0.2;
+      const points = starPoints({ eye, night: this.night, stars: dusk ? starsAt(date, place.lng, place.lat) : [], planets: dusk ? planetsAt(date, place.lng, place.lat) : [] });
+      // The clouds are fixed to the air they drift in, measured from a place that never moves. Where they
+      // are is worked out now; they are drawn one layer with each picture that follows, so that no one
+      // picture has to wait for all three.
+      const [east, north] = [origin.lng * SKY_EAST_METERS, origin.lat * METERS_PER_DEGREE];
+      const clouds = cloudsNear([place.lng * SKY_EAST_METERS, place.lat * METERS_PER_DEGREE], { ...cover, ...wind, seconds }).map((cloud) => ({ ...cloud, x: cloud.x - east, y: cloud.y - north }));
+      for (const name of ['skywash', 'skyglow', 'skymoon', 'skysun']) this.scene.set(name, ...parts.get(name));
+      kept = {
+        at: now,
+        origin,
+        weather: this.weather,
+        night: this.night,
+        eye: [eye[0], eye[1], eye[2]],
+        moon,
+        points,
+        heavens,
+        starsDrawn: -1,
+        // The clouds as they are to be drawn, and which layers are still to be; for each layer, how many were
+        // drawn and the moment its clouds stand as they were drawn (from when on it has drifted).
+        clouds: { list: clouds, seconds, east, north, wind, cover, due: [0, 1, 2] },
+        laid: this.skyKept?.laid ?? [null, null, null],
+        since: this.skyKept?.since ?? [seconds, seconds, seconds],
+        winds: this.skyKept?.winds ?? [wind, wind, wind],
+      };
+      this.skyKept = kept;
+    }
+    for (let turn = 0; kept.clouds.due.length > 0 && (turn === 0 || moved); turn += 1) {
+      const index = kept.clouds.due.shift();
+      const drawn = kept.clouds;
+      const layer = CLOUD_LAYERS[index];
+      kept.laid[index] = drawClouds(this.skyCloudMeshes, { only: index, eye: kept.eye, sun: this.sun, night: kept.night, horizon: skyColours(kept.night).horizon, moon: kept.moon, clouds: drawn.list, visibility: weather.visibility, windFrom: drawn.wind.windFrom });
+      // The layer's grain is fixed to the layer itself: measured from a spot that drifts with it. (Kept
+      // within a few hundred kilometres, for the sake of the numbers: once in many hours the grain changes.)
+      const blowing = ((drawn.wind.windFrom + 180) * Math.PI) / 180;
+      const wrapped = (metres) => ((metres % SKY_GRAIN_WRAP_METERS) + SKY_GRAIN_WRAP_METERS) % SKY_GRAIN_WRAP_METERS;
+      const drifted = cloudDrift(index, drawn.wind, drawn.seconds);
+      const [mesh, how] = parts.get(SKY_CLOUD_PARTS[index]);
+      this.scene.set(SKY_CLOUD_PARTS[index], mesh, {
+        ...how,
+        cloud: {
+          // (High cloud is thin where there is little of it, a veil where there is much.)
+          solid: layer.solid * (index === 0 ? 0.55 + 0.45 * drawn.cover.high : 1),
+          grain: [wrapped(drawn.east - drifted[0]), wrapped(drawn.north - drifted[1])],
+          size: layer.grain,
+          stretch: layer.stretch,
+          wind: [Math.sin(blowing), Math.cos(blowing)],
+        },
+      });
+      kept.since[index] = drawn.seconds;
+      kept.winds[index] = drawn.wind;
+    }
+    // Each layer of cloud has drifted on since it was drawn.
+    CLOUD_LAYERS.forEach((layer, index) => this.scene.shift(SKY_CLOUD_PARTS[index], [...cloudDrift(index, kept.winds[index], seconds - kept.since[index]), 0]));
+    // The stars, as they twinkle. (While none shows, nothing is drawn afresh.)
+    if (kept.points.length > 0 || kept.starsDrawn !== 0) {
+      kept.starsDrawn = drawStars(this.skyStarMesh, kept.points, seconds);
+      this.scene.set('skystars', ...parts.get('skystars'));
+    }
+    // The aircraft: asked after now and then, where a feed of live ones can be had; flown by the clock otherwise.
+    let flying = { kind: null, source: null, planes: [] };
+    if (this.lifeOn) {
+      if (Math.abs(now - this.flightsAskedAt) > FLIGHTS_ASK_MS && !document.hidden) {
+        this.flightsAskedAt = now;
+        aircraftOverRiyadh().then((found) => {
+          if (found) this.flights.report(found.planes, found.seconds, found.source);
+        });
+      }
+      flying = this.flights.at(seconds, { windFrom: this.weather?.windFrom });
+    }
+    const planes = drawAircraft(this.skyPlaneMesh, this.skyPlaneLampMesh, { eye, origin, planes: flying.planes, night: this.night, sun: this.sun, moon: kept.moon, cover, seconds });
+    if (planes > 0 || this.skyMade?.planes !== 0) {
+      this.scene.set('skyplanes', ...parts.get('skyplanes'));
+      this.scene.set('skyplanelamps', ...parts.get('skyplanelamps'));
+    }
+    this.skyMade = {
+      clouds: kept.laid.reduce((sum, laid) => sum + (laid?.clouds ?? 0), 0),
+      patches: kept.laid.reduce((sum, laid) => sum + (laid?.patches ?? 0), 0),
+      planes,
+      stars: kept.points.length,
+      planets: kept.points.filter((point) => point.planet).map((point) => point.planet),
+      sun: kept.heavens.sun,
+      moon: kept.heavens.moon,
+      flights: flying.kind,
+      source: flying.source,
+      aloft: flying.planes.length,
+      cover,
+    };
+  }
+
+  /**
+   * What is in the sky right now: { clouds, patches, planes, stars, planets, sun, moon, flights: 'live' |
+   * 'typical' | null, source, aloft, cover: { low, mid, high } }, or null while no sky shows.
+   */
+  skyCounts() {
+    return this.skyMade;
   }
 
   /** What is on the streets right now, for anyone who wants to count it. */

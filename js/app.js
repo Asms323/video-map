@@ -611,6 +611,8 @@ function updateWeather() {
   weatherAt(lastFix && inRiyadh(lastFix) ? lastFix : RIYADH.centre).then((summary) => {
     weatherShown = summary;
     renderWeather(summary);
+    // (The sky over the 3D city has as much cloud as the weather says, drifting the way its wind blows.)
+    if (summary) mapView?.setWeather(summary);
   });
 }
 
@@ -826,6 +828,10 @@ function showWhereIAm() {
     rows.push({ label: 'Altitude', value: height });
   }
   if (weatherShown && settings.weather) rows.push({ label: 'Weather', value: weatherEl.textContent });
+  // What the aircraft overhead are: the real ones, or the airport's usual traffic at this hour.
+  const sky = mapView?.skyCounts();
+  if (sky?.flights === 'live') rows.push({ label: 'Aircraft', value: `${sky.aloft} live (${sky.source})` });
+  else if (sky?.flights === 'typical') rows.push({ label: 'Aircraft', value: 'The airport\'s usual traffic for this hour (no live positions here)' });
   showPlace({ title: 'You are here', lat: lastFix.lat, lng: lastFix.lng, rows, me: true, lookup: true });
 }
 

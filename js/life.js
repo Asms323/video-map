@@ -1374,9 +1374,10 @@ export class Mesh {
   /**
    * A corner of light: its colour is added to whatever lies behind it, as
    * strongly as told (0 to 1), and it covers nothing. For the parts of the
-   * scene that give light (see "glow" in scene.js).
+   * scene that give light (see "glow" in scene.js). wide: for a point of
+   * light in the sky, how much wider than the faintest it is drawn, 0 to 1.
    */
-  glow(x, y, z, r, g, b, strength) {
+  glow(x, y, z, r, g, b, strength, wide = 0) {
     const p = this.count * 3;
     const c = this.count * 4;
     this.positions[p] = x;
@@ -1385,7 +1386,7 @@ export class Mesh {
     this.colours[c] = Math.min(r * strength, 255);
     this.colours[c + 1] = Math.min(g * strength, 255);
     this.colours[c + 2] = Math.min(b * strength, 255);
-    this.colours[c + 3] = 0;
+    this.colours[c + 3] = 255 * wide;
     this.count += 1;
   }
 

@@ -178,7 +178,42 @@ map opens on the city and keeps to it, and places are looked for in it.
 - **Real sunlight.** The model is lit from where the sun actually is over
   Riyadh at that hour, and every building casts the shadow it casts right
   now: long in the morning and evening, short at noon, none after sunset,
-  when the city goes over to its night (see above).
+  when the city goes over to its night (see above). Under cloud the shadows
+  are fainter, and under a covered sky there are next to none.
+- **A sky with depth.** Turned the way you travel, the view runs along the
+  road to the horizon with the sky over the skyline, and what is in that sky
+  is what is over Riyadh at that moment:
+  - **The clouds the weather has**, in the three layers it tells of (low,
+    middle and high), as much of each as it says there is. Each layer lies
+    level at its own height, so it runs away to the horizon in ever thinner
+    bands; each drifts on the wind, the higher the faster. By day they are
+    white with grey bellies, heaped up when there are few of them and a flat
+    sheet when the sky is covered; as the sun goes down the high ones stay
+    lit longest and the low ones go dark first; by night the city's own
+    light is on their undersides.
+  - **The sun** where it stands, red as it goes down into the haze, with
+    the glow along the horizon on its own side and, on the far side, the
+    pink band over the grey-blue shadow of the Earth.
+  - **The moon** where it really stands, with as much of its face lit as it
+    has, the lit side towards the sun.
+  - **The stars and the planets** where they really stand: the 483 stars to
+    the fourth magnitude that rise over Riyadh, each in its own colour, and
+    Mercury, Venus, Mars, Jupiter and Saturn. They come out one by one as it
+    darkens, the brightest first (Venus while the sky is still light), and
+    the stars twinkle, the more the lower they stand.
+- **Aircraft, by the airport's real rhythm.** Aircraft come in to King
+  Khalid International Airport, climb out of it and pass high over the
+  city, drawn larger than life or they would be specks. The high ones leave
+  trails; by night each shows its lamps (red on the left wing, green on the
+  right, white at the tail, the flashing ones) and, coming in, its landing
+  lamps. If the open feed of live aircraft positions has any over Riyadh,
+  those are the aircraft shown, each where it really is. It rarely has (see
+  the limits below), and then the sky is flown as the airport really flies
+  it: as many arrivals and departures an hour as it has at that hour of the
+  day, on its two real runways, in the direction the real wind of the moment
+  has them in use, down the real three-degree approach. Tap your own dot to
+  see which of the two is being shown. Shown with the traffic; switched off
+  with it.
 - Drawing the walls window by window and working out the shadows on them is
   more work for the phone with every picture. If the map moves slowly, both
   can be switched off under the map options ("Detailed walls and shadows");
@@ -235,7 +270,9 @@ Everything is free and needs no account or key.
 | Place details, speed limits | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits |
 | Search, nearest address | [Photon](https://photon.komoot.io) (OpenStreetMap data) | |
 | Routes | [OSRM](https://project-osrm.org) demo server (OpenStreetMap data) | |
-| Weather | [Open-Meteo](https://open-meteo.com) | Asked at most every half hour |
+| Weather, and for the sky: how much cloud in each of three layers, the wind, how far one can see | [Open-Meteo](https://open-meteo.com) | Asked at most every half hour |
+| Live aircraft positions over Riyadh | [The OpenSky Network](https://opensky-network.org) | Its open feed, asked for one fixed box round the city (the same whoever asks, so nothing about you goes with the question), at most every 40 seconds, and far less often while it has nothing. It is fed by volunteers' receivers, of which there are few or none in Riyadh: most of the time it has no aircraft there |
+| Where the stars are, how bright and what colour | The Hipparcos catalogue as extended by Anderson and Francis (XHIP, 2012) | Comes with the app (`js/stars.js`); nothing is asked of anyone. The moon and the planets are worked out on the phone |
 
 These public services are run for light, fair use, which one person's app is.
 They can be slow or briefly unavailable; the app then simply leaves that piece
@@ -508,6 +545,23 @@ Watch video only when parked, or let a passenger watch.
 - The night is a picture of how Riyadh looks after dark, not a record of it:
   which rooms are lit, where each lamp post stands and what colour a tower's
   lights are is set out by rule, the same every night.
+- The sky: the sun, the moon, the stars and the planets are where they
+  really are (the moon and the planets to within a degree or so). The clouds
+  are as many as the weather service says there are in each layer, but which
+  cloud is where is made up: the service tells how much of the sky is
+  covered, not the shape of it. With the weather switched off, the sky is
+  clear.
+- The aircraft: no free source that a web page may read has the aircraft
+  over Riyadh. The open networks of receivers (adsb.lol, adsb.fi) have no
+  receivers there and do not let a web page ask them; airplanes.live turns
+  such questions away; the OpenSky Network may be asked, and is, but seldom
+  has anything over the city. So what flies is nearly always the airport's
+  usual traffic: the real number of flights for the hour (296,800 flights in
+  2025, by the General Authority for Statistics), the real runways, the real
+  wind and approach. Those aircraft are typical, not particular: no flight
+  number, and not the minute any real flight lands. How the day's flights
+  are spread over its hours is an estimate (the airport publishes no count
+  by the hour): quiet before dawn, fullest in the evening.
 
 ## For developers
 
@@ -590,6 +644,10 @@ phones drop their saved copy.
 - mapbox-gl-rtl-text: BSD 2-Clause, with ICU (`vendor/maplibre/LICENSE-rtl-text.md`).
 - PMTiles: BSD 3-Clause (`vendor/pmtiles/LICENSE.txt`).
 - Earcut: ISC (`vendor/earcut/LICENSE.txt`).
+- `js/stars.js` holds a part of the star file of d3-celestial, © 2015 Olaf
+  Frohn, BSD 3-Clause (`vendor/d3-celestial/LICENSE.txt`): the 483 brightest
+  stars that rise over Riyadh, out of the XHIP catalogue of Anderson and
+  Francis (2012).
 - `tests/fixtures/map.har` holds map data © OpenStreetMap contributors (ODbL),
   as served by OpenFreeMap (© OpenMapTiles).
 - `tests/fixtures/buildings.json` holds building outlines from Overture Maps

@@ -707,7 +707,17 @@ export function weatherSummary(current) {
   if (typeof temperature !== 'number' || !Number.isFinite(temperature)) return null;
   const found = WEATHER_TEXT.find(([codes]) => codes.includes(current.weather_code));
   // "|| 0" turns the -0 that rounding -0.4 gives into a plain 0.
-  return { temperature: Math.round(temperature) || 0, text: found ? found[1] : '' };
+  const summary = { temperature: Math.round(temperature) || 0, text: found ? found[1] : '' };
+  // For the sky: how much of it is covered (0 to 1), and the wind: where from, in degrees, and how fast, in m/s.
+  if (Number.isFinite(current.cloud_cover)) summary.cloud = clamp(current.cloud_cover / 100, 0, 1);
+  // (And the same for each layer of cloud: under 3 km, from 3 to 8, and over 8; and how far one can see, in metres.)
+  if (Number.isFinite(current.cloud_cover_low)) summary.cloudLow = clamp(current.cloud_cover_low / 100, 0, 1);
+  if (Number.isFinite(current.cloud_cover_mid)) summary.cloudMid = clamp(current.cloud_cover_mid / 100, 0, 1);
+  if (Number.isFinite(current.cloud_cover_high)) summary.cloudHigh = clamp(current.cloud_cover_high / 100, 0, 1);
+  if (Number.isFinite(current.visibility) && current.visibility > 0) summary.visibility = current.visibility;
+  if (Number.isFinite(current.wind_direction_10m)) summary.windFrom = current.wind_direction_10m;
+  if (Number.isFinite(current.wind_speed_10m)) summary.windSpeed = current.wind_speed_10m;
+  return summary;
 }
 
 /** The first route of an OSRM answer as { distance, duration, coordinates } — or null. */
@@ -1494,8 +1504,11 @@ export function skyColours(night) {
  * night: how dark it is, 0 (day) to 1 (night): see darkness(). By night a
  * dark is laid over the ground, the street lamps light the roads, playing
  * fields and pools are lit, and the names are written light on dark.
+ *
+ * sunlight: how much of the sun gets through the clouds, 1 (a clear sky) to
+ * 0: the shadows on the ground are as much fainter.
  */
-export function cityModelStyle(base, { buildings = null, night = 0 } = {}) {
+export function cityModelStyle(base, { buildings = null, night = 0, sunlight = 1 } = {}) {
   // How dark it is, and how far the lamps are on. What can change little by little does (the dark over the
   // ground, the lamps, the sky); what cannot (the colour of a block, of a name) changes over half-way through dusk.
   const dark = clamp(Number(night) || 0, 0, 1);
@@ -1998,7 +2011,8 @@ export function cityModelStyle(base, { buildings = null, night = 0 } = {}) {
         paint: {
           'fill-extrusion-color': '#141a28',
           'fill-extrusion-height': 0.1,
-          'fill-extrusion-opacity': 0.42,
+          // (Under cloud the sun throws a weaker shadow, and under a covered sky next to none.)
+          'fill-extrusion-opacity': 0.42 * clamp(Number.isFinite(sunlight) ? sunlight : 1, 0, 1),
           'fill-extrusion-vertical-gradient': false,
         },
       },

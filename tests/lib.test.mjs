@@ -563,6 +563,13 @@ test('weatherSummary reads the current weather', () => {
   assert.deepEqual(weatherSummary({ temperature_2m: -0.4, weather_code: 999 }), { temperature: 0, text: '' });
   assert.equal(weatherSummary({ weather_code: 3 }), null);
   assert.equal(weatherSummary(null), null);
+  // For the sky: how much of it is covered, in all and in each of three layers; the wind; how far one can see.
+  assert.deepEqual(
+    weatherSummary({ temperature_2m: 21.4, weather_code: 2, cloud_cover: 62, cloud_cover_low: 0, cloud_cover_mid: 35, cloud_cover_high: 100, wind_speed_10m: 4.2, wind_direction_10m: 330, visibility: 24140 }),
+    { temperature: 21, text: 'Partly cloudy', cloud: 0.62, cloudLow: 0, cloudMid: 0.35, cloudHigh: 1, windFrom: 330, windSpeed: 4.2, visibility: 24140 },
+  );
+  // (What the service leaves out is left out; a nonsense number is not passed on.)
+  assert.deepEqual(weatherSummary({ temperature_2m: 21.4, weather_code: 0, cloud_cover: 140, visibility: 0 }), { temperature: 21, text: 'Clear', cloud: 1 });
 });
 
 test('routeSummary reads a driving route', () => {
@@ -677,6 +684,9 @@ test('cityModelStyle draws the city as a model on drawn ground', () => {
   assert.equal(shadows.type, 'fill-extrusion');
   assert.equal(shadows.source, 'city-shade');
   assert.ok(shadows.paint['fill-extrusion-opacity'] < 1, 'one even shade where shadows cross');
+  // (Under cloud the sun throws a fainter shadow; under a covered sky, none.)
+  const shadeUnder = (sunlight) => cityModelStyle(BASE_STYLE, { sunlight }).layers.find((layer) => layer.id === 'city-shadows').paint['fill-extrusion-opacity'];
+  assert.ok(Math.abs(shadeUnder(0.5) - shadows.paint['fill-extrusion-opacity'] / 2) < 1e-9 && shadeUnder(0) === 0 && shadeUnder(7) === shadows.paint['fill-extrusion-opacity']);
   assert.deepEqual(style.sources['city-shade'], { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, attribution: PHOTO_READ_CREDIT });
 
   // Walls have rows of windows: plain from afar, then one picture per zoom level from 16 in.

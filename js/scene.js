@@ -38,6 +38,7 @@ uniform sampler2D u_shadow;
 uniform vec4 u_shadowBox;   // the ground the picture covers: west, south, 1 / width, 1 / height (metres)
 uniform vec3 u_shadowFall;  // how far a shadow falls for each metre of height: east, north; and the height the picture counts up to
 uniform float u_shadowSize; // spots a side; 0 when there are no shadows
+uniform float u_shadowDeep; // how deep a shadow is: 1 under a clear sky, less under cloud
 float shadowTop(vec2 at) {
   vec4 kept = texture2D(u_shadow, at);
   return (kept.r + kept.g / 255.0) * (u_shadowFall.z + ${SHADOW_BELOW}) - ${SHADOW_BELOW};
@@ -56,7 +57,7 @@ float inShadow(vec3 point, float margin) {
   float b = step(high, shadowTop(first + vec2(next, 0.0)));
   float c = step(high, shadowTop(first + vec2(0.0, next)));
   float d = step(high, shadowTop(first + vec2(next, next)));
-  return mix(mix(a, b, part.x), mix(c, d, part.x), part.y);
+  return mix(mix(a, b, part.x), mix(c, d, part.x), part.y) * u_shadowDeep;
 }`;
 
 // The colour a shadow leaves of what it falls on: as on the ground, where the map lays a dark blue over it.
@@ -75,16 +76,51 @@ uniform float u_point;      // for points of light: how wide each is, in metres;
 uniform vec2 u_pointRange;  // the narrowest and the widest a point is drawn, in pixels
 uniform float u_pixel;      // metres to a pixel of the screen, for each unit of depth
 uniform float u_depth;      // how deep in the picture its middle lies
+uniform float u_sky;        // 1 for what is in the sky: drawn behind all else, however near it was put
+uniform vec3 u_shift;       // how far the whole part has moved since it was made, in metres (a layer of cloud drifts)
+uniform vec3 u_eye;         // where the eye is, in the scene's metres
+uniform float u_cloud;      // more than 0 for a layer of cloud: how solid its clouds are
+uniform vec4 u_grain;       // for a layer of cloud: where its grain is measured from (x, y), one over the size of its coarsest grain, and how many times longer than wide the grain is, along the wind
+uniform vec2 u_grainTurn;   // the way the wind blows: (east, north), one long
 varying vec4 v_color;
 varying vec3 v_world;
 varying float v_solid;
+varying vec3 v_grain;       // for a cloud: where in its grain this is (x, y), and how much of a grain one pixel covers here
+varying float v_fade;       // for a cloud: how much of it shows, so low towards the horizon
 void main() {
+  vec3 pos = a_pos + u_shift;
   v_color = a_color * u_opacity;
-  v_world = a_pos;
+  v_world = pos;
   v_solid = a_color.a;
-  gl_Position = u_matrix * vec4(a_pos, 1.0);
+  v_grain = vec3(0.0);
+  v_fade = 1.0;
+  gl_Position = u_matrix * vec4(pos, 1.0);
   gl_PointSize = 1.0;
-  if (u_point > 0.0) {
+  if (u_cloud > 0.0) {
+    // A cloud thins into the haze towards the horizon. And its grain is fixed to the cloud itself: measured
+    // from a spot that drifts with it, along the wind and across. (Height counts too, for the heaps that
+    // stand upright.) Far off, where a grain is smaller than a pixel, it is not drawn: see the fragment
+    // shader. (A level cloud low in the sky is seen very much on edge: how much is counted only up to five
+    // times, or a far cloud would have no grain at all; what is finer than that runs together into the
+    // streaks a far cloud has.)
+    vec3 from = pos - u_eye;
+    float rise = max(from.z, 0.0) / max(length(from), 1.0);
+    v_fade = smoothstep(0.014, 0.06, rise);
+    vec2 g = a_pos.xy + u_grain.xy + a_pos.z * vec2(0.83, 0.56);
+    g = vec2(dot(g, u_grainTurn), dot(g, vec2(-u_grainTurn.y, u_grainTurn.x)));
+    v_grain.xy = g * vec2(u_grain.z / u_grain.w, u_grain.z);
+    v_grain.z = u_pixel * gl_Position.w / max(rise, 0.2) * u_grain.z;
+  }
+  if (u_sky > 0.5) {
+    // The sky: wherever a thing in it was put, it lies as deep as the picture goes, so that every wall
+    // and roof is in front of it. (A star or a lamp up there is so many pixels wide: and the wider the
+    // brighter it is, which is told in the part of its colour that a light has no other use for.)
+    gl_Position.z = gl_Position.w * 0.99995;
+    if (u_point > 0.0) {
+      gl_PointSize = u_point * u_pointRange.x / 1.1 * (1.0 + 5.0 * a_color.a);
+      v_color.a = 0.0;
+    }
+  } else if (u_point > 0.0) {
     float wide = u_point / max(u_pixel * gl_Position.w, 0.000001);
     gl_PointSize = clamp(wide, u_pointRange.x, u_pointRange.y);
     // A light too far off to be as wide as a speck is drawn as a speck, and as much fainter; and the
@@ -108,9 +144,25 @@ uniform float u_night;  // 0 by day, 1 by night, in between at dusk and dawn
 uniform float u_lamps;  // how far the lamps are on: 0 by day, 1 by night
 uniform float u_glow;   // 1 for a part that gives light of its own
 uniform float u_point;  // more than 0 for a part that is points of light
+uniform float u_cloud;  // more than 0 for a layer of cloud: how solid its clouds are
+uniform float u_opacity;
 varying vec4 v_color;
 varying vec3 v_world;
 varying float v_solid;
+varying vec3 v_grain;
+varying float v_fade;
+// A number from 0 to 1 for each square of a grid; and the same, running smoothly from square to square.
+float speck(vec2 p) {
+  p = fract(p * vec2(0.1031, 0.1030));
+  p += dot(p, p.yx + 33.33);
+  return fract((p.x + p.y) * p.y);
+}
+float grain(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(speck(i), speck(i + vec2(1.0, 0.0)), f.x), mix(speck(i + vec2(0.0, 1.0)), speck(i + vec2(1.0, 1.0)), f.x), f.y);
+}
 void main() {
   vec4 colour = v_color;
   if (u_glow > 0.5) {
@@ -120,6 +172,26 @@ void main() {
       colour *= max(1.0 - 4.0 * dot(from, from), 0.0);
     }
     gl_FragColor = colour * u_lamps;
+    return;
+  }
+  if (u_cloud > 0.0) {
+    // A cloud. What comes with each corner is how thick the cloud is there: full in its middle, nothing at
+    // its rim. On that its grain is laid, coarse and fine: where grain and thickness together are too
+    // little there is no cloud, and so its edge is ragged, with wisps and holes, and a sheet of it breaks
+    // up into small clouds. Where it is thickest it is darkest underneath.
+    float thickness = v_solid;
+    vec3 tone = colour.rgb / max(colour.a, 0.0001);
+    float n = 0.0;
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+    // (A grain that is smaller than a few pixels is left out: it would only flicker.)
+    vec4 keep = 1.0 - smoothstep(0.18, 0.6, v_grain.z * vec4(1.0, 2.13, 4.37, 9.1));
+    n = (grain(v_grain.xy) - 0.5) * keep.x + (grain(v_grain.xy * 2.13 + 7.1) - 0.5) * 0.55 * keep.y + (grain(v_grain.xy * 4.37 + 3.7) - 0.5) * 0.32 * keep.z + (grain(v_grain.xy * 9.1 + 1.3) - 0.5) * 0.18 * keep.w;
+#endif
+    // (The grain counts for nothing at the very rim: no cloud begins outside its own outline.)
+    float thick = thickness + n * 1.5 * min(thickness * 5.0, 1.0);
+    float seen = smoothstep(0.2, 0.5, thick) * u_cloud * v_fade * u_opacity;
+    tone *= mix(1.03, 0.95, smoothstep(0.5, 1.4, thick)) * (1.0 + 0.2 * n);
+    gl_FragColor = vec4(min(tone, vec3(1.0)) * seen, seen);
     return;
   }
   if (u_shaded > 0.5) {
@@ -688,7 +760,7 @@ function places(gl, program, attributes, uniforms) {
   return at;
 }
 
-const SHADOW_UNIFORMS = ['shadow', 'shadowBox', 'shadowFall', 'shadowSize'];
+const SHADOW_UNIFORMS = ['shadow', 'shadowBox', 'shadowFall', 'shadowSize', 'shadowDeep'];
 
 /**
  * Where the eye is, for a matrix that takes the scene's metres to the
@@ -737,6 +809,7 @@ export class SceneLayer {
     this.sharp = 1; // how many of the screen's own pixels there are to each of the page's
     this.focus = [0, 0]; // the middle of the picture, in the scene's metres
     this.eye = [0, -800, 600]; // where the eye is, in the scene's metres: worked out with every picture
+    this.sunlight = 1; // how much of the sun gets through the clouds: the shadows are as deep
     this.wallTop = 0; // how much of the top of a wall is roof and parapet
     // The shadows: what throws them, and the picture they are read from.
     this.shadow = { casters: null, frame: null, stale: false, target: null, buffer: null, ready: false, drawn: 0 };
@@ -760,7 +833,7 @@ export class SceneLayer {
   /** Make what the scene keeps in the map's graphics memory: its programs. Everything drawn so far is sent there again. */
   build(gl) {
     this.program = link(gl, VERTEX, FRAGMENT);
-    this.at = places(gl, this.program, ['pos', 'color'], ['matrix', 'opacity', 'shaded', 'night', 'lamps', 'glow', 'point', 'pointRange', 'pixel', 'depth', ...SHADOW_UNIFORMS]);
+    this.at = places(gl, this.program, ['pos', 'color'], ['matrix', 'opacity', 'shaded', 'night', 'lamps', 'glow', 'point', 'pointRange', 'pixel', 'depth', 'sky', 'shift', 'eye', 'cloud', 'grain', 'grainTurn', ...SHADOW_UNIFORMS]);
     this.roofProgram = link(gl, ROOF_VERTEX, ROOF_FRAGMENT);
     this.roofAt = places(gl, this.roofProgram, ['pos', 'lay', 'tint'], ['matrix', 'opacity', 'sun', 'day', 'night', 'pixel', ...SHADOW_UNIFORMS]);
     this.wallProgram = link(gl, WALL_VERTEX, WALL_FRAGMENT);
@@ -853,10 +926,25 @@ export class SceneLayer {
    * light whose every corner is a point of light of its own (a lamp seen
    * from afar), how wide each is, in metres. mask: true for a part that is
    * not seen itself but hides what lies behind it: the ground beside a road
-   * that runs in a cutting, which the map draws without any depth.
+   * that runs in a cutting, which the map draws without any depth. sky: true
+   * for what is in the sky (see sky.js): drawn behind all else, in the
+   * colours it was given, whatever the hour; the parts of the sky are drawn
+   * in the order they were first given in, the furthest first (the sun and
+   * the stars, then the clouds, then the aircraft). cloud: for a layer of
+   * cloud, { solid (how solid its clouds are, 0 to 1), grain: [east, north]
+   * (where its grain is measured from, in metres), size (how wide its
+   * coarsest grain is, in metres), stretch (how many times longer than wide
+   * the grain is, along the wind), wind: [east, north] (the way the wind
+   * blows, one long) }: each corner's solidity is then how thick the cloud
+   * is there, and its ragged edge is worked out point by point. late: true
+   * for a light in the sky that shows through the haze on the horizon (the
+   * sun's own disc, going down): it is drawn after the haze, with the lights.
    */
-  set(name, mesh, { shaded = true, lifted = 0, glow = false, point = 0, mask = false } = {}) {
-    const part = this.parts.get(name) ?? { mesh: null, buffers: null, stale: true, shaded: true, lifted: 0, glow: false, point: 0, mask: false };
+  set(name, mesh, { shaded = true, lifted = 0, glow = false, point = 0, mask = false, sky = false, cloud = null, late = false } = {}) {
+    const part = this.parts.get(name) ?? { mesh: null, buffers: null, stale: true, shaded: true, lifted: 0, glow: false, point: 0, mask: false, sky: false, shift: null, cloud: null, late: false };
+    part.shift = null;
+    part.cloud = cloud;
+    part.late = late;
     part.mesh = mesh;
     part.stale = true;
     part.shaded = shaded;
@@ -864,7 +952,18 @@ export class SceneLayer {
     part.glow = glow;
     part.point = glow ? point : 0;
     part.mask = mask;
+    part.sky = sky;
     this.parts.set(name, part);
+  }
+
+  /**
+   * Move a named part as a whole, without making it afresh: by [east, north,
+   * up] metres from where it was made. (So a layer of cloud drifts.) Giving
+   * the part its triangles again puts it back.
+   */
+  shift(name, by) {
+    const part = this.parts.get(name);
+    if (part) part.shift = by ? [by[0], by[1], by[2] ?? 0] : null;
   }
 
 
@@ -1047,6 +1146,7 @@ export class SceneLayer {
     gl.bindTexture(gl.TEXTURE_2D, ready ? shadow.target.picture : this.blank);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(at.shadow, 1);
+    gl.uniform1f(at.shadowDeep, Math.min(Math.max(this.sunlight, 0), 1));
     if (ready && this.day > 0) {
       const { box, fall, top, size } = shadow.using;
       gl.uniform4f(at.shadowBox, box[0], box[1], 1 / (box[2] - box[0]), 1 / (box[3] - box[1]));
@@ -1113,6 +1213,9 @@ export class SceneLayer {
       gl.uniform1f(this.at.glow, 0);
       gl.uniform1f(this.at.point, 0);
       gl.uniform1f(this.at.lamps, 0);
+      gl.uniform1f(this.at.sky, 0);
+      gl.uniform3f(this.at.shift, 0, 0, 0);
+      gl.uniform1f(this.at.cloud, 0);
       this.shadowsFor(gl, this.at);
       gl.colorMask(false, false, false, false);
       gl.enable(gl.POLYGON_OFFSET_FILL);
@@ -1272,6 +1375,7 @@ export class SceneLayer {
     const thrown = lamps * night ** LAMP_THROW_POWER;
     gl.uniform1f(this.at.pixel, pixelPerDepth);
     gl.uniform1f(this.at.depth, depth);
+    gl.uniform3f(this.at.eye, this.eye[0], this.eye[1], this.eye[2]);
     // A point of light is never drawn smaller than a speck that shows on this screen, nor absurdly large.
     const sharp = Math.max(this.sharp, 1);
     gl.uniform2f(this.at.pointRange, 1.1 * sharp, 7 * sharp);
@@ -1280,10 +1384,20 @@ export class SceneLayer {
     gl.enableVertexAttribArray(this.at.color);
     const draw = (part) => {
       const mesh = part.mesh;
-      gl.uniform1f(this.at.shaded, part.shaded && !part.glow ? 1 : 0);
+      gl.uniform1f(this.at.shaded, part.shaded && !part.glow && !part.sky ? 1 : 0);
       gl.uniform1f(this.at.glow, part.glow ? 1 : 0);
       gl.uniform1f(this.at.point, part.point);
-      gl.uniform1f(this.at.lamps, part.point > 0 ? lamps : thrown);
+      // (What is in the sky comes in the colours it was given: the hour is in them already.)
+      gl.uniform1f(this.at.sky, part.sky ? 1 : 0);
+      gl.uniform3f(this.at.shift, part.shift ? part.shift[0] : 0, part.shift ? part.shift[1] : 0, part.shift ? part.shift[2] : 0);
+      const cloud = part.cloud;
+      gl.uniform1f(this.at.cloud, cloud ? cloud.solid : 0);
+      if (cloud) {
+        gl.uniform4f(this.at.grain, cloud.grain[0], cloud.grain[1], 1 / cloud.size, cloud.stretch);
+        gl.uniform2f(this.at.grainTurn, cloud.wind[0], cloud.wind[1]);
+      }
+      gl.uniform1f(this.at.night, part.sky ? 0 : night);
+      gl.uniform1f(this.at.lamps, part.sky ? 1 : part.point > 0 ? lamps : thrown);
       // (What is on a roof is drawn as much nearer as the roof was, or the roof would hide the foot of it.)
       if (part.lifted > 0) {
         gl.enable(gl.POLYGON_OFFSET_FILL);
@@ -1304,8 +1418,16 @@ export class SceneLayer {
       }
     };
     for (const part of this.parts.values()) {
-      if (!part.glow && !part.mask && part.mesh && part.mesh.count > 0) draw(part);
+      if (!part.glow && !part.mask && !part.sky && part.mesh && part.mesh.count > 0) draw(part);
     }
+    // Then the sky, behind all that, in its own order: its lights first (the sun, the stars), then the
+    // clouds over them, then the aircraft under the clouds. None of it is written into the picture's
+    // depth: a cloud is thin at its edges, and hides nothing that comes after.
+    gl.depthMask(false);
+    for (const part of this.parts.values()) {
+      if (part.sky && !part.late && part.mesh && part.mesh.count > 0) draw(part);
+    }
+    gl.depthMask(true);
     gl.disableVertexAttribArray(this.at.pos);
     gl.disableVertexAttribArray(this.at.color);
     // The haze, over everything that is solid and under every light: a lamp shows through the air.
@@ -1315,13 +1437,11 @@ export class SceneLayer {
     gl.enableVertexAttribArray(this.at.color);
     // Then the lights, over all that: each adds its light to what is behind it, and hides nothing. (So none
     // of them is written into the picture's depth: where two pools of light overlap, both are seen.)
-    if (lamps > 0) {
-      gl.depthMask(false);
-      for (const part of this.parts.values()) {
-        if (part.glow && part.mesh && part.mesh.count > 0) draw(part);
-      }
-      gl.depthMask(true);
+    gl.depthMask(false);
+    for (const part of this.parts.values()) {
+      if (part.glow && (part.sky ? part.late : lamps > 0) && part.mesh && part.mesh.count > 0) draw(part);
     }
+    gl.depthMask(true);
     gl.disableVertexAttribArray(this.at.pos);
     gl.disableVertexAttribArray(this.at.color);
     gl.activeTexture(gl.TEXTURE1);

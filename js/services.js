@@ -26,6 +26,7 @@ import {
   speedLimitRoads,
   weatherSummary,
 } from './lib.js';
+import { parseOpenSky } from './flights.js';
 
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/';
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
@@ -234,6 +235,12 @@ const WEATHER_MAX_DRIFT_M = 15000;
 let weather = null; // { at, position, summary }
 let weatherBusy = false;
 let weatherRetryAt = 0;
+// What is asked of the weather: how warm, what kind of weather, how much cloud, the wind. And for the sky
+// over the 3D city: how much cloud at each of three heights, and how far one can see. (Should the service
+// ever refuse to say that, it is asked without from then on.)
+const WEATHER_NOW = 'temperature_2m,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m';
+const WEATHER_SKY = 'cloud_cover_low,cloud_cover_mid,cloud_cover_high,visibility';
+let weatherSky = true;
 
 /** The weather at a position as { temperature (°C), text }, or null if unknown. */
 export async function weatherAt(position) {
@@ -245,12 +252,19 @@ export async function weatherAt(position) {
 
   weatherBusy = true;
   try {
-    const params = new URLSearchParams({
-      latitude: position.lat.toFixed(3),
-      longitude: position.lng.toFixed(3),
-      current: 'temperature_2m,weather_code',
-    });
-    const answer = await fetchJson(`${WEATHER_URL}?${params}`, { timeout: 10000 });
+    const ask = (current) => {
+      const params = new URLSearchParams({ latitude: position.lat.toFixed(3), longitude: position.lng.toFixed(3), current, wind_speed_unit: 'ms' });
+      return fetchJson(`${WEATHER_URL}?${params}`, { timeout: 10000 });
+    };
+    let answer;
+    try {
+      answer = await ask(weatherSky ? `${WEATHER_NOW},${WEATHER_SKY}` : WEATHER_NOW);
+    } catch (error) {
+      // (400 is the service saying it does not know something it was asked.)
+      if (!weatherSky || !/ answered 400$/.test(String(error?.message))) throw error;
+      weatherSky = false;
+      answer = await ask(WEATHER_NOW);
+    }
     const summary = weatherSummary(answer.current);
     if (summary) weather = { at: Date.now(), position: { lat: position.lat, lng: position.lng }, summary };
     return weather ? weather.summary : null;
@@ -259,6 +273,40 @@ export async function weatherAt(position) {
     return weather ? weather.summary : null;
   } finally {
     weatherBusy = false;
+  }
+}
+
+// ── Aircraft ──────────────────────────────────────────────────────────────
+
+// The sky over Riyadh and its airport: one fixed box, the same whoever asks and wherever in the city they
+// are, so that nothing about the asker goes with the question.
+const AIRCRAFT_URL = 'https://opensky-network.org/api/states/all';
+const AIRCRAFT_BOX = { lamin: '24.2', lomin: '45.9', lamax: '25.6', lomax: '47.5' };
+const AIRCRAFT_AGAIN_MS = 40 * 1000; // while there are aircraft to follow
+const AIRCRAFT_EMPTY_AGAIN_MS = 10 * 60 * 1000; // the feed has few receivers here: an empty sky is not asked about again at once
+const AIRCRAFT_FAILED_AGAIN_MS = 30 * 60 * 1000;
+let aircraftBusy = false;
+let aircraftRetryAt = 0;
+
+/**
+ * The aircraft in the air over Riyadh right now, from the OpenSky Network's
+ * open feed: { planes, seconds, source }, or null when it is not to be had
+ * (or was asked for too lately: it is asked every 40 s at the most, and far
+ * less often while it has nothing or does not answer).
+ */
+export async function aircraftOverRiyadh() {
+  if (aircraftBusy || Date.now() < aircraftRetryAt) return null;
+  aircraftBusy = true;
+  try {
+    const answer = await fetchJson(`${AIRCRAFT_URL}?${new URLSearchParams(AIRCRAFT_BOX)}`, { timeout: 12000, credentials: 'omit', referrerPolicy: 'no-referrer' });
+    const planes = parseOpenSky(answer);
+    aircraftRetryAt = Date.now() + (planes.length > 0 ? AIRCRAFT_AGAIN_MS : AIRCRAFT_EMPTY_AGAIN_MS);
+    return { planes, seconds: Number(answer?.time) || Date.now() / 1000, source: 'The OpenSky Network' };
+  } catch {
+    aircraftRetryAt = Date.now() + AIRCRAFT_FAILED_AGAIN_MS;
+    return null;
+  } finally {
+    aircraftBusy = false;
   }
 }
 
