@@ -39,7 +39,9 @@ import { Mesh, Traffic, buildNetwork, drawBridges, drawMarks, drawRoofs, drawStr
 import { PHOTO_ROOF_MOST_METERS, RoofMesh, photoRoofs } from './roofs.js';
 import { GroundCopy, SceneLayer } from './scene.js';
 import { buildingArchive, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
-import { footprintGrid, heightsFromShadows, passSuns, pavedGrid, photoGrid, tilesFor, treesInPhoto } from './sight.js';
+import { footprintGrid, heightsFromShadows, passSuns, pavedGrid, photoGrid, roofColours, tilesFor, treesInPhoto } from './sight.js';
+import { CasterMesh, shadowCasters, shadowFall, shadowMapSize } from './shade.js';
+import { PARAPET_METERS, WallMesh, colourOf, footShade, tilePieces, wallTone, wallsOf } from './walls.js';
 
 export const MAP_TYPES = ['city', 'streets', 'night', 'satellite', 'detailed'];
 
@@ -322,15 +324,24 @@ export class MapView {
     this.roofMesh = new Mesh(); // what stands on the roofs
     this.roofs = []; // the buildings the shadows were last laid for
     this.roofsMade = null;
+    this.casterMesh = new CasterMesh(); // what throws the shadows on walls and roofs
+    this.shadowsMade = null;
+    this.wallMesh = new WallMesh(); // the walls, laid over the blocks the map draws
+    this.wallsMade = null;
+    this.footMesh = new Mesh(); // the shade on the ground at the foot of the walls
+    this.wallColours = new Map(); // building → the colour of its walls, worked out from its roof in the photo
     this.roofPhotoMesh = new RoofMesh(); // the roofs themselves, which show the photo of the ground under them
     this.roofPhotoCut = 0; // how many buildings have one
     this.roofPhotoShown = false; // whether roofs are being shown by their photo: then nothing made up is put on them
     this.sharpOn = true; // the photo as sharp as the screen can show it
+    this.detailOn = true; // walls drawn window by window, and shadows on walls and roofs
     this.scene = new SceneLayer(LIFE_LAYER, { onFrame: () => this.moveLife() });
     this.groundCopy = new GroundCopy(GROUND_COPY_LAYER);
     this.scene.ground = this.groundCopy;
     // For anyone looking at the scene from outside (the tests do): what it holds.
-    this.scene.counts = () => ({ life: this.lifeCounts(), photo: this.photoCounts(), buildings: this.buildingCounts() });
+    this.scene.counts = () => ({ life: this.lifeCounts(), photo: this.photoCounts(), buildings: this.buildingCounts(), detail: this.detailCounts(), busy: { ...this.busy } });
+    // How often each piece of work has been done, for anyone wondering what keeps the map from coming to rest.
+    this.busy = { shade: 0, roofs: 0, extras: 0, photo: 0, filters: 0, tiles: 0 };
 
     this.map = new maplibregl.Map({
       container,
@@ -399,6 +410,7 @@ export class MapView {
       if ((event.sourceId !== VECTOR_SOURCE && event.sourceId !== BUILDING_SOURCE) || !event.tile) return;
       if (event.sourceId === BUILDING_SOURCE) this.archiveTiles += 1;
       this.tilesLoaded += 1;
+      this.busy.tiles += 1;
       this.queueShade(true);
     });
     setInterval(() => this.followSun(), SUN_CHECK_MS);
@@ -411,6 +423,18 @@ export class MapView {
   /** How many real pixels of the screen the photo is fitted to, to each of the map's: the screen's own count, or 1 for the photo as coarse as the map would have it. */
   photoPixels() {
     return this.sharpOn ? Math.min(Math.max(window.devicePixelRatio || 1, 1), 3) : 1;
+  }
+
+  /**
+   * Draw the walls window by window and let the buildings throw shadows on
+   * each other (which is more work for the phone with every picture), or
+   * leave the walls as the map draws them.
+   */
+  setDetail(on) {
+    if (this.detailOn === Boolean(on)) return;
+    this.detailOn = Boolean(on);
+    this.layRoofs();
+    this.map.triggerRepaint();
   }
 
   /** Show the satellite photo as sharp as the screen can show it (which takes more of it to fetch), or not. */
@@ -629,6 +653,7 @@ export class MapView {
   /** Tell the map which of its own buildings not to draw: those on streets, under landmarks, or dressed as stores. */
   leaveOutBuildings() {
     const map = this.map;
+    this.busy.filters += 1;
     this.whenStyled(() => {
       const leaveOut = (layers, ids) => {
         for (const id of layers) {
@@ -650,7 +675,12 @@ export class MapView {
       const { building, parts } = this.archiveBuildings();
       // (The heights read from the photo are for whole buildings; the parts of one carry their own.)
       // A block that a landmark model stands in for still throws its shadow, but gets no roof furniture.
-      const whole = buildingFootprints(building, box, estimates, this.onStreets).map((one) => (this.replaced.building.has(one.id) || this.dressed.has(one.id) ? { ...one, replaced: true, roofTop: this.storeRoofs.get(one.id) } : one));
+      const whole = buildingFootprints(building, box, estimates, this.onStreets).map((one) => {
+        if (!this.replaced.building.has(one.id) && !this.dressed.has(one.id)) return one;
+        // (A store in its chain's dress stands as tall as that dress was made, whatever a shadow in the photo suggested: its shadow is to match.)
+        const roofTop = this.storeRoofs.get(one.id);
+        return { ...one, replaced: true, roofTop, ...(roofTop > 0 ? { height: roofTop } : {}) };
+      });
       const pieces = buildingFootprints(parts, box, null).map((one) => (this.replaced.parts.has(one.id) ? { ...one, replaced: true } : one));
       return [...whole, ...pieces];
     }
@@ -675,6 +705,7 @@ export class MapView {
     if (this.type !== 'city' || !source) return;
     const made = this.extrasMade;
     if (made && made.tiles === this.tilesLoaded && made.network === this.network && made.heights === this.heightsRead) return;
+    this.busy.extras += 1;
     let features = [];
     let counts = { stations: 0, entrances: 0, stores: 0, mosques: 0, locals: 0 };
     let dressed = new Set();
@@ -783,7 +814,13 @@ export class MapView {
         map.setLight(sunLight(sun));
         lit = true;
       });
-      if (lit) this.sun = sun;
+      if (lit) {
+        this.sun = sun;
+        // The walls the app draws itself are lit from the same sun; after dark their windows light up.
+        const light = lightFrom(sun);
+        this.scene.sun = light ? [light.east, light.north, light.up] : [0.3, -0.5, 0.8];
+        this.scene.day = light ? 1 : 0;
+      }
     }
     const lit = this.treesLit;
     if (!lit || Math.abs(lit.altitude - this.sun?.altitude) > 1.5 || Math.abs(((lit.azimuth - this.sun?.azimuth + 540) % 360) - 180) > 1.5) {
@@ -877,12 +914,36 @@ export class MapView {
     }
     const metersPerPixel = (EARTH_AROUND_METERS * Math.cos((centre.lat * Math.PI) / 180)) / (512 * 2 ** zoom);
     // (Landmarks the map has no building for throw a shadow too.)
+    this.busy.shade += 1;
     source.setData(reach ? buildingShadows([...buildings, ...landmarkShades(), ...this.extraShades], reach, SHADE_SMALLEST_PX * metersPerPixel) : EMPTY);
     this.shade = { reach, box, zoom, tiles: this.tilesLoaded, heights: this.heightsRead };
     // The same buildings get their roofs furnished.
     this.roofs = this.buildings ? buildings : [];
     if (!this.scene.origin) this.scene.setOrigin({ lng: centre.lng, lat: centre.lat });
     this.layRoofs();
+  }
+
+  /**
+   * The colour of a building's walls: the one on record, else the one worked
+   * out from its roof in the photo, else one of the shades of plaster.
+   */
+  wallColourOf(building) {
+    const recorded = building.colour ? colourOf(building.colour) : null;
+    if (recorded) return recorded;
+    const worked = this.photoOn ? this.wallColours.get(building.id) : undefined;
+    if (worked) return worked;
+    return colourOf(WALL_TINTS[typeof building.id === 'number' ? Math.abs(building.id) % WALL_TINTS.length : 0]);
+  }
+
+  /** The walls and the shadows on them, for anyone who wants to count them. */
+  detailCounts() {
+    const made = this.shadowsMade;
+    return {
+      on: this.detailOn,
+      walls: this.wallsMade ? { ...this.wallsMade, corners: this.wallMesh.count } : null,
+      coloured: this.wallColours.size,
+      shadows: made ? { size: made.size, top: made.top, corners: made.corners, box: made.box } : null,
+    };
   }
 
   /** Whether the roofs are to show the photo, as things stand. */
@@ -896,20 +957,54 @@ export class MapView {
    * are plain, with something made up standing on them, lit by the sun.
    */
   layRoofs() {
+    this.busy.roofs += 1;
     const origin = this.scene.origin;
     const shown = this.photoRoofsWanted();
     this.roofPhotoShown = shown;
     if (!origin || this.type !== 'city' || this.roofs.length === 0) {
-      if (this.roofMesh.count > 0 || this.roofPhotoMesh.count > 0) {
+      if (this.roofMesh.count > 0 || this.roofPhotoMesh.count > 0 || this.wallMesh.count > 0) {
         this.roofMesh.clear();
         this.roofPhotoMesh.clear();
+        this.wallMesh.clear();
+        this.footMesh.clear();
         this.scene.set('roofs', this.roofMesh);
+        this.scene.set('feet', this.footMesh, { shaded: false });
         this.scene.setRoofs(this.roofPhotoMesh);
+        this.scene.setWalls(this.wallMesh);
+        this.scene.setShadows(this.casterMesh, null);
       }
       this.roofsMade = null;
+      this.wallsMade = null;
+      this.shadowsMade = null;
       this.roofPhotoCut = 0;
       return;
     }
+    // The walls: over each block the map draws, walls of the app's own, up past the roof as a parapet.
+    const wallTop = ROOF_CAP_METERS + ROOF_LIFT_METERS + PARAPET_METERS;
+    this.scene.wallTop = wallTop;
+    if (this.detailOn) {
+      // (A building that lies across the edge of a map tile comes twice over: each copy is cut to its own tile.)
+      const whole = tilePieces(this.roofs, tileBox);
+      this.wallsMade = wallsOf(this.wallMesh, whole, origin, { top: (building) => building.height + wallTop, colourOf: (building) => this.wallColourOf(building) });
+      footShade(this.footMesh, whole, origin);
+    } else {
+      this.wallMesh.clear();
+      this.footMesh.clear();
+      this.wallsMade = null;
+    }
+    this.scene.setWalls(this.wallMesh);
+    this.scene.set('feet', this.footMesh, { shaded: false });
+    // The shadows the buildings throw on each other's walls and roofs, to go with the ones the map lays on the ground.
+    const fall = this.detailOn ? shadowFall(shadowReach(this.sun)) : null;
+    // (Of the landmarks and minarets that throw a shadow of their own, only those round here: one far across the city would stretch the picture of the shadows thin.)
+    const here = this.shade?.box;
+    const near = (one) => {
+      const [lng, lat] = one.polygons[0][0][0];
+      return Boolean(here) && lng >= here.west && lng <= here.east && lat >= here.south && lat <= here.north;
+    };
+    const cast = fall ? shadowCasters(this.casterMesh, [...this.roofs, ...landmarkShades().filter(near), ...this.extraShades.filter(near)], origin, fall) : null;
+    this.shadowsMade = cast ? { ...cast, fall, size: shadowMapSize(cast.box), corners: this.casterMesh.count } : null;
+    this.scene.setShadows(this.casterMesh, this.shadowsMade);
     const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
     const local = [];
     for (const building of this.roofs) {
@@ -994,6 +1089,7 @@ export class MapView {
 
   /** Fetch the photo of an area and read it: building heights from shadows, and trees. */
   async readPhoto(origin, half, box) {
+    this.busy.photo += 1;
     const request = ++this.photoRequest;
     const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
     const local = ([lng, lat]) => [(lng - origin.lng) * squeeze, (lat - origin.lat) * METERS_PER_DEGREE];
@@ -1062,6 +1158,23 @@ export class MapView {
       await breathe();
       if (request !== this.photoRequest) return;
     }
+
+    // The colour of each roof, for its building's walls to go with.
+    let coloured = 0;
+    roofColours(tiles, PHOTO_ZOOM, origin, list).forEach((colour, index) => {
+      const id = list[index].id;
+      if (!colour || id === undefined) return;
+      if (!this.wallColours.has(id)) coloured += 1;
+      this.wallColours.delete(id); // newest last, so the oldest can be forgotten first
+      this.wallColours.set(id, wallTone(colour));
+    });
+    for (const id of this.wallColours.keys()) {
+      if (this.wallColours.size <= HEIGHTS_KEPT) break;
+      this.wallColours.delete(id);
+    }
+    if (coloured > 0) this.heightsRead += 1; // the walls are laid again, in their colours
+    await breathe();
+    if (request !== this.photoRequest) return;
 
     this.trees = treesInPhoto(grid, footprintGrid(list, half), PHOTO_MOST_TREES, pavedGrid(roads, half)).map((tree) => ({
       lng: origin.lng + tree.x / squeeze,
@@ -1277,6 +1390,11 @@ export class MapView {
     this.scene.opacity = Math.min(Math.max((zoom - LIFE_MIN_ZOOM) * 2, 0), 1);
     // (The copy of the ground is kept only while there are roofs on screen to fill from it.)
     this.groundCopy.wanted = this.scene.opacity > 0 && this.roofPhotoMesh.count > 0;
+    // What the walls are drawn by: where the eye is, and how much wall a pixel of the screen shows.
+    const turned = (this.map.getBearing() * Math.PI) / 180;
+    const tilted = (this.map.getPitch() * Math.PI) / 180;
+    this.scene.eye = [-Math.sin(turned) * Math.sin(tilted), -Math.cos(turned) * Math.sin(tilted), Math.cos(tilted)];
+    this.scene.pixel = (EARTH_AROUND_METERS * Math.cos((this.map.getCenter().lat * Math.PI) / 180)) / (512 * 2 ** zoom) / (window.devicePixelRatio || 1);
     if (!this.lifeOn || this.type !== 'city' || zoom < LIFE_MIN_ZOOM) {
       if (this.trafficMesh.count > 0) {
         this.trafficMesh.clear();
@@ -1337,7 +1455,8 @@ export class MapView {
 
   /** fix: { lat, lng, accuracy, heading (degrees or null), moving } */
   setPosition(fix) {
-    const first = this.position === null;
+    const before = this.position;
+    const first = before === null;
     this.position = { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy };
 
     if (!this.marker) {
@@ -1360,7 +1479,9 @@ export class MapView {
       this.marker.setRotation(fix.heading);
     }
 
-    this.setSourceData('vm-accuracy', this.accuracyData());
+    // (A phone that stands still repeats its position every second. The circle is handed to the map only
+    // when it has changed: each time, the map works it out afresh and draws itself again.)
+    if (first || before.lat !== fix.lat || before.lng !== fix.lng || before.accuracy !== fix.accuracy) this.setSourceData('vm-accuracy', this.accuracyData());
     this.moveCamera(first);
   }
 

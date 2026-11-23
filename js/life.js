@@ -89,9 +89,14 @@ const RAILS = new Set(['rail', 'transit']);
 
 // Vehicles as stacks of boxes. Each box: [from, to] along the length (0 rear,
 // 1 front), share of the width, bottom and top in metres, and what it is made of.
+// Each vehicle is a few boxes: [from, to, share, bottom, top, material, lean]. from and to are how far
+// along the vehicle the box runs (0 its rear, 1 its front), share how much of the width it takes, bottom
+// and top its height in metres. lean, for a cabin: how far its rear, its front and its sides draw in
+// towards the roof (as parts of the vehicle's length and of the box's width), which gives it a sloping
+// windscreen; such a cabin is glass all round under a roof in the body's paint.
 export const VEHICLES = {
-  car: { length: 4.5, width: 1.8, boxes: [[0, 1, 1, 0.25, 0.82, 'body'], [0.24, 0.8, 0.9, 0.82, 1.4, 'glass'], [0.28, 0.76, 0.86, 1.4, 1.46, 'body']] },
-  suv: { length: 4.9, width: 1.95, boxes: [[0, 1, 1, 0.3, 1.0, 'body'], [0.12, 0.8, 0.9, 1.0, 1.7, 'glass'], [0.14, 0.78, 0.88, 1.7, 1.77, 'body']] },
+  car: { length: 4.5, width: 1.8, boxes: [[0.04, 0.96, 0.94, 0.02, 0.3, 'tyre'], [0, 1, 1, 0.26, 0.84, 'body'], [0.2, 0.8, 0.92, 0.84, 1.42, 'glass', [0.1, 0.15, 0.16]]] },
+  suv: { length: 4.9, width: 1.95, boxes: [[0.04, 0.96, 0.94, 0.02, 0.36, 'tyre'], [0, 1, 1, 0.32, 1.02, 'body'], [0.1, 0.8, 0.92, 1.02, 1.74, 'glass', [0.03, 0.13, 0.1]]] },
   van: { length: 5.3, width: 2.0, boxes: [[0, 1, 1, 0.3, 1.15, 'body'], [0.02, 0.9, 0.94, 1.15, 1.95, 'body'], [0.72, 0.93, 0.95, 1.2, 1.8, 'glass']] },
   truck: { length: 9, width: 2.5, boxes: [[0, 0.74, 1, 0.9, 3.4, 'cargo'], [0.78, 1, 0.96, 0.5, 2.6, 'body'], [0.9, 1.0, 0.97, 1.5, 2.3, 'glass']] },
   bus: { length: 12, width: 2.55, boxes: [[0, 1, 1, 0.35, 1.3, 'body'], [0.01, 0.99, 0.97, 1.3, 2.5, 'glass'], [0, 1, 1, 2.5, 3.1, 'body']] },
@@ -109,6 +114,9 @@ const BUS_PAINT = [[24, 150, 140], [30, 118, 190], [226, 150, 30]];
 const CARGO_PAINT = [[232, 232, 228], [210, 205, 190], [190, 196, 204]];
 const TRAIN_PAINT = [[240, 242, 244], [132, 142, 156]];
 export const GLASS = [48, 62, 82];
+const TYRE = [30, 31, 35];
+const HEADLIGHTS = [250, 244, 226];
+const TAIL_LIGHTS = [150, 30, 30];
 const UNDERGROUND = [44, 78, 168]; // a blue shadow of the train, not to be taken for a building's shade
 const UNDER_METERS = 0.16;
 
@@ -1326,23 +1334,33 @@ export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, 
     mesh.face(corner(-halfLength, -halfWidth), corner(halfLength, -halfWidth), corner(halfLength, halfWidth), corner(-halfLength, halfWidth), 16, 20, 32, 0.3 * shown);
   }
 
-  for (const [from, to, share, bottom, top, material] of shape.boxes) {
+  let bodies = 0;
+  for (const [from, to, share, bottom, top, material, lean] of shape.boxes) {
     const rear = -halfLength + length * from;
     const front = -halfLength + length * to;
     const side = halfWidth * share;
     const low = lift + bottom * scale;
     const high = lift + top * scale;
-    const colour = material === 'glass' ? GLASS : material === 'cargo' ? cargo : paint;
+    // Where the box ends at its top: a cabin draws in towards its roof.
+    const rearTop = rear + length * (lean?.[0] ?? 0);
+    const frontTop = front - length * (lean?.[1] ?? 0);
+    const sideTop = side * (1 - (lean?.[2] ?? 0));
+    const slope = lean ? 0.55 : 0; // how far a leaning face looks up at the sky
+    const colour = material === 'glass' ? GLASS : material === 'cargo' ? cargo : material === 'tyre' ? TYRE : paint;
+    const first = material === 'body' && bodies === 0; // the body proper carries the lights
+    if (material === 'body') bodies += 1;
     const at = (along, across, z) => [x + east * along + rightEast * across, y + north * along + rightNorth * across, z];
-    const paintFace = (a, b, c, d, nEast, nNorth, nUp) => {
+    const paintFace = (a, b, c, d, nEast, nNorth, nUp, face = colour, mixed = 0, other = colour) => {
       const lit = faceLight(light, nEast, nNorth, nUp);
-      mesh.face(a, b, c, d, colour[0] * lit, colour[1] * lit, colour[2] * lit, shown);
+      mesh.face(a, b, c, d, (face[0] + (other[0] - face[0]) * mixed) * lit, (face[1] + (other[1] - face[1]) * mixed) * lit, (face[2] + (other[2] - face[2]) * mixed) * lit, shown);
     };
-    paintFace(at(rear, -side, high), at(front, -side, high), at(front, side, high), at(rear, side, high), 0, 0, 1);
-    paintFace(at(front, -side, low), at(front, side, low), at(front, side, high), at(front, -side, high), east, north, 0);
-    paintFace(at(rear, side, low), at(rear, -side, low), at(rear, -side, high), at(rear, side, high), -east, -north, 0);
-    paintFace(at(rear, side, low), at(front, side, low), at(front, side, high), at(rear, side, high), rightEast, rightNorth, 0);
-    paintFace(at(front, -side, low), at(rear, -side, low), at(rear, -side, high), at(front, -side, high), -rightEast, -rightNorth, 0);
+    // The top: of a cabin, its roof, in the body's paint.
+    paintFace(at(rearTop, -sideTop, high), at(frontTop, -sideTop, high), at(frontTop, sideTop, high), at(rearTop, sideTop, high), 0, 0, 1, lean ? paint : colour);
+    // Front and rear: on the body they carry the lights, pale ahead and red behind.
+    paintFace(at(front, -side, low), at(front, side, low), at(frontTop, sideTop, high), at(frontTop, -sideTop, high), east, north, slope, colour, first ? 0.34 : 0, HEADLIGHTS);
+    paintFace(at(rear, side, low), at(rear, -side, low), at(rearTop, -sideTop, high), at(rearTop, sideTop, high), -east, -north, slope, colour, first ? 0.3 : 0, TAIL_LIGHTS);
+    paintFace(at(rear, side, low), at(front, side, low), at(frontTop, sideTop, high), at(rearTop, sideTop, high), rightEast, rightNorth, slope * 0.5);
+    paintFace(at(front, -side, low), at(rear, -side, low), at(rearTop, -sideTop, high), at(frontTop, -sideTop, high), -rightEast, -rightNorth, slope * 0.5);
   }
 }
 
@@ -1900,7 +1918,7 @@ export function drawRoofs(mesh, buildings, light) {
 
 // ── Trees ─────────────────────────────────────────────────────────────────
 
-const LEAVES = [[58, 102, 52], [70, 116, 58], [48, 92, 50], [82, 122, 62]];
+const LEAVES = [[58, 102, 52], [70, 116, 58], [48, 92, 50], [82, 122, 62], [66, 104, 44], [52, 98, 62]];
 const FRONDS = [[74, 110, 58], [64, 100, 54], [86, 118, 64]];
 const BARK = [104, 84, 62];
 const PALM_BARK = [128, 108, 82];
@@ -1979,22 +1997,44 @@ export function drawTrees(mesh, trees, light, reach) {
       continue;
     }
 
-    // A rounded crown: out from the trunk to its widest, in again towards the top, and a cap.
-    const low = ring(radius * 0.62, trunk);
-    const wide = ring(radius, shoulder);
-    const high = ring(radius * 0.72, top - radius * 0.28);
-    const peak = [x, y, top];
-    for (let i = 0; i < 6; i += 1) {
-      const next = (i + 1) % 6;
-      const angle = turn + ((i + 0.5) * Math.PI) / 3;
-      // The skirt of the crown looks outwards and a little down; its shoulder outwards and up; the cap well up.
-      const skirt = faceLight(light, Math.sin(angle) * 0.95, Math.cos(angle) * 0.95, -0.3);
-      mesh.face(low[i], low[next], wide[next], wide[i], leaves[0] * skirt * 0.85, leaves[1] * skirt * 0.85, leaves[2] * skirt * 0.85, 1);
-      const shoulders = faceLight(light, Math.sin(angle) * 0.8, Math.cos(angle) * 0.8, 0.6);
-      mesh.face(wide[i], wide[next], high[next], high[i], leaves[0] * shoulders, leaves[1] * shoulders, leaves[2] * shoulders, 1);
-      const cap = faceLight(light, Math.sin(angle) * 0.35, Math.cos(angle) * 0.35, 0.94);
-      mesh.face(high[i], high[next], peak, peak, leaves[0] * cap, leaves[1] * cap, leaves[2] * cap, 1);
+    // A rounded crown: a ball of leaves, a little taller or flatter than it is wide, cut into bands
+    // from its underside to its top. Each face is lit by the way it looks; the underside is in the
+    // crown's own shade, and each band is its own shade of green, as leaves in clumps are.
+    const tall = radius * (0.82 + random() * 0.36);
+    const middle = trunk + tall * 0.8;
+    const tone = 0.88 + random() * 0.24;
+    const bands = CROWN_BANDS.map(([across, up]) => ring8(x, y, turn, radius * across, middle + tall * up));
+    const peak = [x, y, middle + tall];
+    for (let band = 0; band < CROWN_BANDS.length; band += 1) {
+      const lower = bands[band];
+      const upper = bands[band + 1];
+      const [across, up] = CROWN_BANDS[band];
+      const [nextAcross, nextUp] = CROWN_BANDS[band + 1] ?? [0, 1];
+      // The way this band looks: outwards by how far it is from the top, upwards by how high it is.
+      const out = (across + nextAcross) / 2;
+      const rise = (up + nextUp) / 2;
+      const size = Math.hypot(out, rise) || 1;
+      const clump = tone * (0.93 + 0.14 * random()) * (rise < 0 ? 0.72 : 1);
+      for (let i = 0; i < CROWN_SIDES; i += 1) {
+        const next = (i + 1) % CROWN_SIDES;
+        const angle = turn + ((i + 0.5) * 2 * Math.PI) / CROWN_SIDES;
+        const lit = faceLight(light, (Math.sin(angle) * out) / size, (Math.cos(angle) * out) / size, rise / size) * clump;
+        mesh.face(lower[i], lower[next], upper ? upper[next] : peak, upper ? upper[i] : peak, leaves[0] * lit, leaves[1] * lit, leaves[2] * lit, 1);
+      }
     }
   }
   return trees.length;
+}
+
+// A crown's bands, from its underside up: how wide each ring is (as a part of the crown's radius) and how
+// high (as a part of its half height, from its middle). Above the last ring it closes to a point.
+const CROWN_SIDES = 7;
+const CROWN_BANDS = [[0.55, -0.8], [0.96, -0.3], [0.94, 0.28], [0.56, 0.78]];
+
+/** A ring of CROWN_SIDES points round (x, y) at a height. */
+function ring8(x, y, turn, size, height) {
+  return Array.from({ length: CROWN_SIDES }, (_, i) => {
+    const angle = turn + (i * 2 * Math.PI) / CROWN_SIDES;
+    return [x + Math.sin(angle) * size, y + Math.cos(angle) * size, height];
+  });
 }

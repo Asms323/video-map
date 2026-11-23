@@ -17,10 +17,31 @@ the phone: no App Store, no Apple developer account, no Mac.
 - **3D City**, the look it opens with: the city as an **isometric** scale
   model. It is seen corner-on from the classic isometric angle, through a lens
   so long that parallel streets stay parallel. **Every building stands on its
-  own outline**, a house at a time, with rows of windows on its walls: plaster
-  in one of seven pale shades with a window in each bay for ordinary
-  buildings, bands of glass for towers, and the recorded colour where one is
-  noted. They stand on the real ground, with grey roads at their real widths.
+  own outline**, a house at a time, on the real ground, with grey roads at
+  their real widths.
+- **Walls worked out point by point.** Every wall is set out in floors and
+  bays, and each point of it is worked out as it is drawn: wall or glass, the
+  frame round a window and the sill under it, the shade the window's head
+  throws on the glass by how high the sun stands, a blind behind some panes.
+  A house has fewer and smaller windows than a block of flats; a building the
+  map calls commercial has shops along its foot, each under a signboard; a
+  tower is glass in a frame of metal, lighter the higher it goes, with the
+  sun glinting in it as the map turns. Every wall runs up past its roof as a
+  parapet. From far off, where a window would be a speck, a wall is the even
+  mixture of its wall and its glass, so nothing flickers.
+- **Colours from the roofs.** No source says what colour a wall is, but a
+  building is seldom far in colour from its own roof. The app reads each
+  roof's colour in the satellite photo where the sun is on it, and gives the
+  walls a calmer, lighter shade of it: sand under a sand-coloured roof, grey
+  under a grey one, warm under red tiles. Where a wall colour is on record,
+  that is used.
+- **Sun, sky and shadow on every wall.** A wall that faces the sun is bright
+  and warm, the warmer the lower the sun; one that faces away is lit by the
+  sky alone; and every wall darkens towards its foot, where the street
+  gathers shade. After sunset the light is even and windows are lit.
+- **Buildings shade each other.** A tower's shadow does not stop at the next
+  wall: it runs up it, across the roof, and on down the other side, on over
+  the cars and trees in the street, in step with the shadows on the ground.
 - **A sharp photo of the ground.** The satellite photo under the city is
   fetched as sharp as the phone's screen can show it: in a city like Riyadh
   down to about 30 cm to a pixel, where parked cars and the plant on a roof
@@ -85,8 +106,9 @@ the phone: no App Store, no Apple developer account, no Mac.
   trace. See the limits below for what this is and is not.
 - **Trees where they really stand.** The app reads the satellite photo under
   the city for dark green crowns and stands a tree at each one, sized to its
-  crown, with its shade on the ground: a round-crowned tree, or a date palm.
-  Never on a road, a track or a building.
+  crown, with its shade on the ground: a tree with a round crown in bands of
+  green, darker underneath, or a date palm. Never on a road, a track or a
+  building.
 - **Heights from shadows.** Few ordinary buildings have a height on record.
   The app looks up the day the satellite photo was taken, works out where the
   sun stood, measures each building's shadow in the photo and stands the
@@ -98,6 +120,13 @@ the phone: no App Store, no Apple developer account, no Mac.
 - **Real sunlight.** The model is lit from where the sun actually is at that
   place and time, and every building casts the shadow it casts right now:
   long in the morning and evening, short at noon, none after sunset.
+- Drawing the walls window by window and working out the shadows on them is
+  more work for the phone with every picture. If the map moves slowly, both
+  can be switched off under the map options ("Detailed walls and shadows");
+  the walls are then plain, with a simple pattern of windows. (On a computer
+  that draws without a graphics chip, at a phone's sharpness, a picture takes
+  8 to 24 per cent longer with them. What they cost on a phone's own
+  graphics chip has not been measured.)
 - Four more looks: **Streets** (colours and icons), **Night**, **Satellite**
   (real photos with the names on top) and **Detailed** (the classic
   OpenStreetMap picture). **Auto** shows 3D City by day and Night when the
@@ -177,10 +206,21 @@ outlines do not say is made up to look right:
 - Height. Landmark towers have theirs on record. Other buildings get the usual
   height for their kind (a house about 7.5 m), varied a little from one to the
   next, unless their shadow in the photo shows them to be taller.
-- Windows: one row for every 3 m of height.
-- Wall colour. No source says what colour a wall is. An ordinary building is
-  given one of seven pale shades of plaster, picked by its number in the map
-  data: the same every time, but not the building's real colour.
+- Windows. How many windows a wall has, and where, is not known. They are
+  set out by rule: a floor to every 3.2 to 3.7 m of height and a bay to every
+  2 to 4 m of wall, by the kind of building, the same for a given building
+  every time. Which kind a building is goes by what the data says it is for
+  and by its height: a low building is taken for a house, one of 60 m and
+  more for a glass tower, one the data calls commercial is given shops along
+  its foot. Blinds, lit rooms and the colours of the signboards are picked by
+  chance. None of this is what the real front looks like.
+- Wall colour. Worked out from the colour of the building's own roof in the
+  satellite photo: the roof's hue, much calmed, at the brightness of a wall in
+  daylight. A guess that is right in kind more often than not (a sand-coloured
+  district comes out sand-coloured), and wrong for any building whose walls
+  are not the colour of its roof. Where the photo is switched off or shows
+  too little, a building gets one of seven pale shades of plaster, picked by
+  its number in the map data. A recorded colour is always used as it is.
 - Roofs. A building up to 32 m tall shows the satellite photo of its own roof.
   The photo is taken a little from the side, so a building leans in it: the
   taller the building, the further its roof lies from where the outline says,
@@ -289,8 +329,15 @@ every time for the same street. They are not the cars really parked there.
 
 The sunlight is worked out on the phone from the date, the time and the place;
 nothing is downloaded for it. Shadows are those of flat-roofed blocks on level
-ground: they fall on streets and open ground, not across the walls and roofs
-of other buildings, and clouds are not taken into account.
+ground, and clouds are not taken into account. On the ground they are drawn
+as exact outlines. On walls, roofs, cars and trees they are read from a
+picture of the buildings as the sun sees them, in which a spot is about 80 cm
+of ground: fine enough for the shadow of a building, too coarse for that of a
+parapet or a lamp post, and soft at the edge. Only buildings throw these
+shadows, not trees or cars. The landmarks' own models, the chain stores in
+their dress and the metro stations are drawn by the map itself and take no
+shadow from their neighbours. The roofs also keep the shadows that were in
+the satellite photo when it was taken, at another hour.
 
 ## Put it online (free, from a phone)
 
@@ -378,8 +425,11 @@ js/app.js               the app: layout, video, location, search, place details
 js/map.js               the map: styles, markers, following, taps
 js/life.js              the simulated traffic: street network, vehicles, trains,
                         and the bridges they cross
-js/scene.js             the layers that draw into the 3D scene: the traffic, the
-                        roofs, and the copy of the ground the roofs are filled from
+js/scene.js             the layers that draw into the 3D scene: the walls, the
+                        roofs, the traffic, the picture the shadows are read from,
+                        and the copy of the ground the roofs are filled from
+js/walls.js             the walls: their shape, their measure and their colours
+js/shade.js             the shadows on walls and roofs: what throws them
 js/landmarks.js         the landmarks modelled by hand, as stacks of slabs
 js/dress.js             metro station footbridges and pavilions, chain stores,
                         shop fronts, mosques

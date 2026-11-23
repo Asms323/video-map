@@ -295,3 +295,41 @@ test('no tree is found on a road, whatever is green there', () => {
   // Without the road mask the same photo gives a tree in the street.
   assert.ok(treesInPhoto(grid, owner).some((tree) => Math.hypot(tree.x + 120, tree.y) < 3));
 });
+
+// ── The colour of the roofs ───────────────────────────────────────────────
+
+import { roofColours } from '../js/sight.js';
+
+test('roofColours reads the colour of each roof where the sun is on it', () => {
+  // One photo tile at zoom 17 around a place in Riyadh; a pixel is about 1.09 m there.
+  const zoom = 17;
+  const [tileX, tileY] = [82530, 56246];
+  const size = 256 * 2 ** zoom;
+  const origin = { lng: ((tileX * 256 + 128) / size) * 360 - 180, lat: (Math.atan(Math.sinh(Math.PI * (1 - (2 * (tileY * 256 + 128)) / size))) * 180) / Math.PI };
+  const perMeter = (256 * 2 ** zoom) / (40075016.686 * Math.cos((origin.lat * Math.PI) / 180));
+  const data = new Uint8Array(256 * 256 * 4);
+  const paint = (x0, y0, x1, y1, colour) => {
+    for (let y = y0; y < y1; y += 1) for (let x = x0; x < x1; x += 1) data.set([...colour, 255], (y * 256 + x) * 4);
+  };
+  paint(0, 0, 256, 256, [90, 92, 96]); // asphalt all round
+  paint(20, 20, 60, 60, [214, 196, 168]); // a sand-coloured roof
+  paint(20, 40, 60, 60, [80, 74, 66]); // the half of it that is lower in the picture lies in shadow
+  paint(100, 20, 140, 60, [176, 92, 70]); // a roof of red tiles
+  paint(110, 30, 130, 50, [60, 120, 50]); // with a tree over its middle
+  paint(180, 20, 220, 60, [60, 130, 60]); // nothing but leaves
+  const tiles = new Map([[`${tileX}/${tileY}`, { width: 256, height: 256, data }]]);
+  // An outline given as a box of pixels of the tile: left, top, right, bottom.
+  const outline = (left, top, right, bottom) => {
+    const at = (px, py) => [(px - 128) / perMeter, (128 - py) / perMeter];
+    return { ring: [at(left, bottom), at(right, bottom), at(right, top), at(left, top), at(left, bottom)] };
+  };
+  const colours = roofColours(tiles, zoom, origin, [outline(20, 20, 60, 60), outline(100, 20, 140, 60), outline(180, 20, 220, 60), outline(300, 300, 340, 340), outline(20, 20, 20.5, 60)]);
+  // The sand roof: its sunlit half, not the average with its shaded half.
+  assert.deepEqual(colours[0], [214, 196, 168]);
+  // The tiled roof: the tiles, without the tree.
+  assert.deepEqual(colours[1], [176, 92, 70]);
+  // Nothing to go by: all leaves, off the photo, or too thin an outline.
+  assert.deepEqual(colours.slice(2), [null, null, null]);
+  assert.deepEqual(roofColours(new Map(), zoom, origin, [outline(20, 20, 60, 60)]), [null]);
+  assert.deepEqual(roofColours(tiles, zoom, origin, []), []);
+});

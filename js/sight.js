@@ -499,3 +499,80 @@ export function treesInPhoto(grid, owner, most = 2500, paved = null) {
   trees.sort((a, b) => b.score - a.score);
   return trees.slice(0, most).map(({ x, y, radius }) => ({ x, y, radius }));
 }
+
+// ── The colour of the roofs ───────────────────────────────────────────────
+
+const ROOF_SAMPLES_EACH_WAY = 9;
+
+/**
+ * The colour of each building's roof as the photo shows it:
+ * [red, green, blue] for each, or null where the photo shows too little.
+ *
+ * tiles: Map of "x/y" → { width, height, data } as for photoGrid.
+ * buildings: [{ ring: [[x, y], …] }] in metres around the origin.
+ *
+ * The photo is looked at in a few dozen places inside the outline. What is
+ * green there (a tree over the roof) is left out. Of the rest, the very
+ * brightest places are left out (white plant, glare) and all the darker
+ * ones, which are mostly shadow and what stands on the roof: the colour is
+ * that of the roof itself where the sun is on it.
+ */
+export function roofColours(tiles, zoom, origin, buildings) {
+  const [originX, originY] = worldPixel(origin.lng, origin.lat, zoom);
+  const perMeter = (TILE_PIXELS * 2 ** zoom) / (EARTH_AROUND_METERS * Math.cos((origin.lat * Math.PI) / 180));
+  const inside = (ring, x, y) => {
+    let hit = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+      const [x0, y0] = ring[j];
+      const [x1, y1] = ring[i];
+      if (y0 > y !== y1 > y && x < x0 + ((y - y0) * (x1 - x0)) / (y1 - y0)) hit = !hit;
+    }
+    return hit;
+  };
+  return buildings.map(({ ring }) => {
+    let west = Infinity;
+    let east = -Infinity;
+    let south = Infinity;
+    let north = -Infinity;
+    for (const [x, y] of ring) {
+      if (x < west) west = x;
+      if (x > east) east = x;
+      if (y < south) south = y;
+      if (y > north) north = y;
+    }
+    if (!(east - west > 1 && north - south > 1)) return null;
+    const seen = [];
+    for (let row = 0; row < ROOF_SAMPLES_EACH_WAY; row += 1) {
+      const y = south + ((north - south) * (row + 0.5)) / ROOF_SAMPLES_EACH_WAY;
+      for (let column = 0; column < ROOF_SAMPLES_EACH_WAY; column += 1) {
+        const x = west + ((east - west) * (column + 0.5)) / ROOF_SAMPLES_EACH_WAY;
+        if (!inside(ring, x, y)) continue;
+        const worldX = originX + x * perMeter;
+        const worldY = originY - y * perMeter; // north is up on the ground, down in the picture
+        const tileX = Math.floor(worldX / TILE_PIXELS);
+        const tileY = Math.floor(worldY / TILE_PIXELS);
+        const tile = tiles.get(`${tileX}/${tileY}`);
+        if (!tile) continue;
+        const px = Math.min(Math.floor(((worldX - tileX * TILE_PIXELS) * tile.width) / TILE_PIXELS), tile.width - 1);
+        const py = Math.min(Math.floor(((worldY - tileY * TILE_PIXELS) * tile.height) / TILE_PIXELS), tile.height - 1);
+        const at = (py * tile.width + px) * 4;
+        const r = tile.data[at];
+        const g = tile.data[at + 1];
+        const b = tile.data[at + 2];
+        if (2 * g - r - b > 36) continue; // leaves
+        seen.push([r * 2126 + g * 7152 + b * 722, r, g, b]);
+      }
+    }
+    if (seen.length < 4) return null;
+    seen.sort((a, b) => b[0] - a[0]);
+    const from = Math.floor(seen.length * 0.05);
+    const kept = seen.slice(from, Math.max(Math.ceil(seen.length * 0.4), from + 2));
+    const sum = [0, 0, 0];
+    for (const [, r, g, b] of kept) {
+      sum[0] += r;
+      sum[1] += g;
+      sum[2] += b;
+    }
+    return sum.map((part) => Math.round(part / kept.length));
+  });
+}

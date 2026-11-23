@@ -998,7 +998,9 @@ export function buildingHeight(properties, id) {
  * kind is 'station' for a metro or railway station building and 'mosque' for
  * a mosque; use is what the data says the building is for, where it says so
  * ('residential', 'commercial', 'religious', …); usual is the height the
- * building would have had without the estimate, where one was used.
+ * building would have had without the estimate, where one was used; colour
+ * is the colour of its walls, where one is on record; tile is the map tile
+ * [z, x, y] the building was read from, where that is known.
  *
  * Left out: what is underground (a metro station under a street is recorded
  * as a building too), and a building whose separate parts are given, which
@@ -1032,7 +1034,16 @@ export function buildingFootprints(features, box, estimates, skip) {
     });
     if (polygons.length > 0) {
       const kind = properties.class === 'train_station' ? 'station' : properties.class === 'mosque' ? 'mosque' : undefined;
-      buildings.push({ id: feature.id, ...size, kind, ...(properties.subtype ? { use: properties.subtype } : {}), polygons });
+      buildings.push({
+        id: feature.id,
+        ...size,
+        kind,
+        ...(properties.subtype ? { use: properties.subtype } : {}),
+        ...(properties.facade_color ? { colour: properties.facade_color } : {}),
+        // Which map tile this copy of the building came with: one that lies across the edge of a tile comes with both.
+        ...(Number.isInteger(feature._z) ? { tile: [feature._z, feature._x, feature._y] } : {}),
+        polygons,
+      });
     }
   }
   return buildings;
@@ -1503,7 +1514,9 @@ export function cityModelStyle(base, { buildings = null, pixelRatio = 1 } = {}) 
     type: 'fill-extrusion',
     source,
     'source-layer': layer,
-    minzoom: 16,
+    // (From a level further out than the windows: in a tilted view the far tiles are a level coarser than the
+    // near ones, and are drawn with the windows of the next level in. Without its slab such a roof has windows.)
+    minzoom: WALL_DETAILS[1].zoom - 1,
     filter,
     paint: {
       'fill-extrusion-color': colour,

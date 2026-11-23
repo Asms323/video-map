@@ -540,9 +540,11 @@ test('a vehicle is drawn as lit boxes with a shade beside it', () => {
   assert.equal(faceLight(light, 0, 1, 0), 0.65, 'a face turned away keeps 65%');
   assert.equal(faceLight(null, 0, 0, 1), 0.8, 'even light at night');
 
-  // A car at (10, 20) pointing north, with the sun in the south: 3 boxes of 5 faces, and a shade.
+  // A car at (10, 20) pointing north, with the sun in the south: 3 boxes of 5 faces (its tyres, its body, its
+  // cabin), and a shade.
   drawVehicle(mesh, 'car', 10, 20, 0, 1, [200, 100, 50], [200, 100, 50], 1, light, { bearing: 0, factor: 1 });
   assert.equal(mesh.count, 6 + 3 * 5 * 6);
+  assert.deepEqual(VEHICLES.car.boxes.map((box) => box[5]), ['tyre', 'body', 'glass']);
   const xs = [];
   const ys = [];
   const zs = [];
@@ -553,15 +555,31 @@ test('a vehicle is drawn as lit boxes with a shade beside it', () => {
   }
   assert.ok(near(Math.min(...xs), 10 - 0.9, 1e-4) && near(Math.max(...xs), 10 + 0.9, 1e-4), 'as wide as a car');
   assert.ok(near(Math.min(...ys), 20 - 2.25, 1e-4) && near(Math.max(...ys), 20 + 2.25, 1e-4), 'as long as a car, along the way it points');
-  assert.ok(near(Math.max(...zs), 1.46, 1e-4) && near(Math.min(...zs), 0.25, 1e-4));
+  assert.ok(near(Math.max(...zs), 1.42, 1e-4) && near(Math.min(...zs), 0.02, 1e-4), 'from the road under its tyres to its roof');
   // The shade lies on the road, north of the car, away from the sun.
   assert.ok(near(mesh.positions[2], 0.06, 1e-6) && mesh.positions[1] > 20 - 2.25);
   assert.deepEqual(Array.from(mesh.colours.subarray(0, 4)), [Math.floor(16 * 0.3), Math.floor(20 * 0.3), Math.floor(32 * 0.3), Math.floor(255 * 0.3)]);
-  // The roof of the body (first face after the shade) is fully lit paint; glass is glass.
+  // Under the car, its tyres: dark. The top of the body (the first face of the second box) is fully lit paint.
   const top = faceLight(light, 0, 0, 1);
-  assert.deepEqual(Array.from(mesh.colours.subarray(24, 28)), [Math.floor(200 * top), Math.floor(100 * top), Math.floor(50 * top), 255]);
-  const glassTop = 6 + 30;
-  assert.deepEqual(Array.from(mesh.colours.subarray(glassTop * 4, glassTop * 4 + 3)), GLASS.map((value) => Math.floor(value * top)));
+  assert.ok(mesh.colours[6 * 4] < 40 && mesh.colours[6 * 4 + 1] < 40, 'tyres');
+  const bodyTop = 6 + 30;
+  assert.deepEqual(Array.from(mesh.colours.subarray(bodyTop * 4, bodyTop * 4 + 4)), [Math.floor(200 * top), Math.floor(100 * top), Math.floor(50 * top), 255]);
+  // Its front is paler than its paint (the headlights), its rear redder (the tail lights).
+  const face = (index) => Array.from(mesh.colours.subarray((bodyTop + index * 6) * 4, (bodyTop + index * 6) * 4 + 3));
+  const [front, rear, side] = [face(1), face(2), face(3)];
+  assert.ok(front[2] / front[0] > side[2] / side[0] * 1.5, `paler ahead: ${front} against ${side}`);
+  assert.ok(rear[1] / rear[0] < side[1] / side[0] * 0.9, `redder behind: ${rear} against ${side}`);
+  // The cabin: glass all round, under a roof in the body's paint, and drawn in towards the roof.
+  const cabin = 6 + 60;
+  assert.deepEqual(Array.from(mesh.colours.subarray(cabin * 4, cabin * 4 + 3)), [Math.floor(200 * top), Math.floor(100 * top), Math.floor(50 * top)]);
+  const pane = Array.from(mesh.colours.subarray((cabin + 6) * 4, (cabin + 6) * 4 + 3));
+  assert.ok(pane[2] > pane[0] && pane[0] < 70, `glass: ${pane}`);
+  const cabinAt = (z) => ys.filter((_, i) => i >= 60 && near(zs[i], z, 1e-4));
+  const low = cabinAt(0.84);
+  const high = cabinAt(1.42);
+  assert.ok(Math.max(...high) - Math.min(...high) < (Math.max(...low) - Math.min(...low)) * 0.7, 'a sloping windscreen and rear window');
+  assert.ok(Math.max(...low) - Math.max(...high) > Math.min(...high) - Math.min(...low), 'the windscreen slopes more than the rear window');
+  assert.ok(GLASS[2] > GLASS[0]);
 
   // Half shown: half as solid. Larger than life: larger. No sun: no shade.
   const faint = new Mesh();
@@ -599,21 +617,30 @@ test('drawTrees stands a trunk and a crown at each place, with its shade', () =>
   const small = Array.from({ length: 200 }, (_, i) => ({ x: -40 - i, y: 5, radius: 1.5 })).find((tree) => !isPalm(tree.x, tree.y, tree.radius));
   const trees = [{ x: 10, y: 20, radius: 4 }, small];
   assert.equal(isPalm(10, 20, 4), false);
-  // Shade (3 faces), trunk (4) and crown (18): 25 faces of 6 corners.
+  // Shade (3 faces), trunk (4) and crown (four bands of seven faces): 35 faces of 6 corners.
   assert.equal(drawTrees(mesh, trees, light, { bearing: 315, factor: 1 }), 2);
-  assert.equal(mesh.count, 2 * 25 * 6);
+  assert.equal(mesh.count, 2 * 35 * 6);
   const first = { x: [], y: [], z: [] };
-  for (let i = 18; i < 25 * 6; i += 1) {
+  for (let i = 18; i < 35 * 6; i += 1) {
     first.x.push(mesh.positions[i * 3]);
     first.y.push(mesh.positions[i * 3 + 1]);
     first.z.push(mesh.positions[i * 3 + 2]);
   }
   assert.ok(near(Math.max(...first.x) - Math.min(...first.x), 8, 1.2), 'the crown is as wide as it was seen to be');
   assert.ok(Math.min(...first.z) === 0 && Math.max(...first.z) > 6 && Math.max(...first.z) < 13, `top at ${Math.max(...first.z)}`);
-  // Rounded: at its top the crown has drawn in again, to under three quarters of its width.
-  const top = Math.max(...first.z);
-  const upper = first.x.filter((_, i) => first.z[i] > top - 4 * 0.3 && first.z[i] < top);
-  assert.ok(Math.max(...upper) - Math.min(...upper) < 8 * 0.75, `${Math.max(...upper) - Math.min(...upper)}`);
+  // A ball of leaves: narrow underneath, widest about its middle, drawn in again towards a point at the top.
+  const crown = first.z.map((z, i) => [z, first.x[i]]).filter(([z]) => z > 3.3);
+  const levels = [...new Set(crown.map(([z]) => z.toFixed(3)))].map(Number).sort((a, b) => a - b);
+  assert.equal(levels.length, 5, 'four rings and the point');
+  const widths = levels.map((level) => {
+    const here = crown.filter(([z]) => near(z, level, 1e-3)).map(([, x]) => x);
+    return Math.max(...here) - Math.min(...here);
+  });
+  assert.ok(widths[0] < widths[1] && widths[2] > widths[3] && widths[3] > widths[4] && widths[4] === 0, widths.map((w) => w.toFixed(1)).join(' '));
+  assert.ok(widths[0] < 8 * 0.62 && widths[3] < 8 * 0.62, 'under two thirds as wide below and above as about its middle');
+  // Its underside is in its own shade: darker than its top.
+  const green = (face) => mesh.colours[(18 + 24 + face * 6) * 4 + 1];
+  assert.ok(Math.max(green(0), green(3), green(6)) < Math.min(green(21), green(24), green(27)), 'darker underneath');
   // The shade lies on the ground, north-west of the tree, away from the sun.
   assert.ok(near(mesh.positions[2], 0.06, 1e-6) && mesh.positions[0] < 10 && mesh.positions[1] > 20);
   assert.ok(mesh.colours[3] < 100, 'and is see-through');
@@ -626,7 +653,7 @@ test('drawTrees stands a trunk and a crown at each place, with its shade', () =>
   drawTrees(again, trees, light, { bearing: 315, factor: 1 });
   assert.deepEqual(Array.from(again.positions.subarray(0, again.count * 3)), Array.from(mesh.positions.subarray(0, mesh.count * 3)));
   drawTrees(again, trees, null, null);
-  assert.equal(again.count, 2 * 22 * 6);
+  assert.equal(again.count, 2 * 32 * 6);
   assert.equal(drawTrees(again, [], light, null), 0);
   assert.equal(again.count, 0);
 });
@@ -686,7 +713,7 @@ test('cars are parked along residential streets, the same way every time, and ev
   for (let i = 0; i < made.parked * 90; i += 1) {
     const [x, y, z] = corner(i);
     // At the kerb: between 1.8 m and 3.9 m from the middle of a 7 m street, clear of its corners, on the ground.
-    assert.ok(Math.abs(y) > 1.8 && Math.abs(y) < 3.9 && x > 6 && x < 294 && z > 0.2 && z < 2, `${x}, ${y}, ${z}`);
+    assert.ok(Math.abs(y) > 1.8 && Math.abs(y) < 3.9 && x > 6 && x < 294 && z > 0.01 && z < 2, `${x}, ${y}, ${z}`);
     if (y > 0) {
       north += 1;
       assert.ok(Math.abs(x - 200) > 14 - 2.7, `nobody parks in the bus stop: ${x}`);
@@ -814,7 +841,7 @@ test('a bridge carries its road over the ground, with a ramp at either end, and 
   drawVehicle(mesh, 'car', 0, 0, 1, 0, [200, 100, 50], [0, 0, 0], 1, null, { bearing: 0, factor: 1 }, 1, 6.5);
   const heights = [];
   for (let i = 0; i < mesh.count; i += 1) heights.push(mesh.positions[i * 3 + 2]);
-  assert.ok(near(Math.min(...heights), 6.56, 1e-4) && near(Math.max(...heights), 6.5 + 1.46, 1e-4), 'the car and its shade lie on the deck');
+  assert.ok(near(Math.min(...heights), 6.52, 1e-4) && near(Math.max(...heights), 6.5 + 1.42, 1e-4), 'the car and its shade lie on the deck');
   // A train on the viaduct rides on it too.
   traffic.trains = [];
   traffic.startTrain(traffic.entries.find((entry) => entry.way === 6 && entry.atStart), 10, MORNING / 1000);

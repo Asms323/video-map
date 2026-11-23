@@ -697,7 +697,7 @@ test('cityModelStyle draws the city as a white model on its real ground', () => 
   const roofs = style.layers[at('city-roofs')];
   assert.deepEqual(roofs.paint['fill-extrusion-base'], ['coalesce', ['get', 'render_height'], 5]);
   assert.deepEqual(roofs.paint['fill-extrusion-height'], ['+', ['coalesce', ['get', 'render_height'], 5], 1.2]);
-  assert.equal(roofs.minzoom, 16, 'only where there are windows to hide');
+  assert.equal(roofs.minzoom, 14, 'from a level further out than the windows: a far tile is drawn with the windows of the next level in');
 
   // Tunnels are a faint trace under everything; bridges lie over the roads on the ground.
   assert.ok(at('city-tunnels') < at('city-road-service-edge'));

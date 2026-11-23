@@ -420,7 +420,22 @@ async function mapAtRest(page) {
         const tiles = Object.values(cache._tiles ?? {}).filter((tile) => tile.state === 'loading' || tile.state === 'reloading');
         if (tiles.length > 0) waiting[id] = tiles.map((tile) => `${tile.tileID.canonical.z}/${tile.tileID.canonical.x}/${tile.tileID.canonical.y}`).slice(0, 8);
       }
-      return { loaded: live.loaded(), moving: live.isMoving(), tiles: live.areTilesLoaded(), style: live.isStyleLoaded(), zoom: live.getZoom(), pitch: live.getPitch(), waiting };
+      // Whether it comes to rest at all between its pictures, and what is still being worked on.
+      const sources = {};
+      for (const [id, cache] of Object.entries(caches)) if (!cache.loaded()) sources[id] = false;
+      return {
+        loaded: live.loaded(),
+        moving: live.isMoving(),
+        tiles: live.areTilesLoaded(),
+        style: live.isStyleLoaded(),
+        zoom: live.getZoom(),
+        pitch: live.getPitch(),
+        waiting,
+        dirty: [live._styleDirty, live._sourcesDirty],
+        updating: Object.keys(live.style._updatedSources ?? {}),
+        sources,
+        scene: live.getLayer('city-life')?.implementation.counts?.().busy ?? null,
+      };
     });
     console.log(`  map not at rest: ${JSON.stringify(state)}`);
     throw error;
@@ -784,6 +799,87 @@ try {
     return { rightUnder: order.indexOf('city-ground-base') === order.indexOf('city-ground') - 1, tileSize: base?.tileSize, most: base?.maxzoom };
   });
   check('under the sharp photo lies the coarse one, there at once', under.rightUnder && under.tileSize === 256 && under.most === 17 && asked.photoTiles[17] > 0, JSON.stringify({ ...under, tiles: asked.photoTiles }));
+  // The walls: laid over the map's blocks by the app itself, and worked out point by point as they are drawn.
+  const walls = await page.evaluate(() => {
+    const sceneLayer = window.__map.getLayer('city-life').implementation;
+    const mesh = sceneLayer.walls.mesh;
+    let odd = 0;
+    const kinds = {};
+    for (let i = 0; i < mesh.count; i += 1) {
+      const [along, up, span, tall] = mesh.surfaces.subarray(i * 4, i * 4 + 4);
+      const facing = Math.hypot(mesh.normals[i * 2], mesh.normals[i * 2 + 1]);
+      if (!(up >= -0.001 && up <= tall + 0.001 && along >= -0.01 && along <= span + 0.01 && Math.abs(facing - 1) < 0.01 && tall > 1)) odd += 1;
+      const kind = mesh.tints[i * 4 + 3] >> 6;
+      kinds[kind] = (kinds[kind] ?? 0) + 1;
+    }
+    const gl = window.__map.painter.context.gl;
+    return { ...sceneLayer.counts().detail, corners: mesh.count, odd, kinds, top: sceneLayer.wallTop, day: sceneLayer.day, light: sceneLayer.sun, eye: sceneLayer.eye, pixel: sceneLayer.pixel, program: gl.isProgram(sceneLayer.wallProgram) };
+  });
+  check(
+    "3D City: every building has walls of the app's own, each corner knowing its place on its wall",
+    walls.on && walls.program && walls.walls.buildings > 300 && walls.walls.walls >= walls.walls.buildings * 3 && walls.corners === walls.walls.walls * 6 && walls.odd === 0 && near(walls.top, 1.2 + 0.3 + 0.6, 1e-6),
+    JSON.stringify({ ...walls, shadows: undefined }),
+  );
+  check('3D City: houses, blocks, shops and towers each have their own kind of front', Object.keys(walls.kinds).length >= 3 && walls.kinds[2] > 0, JSON.stringify(walls.kinds));
+  // Lit from where the sun is: the same sun the map's own light comes from, kept at least 35° up.
+  const up = Math.max(sun.altitude, 35) * (Math.PI / 180);
+  const towards = [Math.sin((sun.azimuth * Math.PI) / 180) * Math.cos(up), Math.cos((sun.azimuth * Math.PI) / 180) * Math.cos(up), Math.sin(up)];
+  check('3D City: the walls are lit from where the sun is, and drawn for where the eye is', walls.day === 1 && walls.light.every((part, i) => near(part, towards[i], 0.02)) && near(Math.hypot(...walls.eye), 1, 1e-6) && walls.eye[2] > 0.5 && walls.pixel > 0.3 && walls.pixel < 1.2, JSON.stringify({ light: walls.light, towards, eye: walls.eye, pixel: walls.pixel }));
+  check("3D City: a wall's colour is worked out from the colour of its roof in the photo", walls.coloured > 300, `${walls.coloured} buildings`);
+  // The shadows on walls and roofs are read from a picture of the buildings as the sun sees them.
+  const shadows = await page.evaluate(() => {
+    const sceneLayer = window.__map.getLayer('city-life').implementation;
+    const gl = window.__map.painter.context.gl;
+    const { ready, able, using, target, drawn } = sceneLayer.shadow;
+    return { ...sceneLayer.counts().detail.shadows, ready, able, drawn, picture: ready && gl.isTexture(target.picture) && gl.isFramebuffer(target.frame), used: using?.size, fall: using?.fall };
+  });
+  const falls = [Math.sin(((sun.azimuth + 180) * Math.PI) / 180) / Math.tan((sun.altitude * Math.PI) / 180), Math.cos(((sun.azimuth + 180) * Math.PI) / 180) / Math.tan((sun.altitude * Math.PI) / 180)];
+  check(
+    '3D City: the buildings are drawn as the sun sees them, for the shadows on walls and roofs to be read from',
+    shadows.ready && shadows.able && shadows.picture && [512, 1024, 2048].includes(shadows.size) && shadows.used === shadows.size && shadows.corners > 3000 && shadows.top > 100 && shadows.fall.every((part, i) => near(part, falls[i], 0.02)),
+    JSON.stringify({ ...shadows, falls }),
+  );
+  // What is on screen agrees with the sum done the slow way: of the roofs looked at, those the sum says are in
+  // a neighbour's shadow are darker than those it says are in the sun.
+  const shaded = await page.evaluate(async () => {
+    const live = window.__map;
+    const shade = await import(new URL('js/shade.js', document.baseURI).href);
+    return new Promise((resolve) => {
+      live.once('render', () => {
+        const sceneLayer = live.getLayer('city-life').implementation;
+        const gl = live.painter.context.gl;
+        const { casters, using } = sceneLayer.shadow;
+        const mesh = sceneLayer.roofs.mesh;
+        const m = sceneLayer.matrix;
+        const pixel = new Uint8Array(4);
+        const groups = { sun: [], shadow: [] };
+        // The edge of a shadow is soft over a spot or two of the picture: only places well inside a shadow or
+        // well clear of one are looked at.
+        const clear = Math.max(((using.box[2] - using.box[0]) / using.size) * 2, 1.5);
+        const round = [[clear, 0], [-clear, 0], [0, clear], [0, -clear]];
+        for (let i = 0; i + 2 < mesh.count && groups.shadow.length < 40; i += 3) {
+          // Four places on each triangle of roof: its middle, and half-way from there to each corner.
+          const corners = [0, 1, 2].map((k) => [mesh.positions[(i + k) * 3], mesh.positions[(i + k) * 3 + 1], mesh.positions[(i + k) * 3 + 2]]);
+          const centre = [0, 1, 2].map((axis) => (corners[0][axis] + corners[1][axis] + corners[2][axis]) / 3);
+          for (const [x, y, z] of [centre, ...corners.map((corner) => corner.map((part, axis) => (part + centre[axis]) / 2))]) {
+            const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+            const across = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
+            const up = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+            if (Math.abs(across) > 0.85 || Math.abs(up) > 0.85) continue;
+            const dark = shade.shadowed(casters, using.fall, [x, y, z], 0.5);
+            if (!dark && groups.sun.length >= 80) continue; // most roofs are in the sun: enough of those
+            if (round.some(([dx, dy]) => shade.shadowed(casters, using.fall, [x + dx, y + dy, z], 0.5) !== dark)) continue;
+            gl.readPixels(Math.round((across * 0.5 + 0.5) * gl.drawingBufferWidth), Math.round((up * 0.5 + 0.5) * gl.drawingBufferHeight), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+            groups[dark ? 'shadow' : 'sun'].push(pixel[0] + pixel[1] + pixel[2]);
+          }
+        }
+        const middle = (list) => list.slice().sort((a, b) => a - b)[Math.floor(list.length / 2)] ?? null;
+        resolve({ sun: groups.sun.length, shadow: groups.shadow.length, sunBright: middle(groups.sun), shadowBright: middle(groups.shadow), clear });
+      });
+      live.triggerRepaint();
+    });
+  });
+  check("3D City: a roof in a neighbour's shadow is darker than one in the sun", shaded.sun >= 10 && shaded.shadow >= 5 && shaded.shadowBright < shaded.sunBright * 0.85, JSON.stringify(shaded));
   const pavements = await page.evaluate(() => ({ drawn: window.__map.queryRenderedFeatures({ layers: ['city-pavement'] }).length, edges: window.__map.queryRenderedFeatures({ layers: ['city-pavement-edge'] }).length }));
   check('3D City: the streets have a pavement along them', pavements.drawn > 20 && pavements.edges > 20, JSON.stringify(pavements));
   check('3D City: the tall roofs have their furniture', scene.buildings.roofs.furnished > 0 && scene.buildings.roofs.furnished <= scene.buildings.roofs.of && scene.buildings.roofs.of < roofPhoto.cut && (await sceneCorners(page, 'roofs')) >= scene.buildings.roofs.furnished * 30, JSON.stringify(scene.buildings.roofs));
@@ -857,8 +953,16 @@ try {
   await page.waitForFunction(() => !document.getElementById('speed').classList.contains('over'));
 
   await mapAtRest(page);
+  // Each time the circle round my position is handed to the map, the map works it out afresh and draws itself again.
+  await page.evaluate(() => {
+    window.__circles = 0;
+    window.__map.on('sourcedataloading', (event) => {
+      if (event.sourceId === 'vm-accuracy') window.__circles += 1;
+    });
+  });
   await page.waitForTimeout(1300); // the phone repeats the same position a few times
   check('standing still leaves the map at rest', await page.evaluate(() => !window.__map.isMoving()));
+  check('a position that only repeats itself gives the map nothing to do', (await page.evaluate(() => window.__circles)) === 0, `${await page.evaluate(() => window.__circles)} times`);
   const speedAsks = asked.overpass.filter((query) => query.includes('maxspeed')).length;
   check('one question covers the speed limits of the whole area', speedAsks === 1, `asked ${speedAsks} times`);
   check('the weather is asked for once', asked.weather === 1);
@@ -867,6 +971,7 @@ try {
   me = await phone(page);
   spot = await whereAmI(page);
   check('map moves with me', inTheMiddle(spot), JSON.stringify(spot));
+  check('and the circle round my position with it', (await page.evaluate(() => window.__circles)) >= 1, `${await page.evaluate(() => window.__circles)} times`);
   await shot(page, 'map-city.png');
 
   // Driving view: the way I travel is up.
@@ -1157,6 +1262,22 @@ try {
   await page.waitForFunction(() => window.__map.getSource('imagery')?.tileSize === 128 && Boolean(window.__map.getLayer('city-life')), null, { timeout: 45000 });
   check('and on again', (await saved(page, 'settings')).sharp === true);
   await mapAtRest(page);
+  // Drawing every wall window by window is work for the phone with every picture: it can be switched off.
+  await page.waitForFunction(() => (window.__map.getLayer('city-life')?.implementation.walls.mesh?.count ?? 0) > 0 && window.__map.getLayer('city-life').implementation.shadow.ready, null, { timeout: 30000 });
+  check('the switch for detailed walls says when to turn it off', /slowly/i.test(await text(page, '.setting:has(#optDetail) .setting-note')), await text(page, '.setting:has(#optDetail) .setting-note'));
+  await page.locator('#optDetail').uncheck();
+  await page.waitForFunction(() => {
+    const sceneLayer = window.__map.getLayer('city-life').implementation;
+    return sceneLayer.walls.mesh.count === 0 && !sceneLayer.shadow.ready;
+  }, null, { timeout: 20000 });
+  const plain = (await sceneCounts(page)).detail;
+  check('detailed walls and shadows can be turned off: the walls are the map\'s own again', (await saved(page, 'settings')).detail === false && plain.on === false && plain.walls === null && plain.shadows === null && (await sceneCounts(page)).photo.roofs.cut > 300, JSON.stringify(plain));
+  await page.locator('#optDetail').check();
+  await page.waitForFunction(() => {
+    const sceneLayer = window.__map.getLayer('city-life').implementation;
+    return sceneLayer.walls.mesh.count > 0 && sceneLayer.shadow.ready;
+  }, null, { timeout: 20000 });
+  check('and on again', (await saved(page, 'settings')).detail === true && (await sceneCounts(page)).detail.walls.buildings > 300);
   await page.click('#sheet-map [data-close]');
 
   // Units.
@@ -1411,7 +1532,19 @@ try {
     const gl = live.painter.context.gl;
     if (!sceneLayer || gl.isContextLost()) return false;
     const ground = sceneLayer.ground?.texture;
-    return gl.isProgram(sceneLayer.program) && gl.isProgram(sceneLayer.roofProgram) && (sceneLayer.roofs.mesh?.count ?? 0) > 0 && Boolean(ground) && gl.isTexture(ground) && (sceneLayer.parts.get('traffic')?.mesh.count ?? 0) > 0;
+    const shadow = sceneLayer.shadow;
+    return (
+      gl.isProgram(sceneLayer.program) &&
+      gl.isProgram(sceneLayer.roofProgram) &&
+      gl.isProgram(sceneLayer.wallProgram) &&
+      (sceneLayer.roofs.mesh?.count ?? 0) > 0 &&
+      (sceneLayer.walls.mesh?.count ?? 0) > 0 &&
+      Boolean(ground) &&
+      gl.isTexture(ground) &&
+      shadow.ready &&
+      gl.isTexture(shadow.target.picture) &&
+      (sceneLayer.parts.get('traffic')?.mesh.count ?? 0) > 0
+    );
   };
   await back.page.waitForFunction(sceneReady, null, { timeout: 30000 });
   // A phone does this to a page that has been in the background for a while; here it is done by hand.
@@ -1430,7 +1563,7 @@ try {
     console.log('  (this browser cannot take the graphics memory away: not checked)');
   } else {
     await back.page.waitForFunction(sceneReady, null, { timeout: 30000 });
-    check('when the phone hands the graphics memory back empty, the city is built again: roofs, traffic and all', taken && (await sceneCounts(back.page)).photo.roofs.cut > 300);
+    check('when the phone hands the graphics memory back empty, the city is built again: walls, roofs, shadows, traffic and all', taken && (await sceneCounts(back.page)).photo.roofs.cut > 300);
     check('no errors in the page', back.errors.length === 0, back.errors.join(' | '));
   }
   await back.context.close();

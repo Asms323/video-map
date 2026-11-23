@@ -22,7 +22,7 @@ import {
 import { MAP_TYPES, MapView } from './map.js';
 import { drivingRoute, placeAt, placeDetails, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
 
-const VERSION = '1.10.0';
+const VERSION = '1.11.0';
 const STORE_PREFIX = 'video-map:';
 
 const $ = (id) => document.getElementById(id);
@@ -59,6 +59,7 @@ const DEFAULT_SETTINGS = {
   traffic: true, // simulated cars, buses and trains in the 3D city
   photo: true, // roofs, trees and building heights from the satellite photo
   sharp: true, // the satellite photo as sharp as the screen can show it (more to download)
+  detail: true, // walls drawn window by window, and shadows on walls and roofs (more work for the phone)
   follow: 'north', // how the map follows you: 'north' (the map does not turn) | 'heading'
   splitPortrait: null,
   splitLandscape: null,
@@ -918,6 +919,7 @@ const optWeather = $('optWeather');
 const optTraffic = $('optTraffic');
 const optPhoto = $('optPhoto');
 const optSharp = $('optSharp');
+const optDetail = $('optDetail');
 const placeToggles = $('placeToggles');
 
 for (const category of PLACE_CATEGORIES) {
@@ -980,6 +982,12 @@ optSharp.addEventListener('change', () => {
   if (mapView) mapView.setSharp(settings.sharp);
 });
 
+optDetail.addEventListener('change', () => {
+  settings.detail = optDetail.checked;
+  saveSettings();
+  if (mapView) mapView.setDetail(settings.detail);
+});
+
 darkQuery.addEventListener('change', () => {
   if (settings.mapType === 'auto') applyMapType();
 });
@@ -1010,6 +1018,7 @@ function initMap() {
   mapView.setLife(settings.traffic);
   mapView.setPhoto(settings.photo);
   mapView.setSharp(settings.sharp);
+  mapView.setDetail(settings.detail);
   applyMapType();
 
   followBtn.addEventListener('click', () => {
@@ -1099,6 +1108,7 @@ function syncForms() {
   optTraffic.checked = settings.traffic;
   optPhoto.checked = settings.photo;
   optSharp.checked = settings.sharp;
+  optDetail.checked = settings.detail;
   for (const radio of document.querySelectorAll('input[name="unit"]')) {
     radio.checked = radio.value === settings.unit;
   }
