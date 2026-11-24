@@ -240,6 +240,13 @@ test('one mesh stands many times, each fitted to its own box and turned to its o
   // The first's front left corner looks south and west and up; the second's (turned) looks east and south and up.
   assert.ok(batch.normals[0] < -0.1 && batch.normals[1] < -0.1 && batch.normals[2] > 0.1);
   assert.ok(batch.normals[15] > 0.1 && batch.normals[16] < -0.1 && batch.normals[17] > 0.1);
+  // A house that is its neighbour's mirror image: left for right about the middle of its box, its surfaces
+  // looking the other way across, its triangles named the other way round (still anticlockwise from outside).
+  const [twin] = standMany(mesh, [{ at: [100, 50], along: [1, 0], back: [0, 1], wide: 10, deep: 6, height: 8, mirror: true }]);
+  const twinPlace = (i) => Array.from(twin.positions.subarray(i * 3, i * 3 + 3)).map((v) => Math.round(v * 1000) / 1000 + 0);
+  assert.deepEqual([twinPlace(0), twinPlace(2), twinPlace(4)], [[105, 47, 0], [95, 53, 0], [100, 50, 8]]);
+  assert.ok(near(twin.normals[0], -batch.normals[0], 1e-6) && near(twin.normals[1], batch.normals[1], 1e-6) && near(twin.normals[2], batch.normals[2], 1e-6));
+  assert.deepEqual(Array.from(twin.indices.subarray(0, 6)), [0, 4, 1, 1, 4, 2]);
   // More houses than one mesh may hold corners for are laid in several.
   const many = standMany(mesh, Array.from({ length: 30000 }, (_, n) => ({ at: [n, 0], along: [1, 0], back: [0, 1], wide: 4, deep: 4, height: 4 })));
   assert.equal(many.length, 3);
@@ -336,6 +343,8 @@ test('the houses drawn as models are the nearest to the middle of the view; each
   // Where a house's model stands: over the middle of its box, as tall as its tallest part and a parapet more.
   const where = housePlace(houses[2], origin);
   assert.ok(near(where.at[0], 40, 0.01) && near(where.at[1], 17, 0.01) && where.wide === 12 && where.deep === 14 && near(where.height, 9.6) && where.tint === null);
+  // (Every other house is its neighbour's mirror image.)
+  assert.deepEqual([housePlace(houses[2], origin).mirror, housePlace(houses[4], origin).mirror, housePlace(houses[5], origin).mirror], [false, false, true]);
   // A model that has the house's wall to the street as well stands on the whole plot: from the wall's line at the
   // street (2 m before the house) to the house's back, and from half the gap to one neighbour to half the gap to the other.
   const plotted = housePlace({ ...houses[2], plot: { front: 2, left: 1, right: 0.8, behind: 1.2 } }, origin, null, true);

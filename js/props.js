@@ -248,8 +248,9 @@ export function housesNear(houses, centre, { reach = HOUSE_MODEL_REACH_METERS, m
  * box's middle, in the scene's metres; along: the way the box's width runs,
  * [east, north], one long; back: the way from its front to its back; wide,
  * deep, height in metres; tint: [red, green, blue], what its picture's
- * colours are multiplied by (1 leaves them; no more than 2) }]. The mesh's
- * front, the side its photograph showed, comes to stand at the box's front.
+ * colours are multiplied by (1 leaves them; no more than 2); mirror: true
+ * to stand it as its mirror image, left for right }]. The mesh's front, the
+ * side its photograph showed, comes to stand at the box's front.
  *
  * Returns [{ corners, positions, normals, uvs, tints, indices }], each of no
  * more corners than a mesh may have. A corner's tint is four numbers: the
@@ -280,15 +281,17 @@ export function standMany(mesh, places) {
         const value = Math.sin(place.at[0] * 12.9898 + place.at[1] * 78.233 + group * 37.719) * 43758.5453;
         return value - Math.floor(value);
       };
+      // (Every other house is its neighbour's mirror image, left for right, as houses built in pairs are.)
+      const flip = place.mirror ? -1 : 1;
       for (let i = 0; i < mesh.corners; i += 1) {
-        const u = (mesh.positions[i * 3] - middleX) * sx;
+        const u = (mesh.positions[i * 3] - middleX) * sx * flip;
         const v = (mesh.positions[i * 3 + 1] - middleY) * sy;
         const at = (first + i) * 3;
         batch.positions[at] = place.at[0] + ax * u + bx * v;
         batch.positions[at + 1] = place.at[1] + ay * u + by * v;
         batch.positions[at + 2] = mesh.positions[i * 3 + 2] * sz;
         // (A surface stretched one way looks less that way: which way it looks is squeezed as its place is stretched.)
-        const nu = mesh.normals[i * 3] / sx;
+        const nu = (mesh.normals[i * 3] / sx) * flip;
         const nv = mesh.normals[i * 3 + 1] / sy;
         const nx = ax * nu + bx * nv;
         const ny = ay * nu + by * nv;
@@ -311,8 +314,9 @@ export function standMany(mesh, places) {
         }
         batch.tints.set([bytes[0], bytes[1], bytes[2], night], (first + i) * 4);
       }
+      // (A mirror image's triangles are named the other way round, so that they stay wound anticlockwise from outside.)
       const from = n * mesh.indices.length;
-      for (let i = 0; i < mesh.indices.length; i += 1) batch.indices[from + i] = first + mesh.indices[i];
+      for (let i = 0; i < mesh.indices.length; i += 1) batch.indices[from + i] = first + mesh.indices[place.mirror && i % 3 !== 0 ? i + (i % 3 === 1 ? 1 : -1) : i];
     });
     batches.push(batch);
   }
@@ -349,5 +353,6 @@ export function housePlace(house, origin, tone = null, plot = false, roof = 1) {
     const paint = [1, 3, 5].map((at) => Number.parseInt(house.paint.slice(at, at + 2), 16) / 255);
     tint = paint.map((part, k) => Math.min(Math.max(part / Math.max(tone[k], 0.05), 0.7), 1.45));
   }
-  return { at: [east, north], along: house.along, back: house.back, wide: a1 - a0, deep: b1 - b0, height: (tallest + 1.4) / Math.min(Math.max(roof, 0.2), 1), tint };
+  // (Houses stand in pairs, each the mirror image of the other: every other one along its street.)
+  return { at: [east, north], along: house.along, back: house.back, wide: a1 - a0, deep: b1 - b0, height: (tallest + 1.4) / Math.min(Math.max(roof, 0.2), 1), tint, mirror: Math.abs(Math.round(Number(house.id))) % 2 === 1 };
 }
