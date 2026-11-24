@@ -22,7 +22,7 @@ import {
   youtubeEmbedUrl,
 } from './lib.js';
 import { LIGHT_MODES, MAP_TYPES, MapView } from './map.js';
-import { drivingRoute, placeAt, placeDetails, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
+import { drivingRoute, placeAt, placeDetails, riyadhSignals, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
 
 const VERSION = '1.13.0';
 const STORE_PREFIX = 'video-map:';
@@ -505,6 +505,7 @@ async function applyMapType() {
   const shown = await mapView.setType(activeMapType());
   if (shown) setStatus(locationStatus());
   labelFollow();
+  updateSignals();
 }
 
 /** Say what the follow button does now. The view that does not turn is isometric in the 3D city, north up elsewhere. */
@@ -598,6 +599,16 @@ function renderWeather(summary) {
   const degrees = settings.unit === 'mph' ? Math.round((summary.temperature * 9) / 5 + 32) : summary.temperature;
   weatherEl.textContent = `${degrees}°${summary.text ? ` ${summary.text}` : ''}`;
   weatherEl.hidden = false;
+}
+
+/**
+ * Find out where OpenStreetMap marks traffic signals in the city, for the 3D city's junctions. (One
+ * question for the whole of Riyadh, kept for a week: see riyadhSignals(). Until the answer is in, and
+ * if it never comes, the city has signals where its main roads cross.)
+ */
+function updateSignals() {
+  if (!mapView || !settings.traffic || activeMapType() !== 'city') return;
+  riyadhSignals((known) => mapView?.setSignalMarks(known));
 }
 
 let weatherShown = null;
@@ -994,6 +1005,7 @@ optTraffic.addEventListener('change', () => {
   settings.traffic = optTraffic.checked;
   saveSettings();
   if (mapView) mapView.setLife(settings.traffic);
+  updateSignals();
 });
 
 optPhoto.addEventListener('change', () => {
@@ -1054,6 +1066,7 @@ function initMap() {
   mapView.setLightMode(settings.light);
   applyMapType();
   updateWeather();
+  updateSignals();
 
   followBtn.addEventListener('click', () => {
     if (!lastFix) return;

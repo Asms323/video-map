@@ -180,6 +180,34 @@ export { GLASS };
 // Paint, as [red, green, blue].
 const BUS_PAINT = [[24, 150, 140], [30, 118, 190], [226, 150, 30]];
 const TRAIN_PAINT = [[240, 242, 244], [132, 142, 156]];
+// At a signal: how hard a driver will brake for a yellow light, how gently he draws up to a red one, how
+// fast he turns right at it, and how many stop already when the green flashes (that some do is known of
+// the Kingdom's junctions; how many is not, and one in eight is this simulation's own figure).
+const SIGNAL_BRAKE = 3.5;
+const HARD_BRAKE = 6; // as hard as anybody brakes (see step())
+const YELLOW_SPARE_SECONDS = 0.5;
+const SIGNAL_EASE = 2.2;
+const RIGHT_ON_RED_SPEED = 4;
+const WARY_SHARE = 0.12;
+const LOOK_BEYOND_METERS = 100; // how far over the end of its way the first vehicle on it looks for a queue
+const SIGNAL_SIGHT_METERS = 150; // from how far a driver heeds a signal: far enough to draw up to it gently from any speed
+const PLAN_AHEAD = 6; // how many ways ahead a driver knows which he will take (the map cuts a street at every junction)
+const QUEUE_GAP_METERS = 2; // bumper to bumper, standing
+const FOLLOW_BRAKE = 2.5; // how hard a driver reckons on braking behind another
+const FOLLOW_SECONDS = 1; // and how long he takes to see that he must: so he keeps a second behind
+const laneKey = (way, forward, lane) => (way * 2 + (forward ? 1 : 0)) * 8 + lane;
+/**
+ * How fast a vehicle may drive so many metres behind another that drives at a speed: so that, should
+ * the one ahead brake, it can still draw up behind it, having taken a second to see it. (Behind one
+ * that keeps its speed that comes to a second's drive and two metres; behind one that stands, to two metres.)
+ */
+const followSpeed = (gap, speed) => {
+  const slow = FOLLOW_BRAKE * FOLLOW_SECONDS;
+  const most = Math.sqrt(slow * slow + speed * speed + 2 * FOLLOW_BRAKE * Math.max(gap - QUEUE_GAP_METERS, 0)) - slow;
+  // (Behind one that stands it comes to a stand itself, and does not creep up for ever.)
+  return most < 0.15 ? 0 : most;
+};
+
 const HEADLIGHTS = [250, 244, 226];
 const TAIL_LIGHTS = [186, 30, 30];
 const LAMP_PROUD_METERS = 0.015; // how far a lamp stands proud of the face it is on
@@ -726,21 +754,32 @@ export class Traffic {
     this.entries = [];
     this.departures = new Map(); // track end → when its next train leaves, in seconds
     this.passed = new Map(); // stretch of track and direction → when the front of the last train came onto it, in seconds
+    this.signals = null; // the traffic signals at the junctions (see signals.js), if any are known
+    this.scout = { way: 0, forward: true, type: 'car' }; // stands in for a vehicle on a way it has yet to come to
+    this.sighted = 0; // how far a vehicle's nose is short of the stop line that signalAhead() last found
   }
 
   /**
    * Swap in a new network. Vehicles on a line that is still there carry on; the
    * rest are dropped. shift: how far the new origin moved the ground, [east,
-   * north] in metres. place: where the network is, { lng, lat }.
+   * north] in metres. place: where the network is, { lng, lat }. signals: the
+   * traffic signals at its junctions, if it has any (see setSignals()).
    */
-  setNetwork(network, shift = [0, 0], place = this.place) {
+  setNetwork(network, shift = [0, 0], place = this.place, signals = null) {
     const byKey = new Map(network.ways.map((way, index) => [way.key, index]));
     const keep = (item) => {
       const index = byKey.get(this.network.ways[item.way]?.key);
       if (index === undefined) return false;
       item.way = index;
+      item.onward = null; // (where it meant to go next, and after that, were ways of the old network)
+      item.later = null;
+      item.stoodAt = null;
+      item.through = null;
       return true;
     };
+    // (The old network's signals go with it. The new one's are wanted here already, not only afterwards
+    // with setSignals(): whoever is put on the new streets now is put there with regard to them.)
+    this.setSignals(signals);
     this.vehicles = this.vehicles.filter(keep);
     this.trains = this.trains.filter(keep);
     for (const train of this.trains) {
@@ -775,6 +814,117 @@ export class Traffic {
     const open = new Set(this.entries.map((entry) => entry.key));
     for (const key of this.departures.keys()) if (!open.has(key)) this.departures.delete(key);
     this.fill();
+  }
+
+  /**
+   * Give the traffic the signals at its junctions (as signalsOf() in signals.js gives them, for this
+   * network), or null for none. With signals the traffic stops at a red light and queues behind
+   * whoever has stopped; turns right at a red one, from the lane by the kerb, once it has stood; and
+   * one driver in eight stops already when the green flashes.
+   */
+  setSignals(signals) {
+    this.signals = signals && signals.approaches.length > 0 ? signals : null;
+  }
+
+  /** Where a vehicle goes when its way ends: chosen once, as it comes up to the end, and kept to. Null at a dead end. */
+  onwardOf(vehicle) {
+    if (vehicle.onward === undefined || vehicle.onward === null) vehicle.onward = this.next(vehicle, false) ?? false;
+    return vehicle.onward || null;
+  }
+
+  /**
+   * The way a vehicle takes after the one it is on (hop 0), the one it takes after that (hop 1), and so
+   * on: each chosen once and kept to, so that what a driver sees ahead of him is on the road he then
+   * takes. Null from where his road ends.
+   */
+  planned(vehicle, hop) {
+    if (hop === 0) return this.onwardOf(vehicle);
+    const later = (vehicle.later ??= []);
+    while (later.length < hop) {
+      const from = later.length === 0 ? this.onwardOf(vehicle) : later[later.length - 1];
+      if (!from) return null;
+      this.scout.way = from.way;
+      this.scout.forward = from.atStart;
+      this.scout.type = vehicle.type;
+      later.push(this.next(this.scout, false) ?? false);
+    }
+    return later[hop - 1] || null;
+  }
+
+  /**
+   * The signal a vehicle comes to next: the approach whose stop line lies ahead of it, on its own way
+   * or, where that ends before it could draw up, on the ways it takes from there. (The map cuts a
+   * street at every junction and side street: the last stretch before a stop line may be a few metres
+   * long.) Null if there is none within sight. How far its nose is short of that line is left in
+   * this.sighted.
+   */
+  signalAhead(vehicle, way) {
+    const half = VEHICLES[vehicle.type].length / 2;
+    const own = this.signals.byWay.get(vehicle.way * 2 + (vehicle.forward ? 1 : 0));
+    if (own) {
+      // (Once its nose is well over the line it carries on, and clears the junction.)
+      this.sighted = (vehicle.forward ? own.stop - vehicle.s : vehicle.s - own.stop) - half;
+      if (this.sighted >= -1.5) return own;
+    }
+    let run = (vehicle.forward ? way.length - vehicle.s : vehicle.s) - half;
+    const ways = this.network.ways;
+    for (let hop = 0; hop < PLAN_AHEAD && run < SIGNAL_SIGHT_METERS; hop += 1) {
+      const option = this.planned(vehicle, hop);
+      if (!option) return null;
+      const other = ways[option.way];
+      const found = this.signals.byWay.get(option.way * 2 + (option.atStart ? 1 : 0));
+      if (found) {
+        this.sighted = run + (option.atStart ? found.stop : other.length - found.stop);
+        return this.sighted < SIGNAL_SIGHT_METERS ? found : null;
+      }
+      run += other.length;
+    }
+    return null;
+  }
+
+  /**
+   * The speed a vehicle may aim for, with the signal ahead of it showing what it shows at a time (in
+   * seconds): no more than brings it to a stand at the stop line, if it has to stop there.
+   */
+  obey(vehicle, way, target, at) {
+    const approach = this.signalAhead(vehicle, way);
+    if (!approach) return target;
+    const ahead = this.sighted; // from its nose to the line
+    const state = this.signals.state(approach, at);
+    if (state === 'green') return target;
+    // (The flashing green stops the wary, if they can stop in comfort.)
+    const stopsIn = (braking) => ahead > (vehicle.speed * vehicle.speed) / (2 * braking);
+    if (state === 'flash' && !(stopsIn(SIGNAL_BRAKE) && (vehicle.wish * 997) % 1 < WARY_SHARE)) return target;
+    // (A yellow light stops whoever can still stop in comfort. Whoever cannot drives on, if that takes
+    // him over the line with half a second to spare before the red, and having made up his mind he
+    // keeps to it; if it does not, he brakes as hard as he must. Only one who could not stop even so
+    // drives on regardless: so nobody is left to run the red.)
+    if (state === 'yellow') {
+      if (vehicle.through === approach) return target;
+      if (!stopsIn(SIGNAL_BRAKE) && (ahead <= vehicle.speed * (this.signals.untilRed(approach, at) - YELLOW_SPARE_SECONDS) || !stopsIn(HARD_BRAKE))) {
+        vehicle.through = approach;
+        return target;
+      }
+    }
+    if (state === 'red' && approach.way === vehicle.way && vehicle.lane === lanesOf(way) - 1) {
+      // Turning right at a red light, from the lane by the kerb: once it has stood at the line.
+      if (vehicle.stoodAt !== approach && ahead < 2 && vehicle.speed < 0.3 && this.turnsRight(vehicle, way)) vehicle.stoodAt = approach;
+      if (vehicle.stoodAt === approach) return Math.min(target, RIGHT_ON_RED_SPEED);
+    }
+    return Math.min(target, ahead < 0.5 ? 0 : Math.sqrt(2 * SIGNAL_EASE * (ahead - 0.3)));
+  }
+
+  /** Whether a vehicle turns right where its way ends. */
+  turnsRight(vehicle, way) {
+    const option = this.onwardOf(vehicle);
+    if (!option) return false;
+    const here = pointAlong(way, vehicle.forward ? way.length : 0, this.spare);
+    const sign = vehicle.forward ? 1 : -1;
+    const [east, north] = [here[2] * sign, here[3] * sign];
+    const other = this.network.ways[option.way];
+    const there = pointAlong(other, option.atStart ? 0 : other.length, this.spare2);
+    const turn = option.atStart ? 1 : -1;
+    return east * there[3] * turn - north * there[2] * turn < -0.5;
   }
 
   /** How many cars, vans and lorries this network should carry right now. */
@@ -891,7 +1041,41 @@ export class Traffic {
     vehicle.speed = way.speed * 0.8;
     vehicle.paint = chosen.paint;
     vehicle.cargo = chosen.cargo;
+    if (this.signals) {
+      // Where traffic stands in queues, nobody appears in the middle of one, nor at speed close behind
+      // one, nor on his way through a red light; nor in the middle of a junction, between its stop lines.
+      const spot = pointAlong(way, vehicle.s, this.spare);
+      for (const junction of this.signals.junctions) {
+        if (Math.hypot(spot[0] - junction.x, spot[1] - junction.y) < junction.reach + 1) return null;
+      }
+      // (Nor with its nose over a stop line: a long vehicle's middle is well short of the line then.)
+      const approach = this.signals.byWay.get(vehicle.way * 2 + (vehicle.forward ? 1 : 0));
+      if (approach && (vehicle.forward ? approach.stop - vehicle.s : vehicle.s - approach.stop) - VEHICLES[vehicle.type].length / 2 < 0.5) return null;
+      const room = this.roomFor(vehicle);
+      if (room === null) return null;
+      vehicle.speed = this.obey(vehicle, way, Math.min(vehicle.speed, room), this.now() / 1000);
+    }
     return vehicle;
+  }
+
+  /**
+   * How fast a newcomer may be driving where it is put: no faster than lets it draw up behind the
+   * vehicle ahead of it in its lane. Null if there is no room for it there: another stands where it
+   * would, or one is coming up behind too fast to see it in time.
+   */
+  roomFor(vehicle) {
+    const long = VEHICLES[vehicle.type].length;
+    const sign = vehicle.forward ? 1 : -1;
+    let most = Infinity;
+    for (const other of this.vehicles) {
+      if (other.way !== vehicle.way || other.forward !== vehicle.forward || other.lane !== vehicle.lane) continue;
+      const ahead = (other.s - vehicle.s) * sign;
+      const gap = Math.abs(ahead) - (VEHICLES[other.type].length + long) / 2;
+      if (gap < QUEUE_GAP_METERS) return null;
+      if (ahead > 0) most = Math.min(most, followSpeed(gap, other.speed));
+      else if (gap < QUEUE_GAP_METERS + other.speed * FOLLOW_SECONDS * 1.5) return null;
+    }
+    return most;
   }
 
   /** A bus, somewhere along a bus street, in the lane by the kerb: off screen when there is anywhere off screen to start. */
@@ -976,12 +1160,14 @@ export class Traffic {
     const dt = Math.min(Math.max(seconds, 0), 0.25);
     const ways = this.network.ways;
 
-    // Every half second each driver looks at the vehicle ahead in the same lane.
+    // Every half second each driver looks at the vehicle ahead in the same lane. (Twice as often where
+    // there are signals: there the vehicle ahead may be standing.)
     this.sinceSorted += dt;
-    if (this.sinceSorted >= 0.5) {
+    if (this.sinceSorted >= (this.signals ? 0.25 : 0.5)) {
       this.sinceSorted = 0;
       this.lookAhead();
     }
+    const at = this.now() / 1000;
 
     let someGone = false;
     for (const vehicle of this.vehicles) {
@@ -1016,6 +1202,7 @@ export class Traffic {
         }
       }
 
+      if (this.signals) target = this.obey(vehicle, way, target, at);
       vehicle.speed += Math.min(Math.max(target - vehicle.speed, -6 * dt), 2.5 * dt);
       const moved = vehicle.speed * dt;
       vehicle.s += moved * (vehicle.forward ? 1 : -1);
@@ -1028,7 +1215,12 @@ export class Traffic {
 
       if (vehicle.s > way.length || vehicle.s < 0) {
         const over = vehicle.s < 0 ? -vehicle.s : vehicle.s - way.length;
-        const option = this.next(vehicle, false);
+        const option = this.signals ? this.onwardOf(vehicle) : this.next(vehicle, false);
+        // (What it had in mind for the way after this one is now what it does next.)
+        vehicle.onward = vehicle.later?.length > 0 ? vehicle.later.shift() : null;
+        // (And a stop line on the way it leaves is behind it: what it did there is done with.)
+        if (vehicle.stoodAt?.way === vehicle.way) vehicle.stoodAt = null;
+        if (vehicle.through?.way === vehicle.way) vehicle.through = null;
         if (option) {
           const other = ways[option.way];
           const lanes = lanesOf(other);
@@ -1051,7 +1243,6 @@ export class Traffic {
     if (someGone) this.vehicles = this.vehicles.filter((vehicle) => !(vehicle.leaving && vehicle.shown === 0));
 
     this.sendTrains();
-    const at = this.now() / 1000;
     for (const train of this.trains) {
       train.shown = Math.min(Math.max(train.shown + (train.leaving ? -dt : dt), 0), 1);
       this.moveTrain(train, dt, at);
@@ -1258,14 +1449,51 @@ export class Traffic {
       if (a.lane !== b.lane) return a.lane - b.lane;
       return a.forward ? a.s - b.s : b.s - a.s;
     });
+    // With signals there are queues, and a queue reaches back over the end of a way: then the first on
+    // each way looks on, into the way it is about to take, for the last one there.
+    const signalled = Boolean(this.signals);
+    const rear = signalled ? new Map() : null;
+    const first = [];
+    const sameLane = (a, b) => a && b && a.way === b.way && a.forward === b.forward && a.lane === b.lane;
     for (let i = 0; i < sorted.length; i += 1) {
       const vehicle = sorted[i];
       const ahead = sorted[i + 1];
       vehicle.limit = Infinity;
-      if (!ahead || ahead.way !== vehicle.way || ahead.forward !== vehicle.forward || ahead.lane !== vehicle.lane) continue;
+      if (signalled && !sameLane(sorted[i - 1], vehicle)) rear.set(laneKey(vehicle.way, vehicle.forward, vehicle.lane), vehicle);
+      if (!sameLane(vehicle, ahead)) {
+        if (signalled && !vehicle.parked) first.push(vehicle);
+        continue;
+      }
       const gap = Math.abs(ahead.s - vehicle.s) - (VEHICLES[ahead.type].length + VEHICLES[vehicle.type].length) / 2;
+      if (signalled) vehicle.limit = followSpeed(gap, ahead.speed);
       // Keep about a second and a half behind; stop short of touching.
-      if (gap < vehicle.speed * 1.5 + 3) vehicle.limit = Math.max(ahead.speed * Math.min(Math.max((gap - 1.5) / 6, 0), 1), 0);
+      else if (gap < vehicle.speed * 1.5 + 3) vehicle.limit = Math.max(ahead.speed * Math.min(Math.max((gap - 1.5) / 6, 0), 1), 0);
+    }
+    for (const vehicle of first) this.lookBeyond(vehicle, rear);
+  }
+
+  /**
+   * Have the first vehicle on its way look on over the end of it: along the way it will take next, and
+   * straight on from there, for the last vehicle in its lane. rear: the last vehicle of every lane.
+   */
+  lookBeyond(vehicle, rear) {
+    const ways = this.network.ways;
+    const way = ways[vehicle.way];
+    let left = vehicle.forward ? way.length - vehicle.s : vehicle.s;
+    if (left > LOOK_BEYOND_METERS) return;
+    let option = this.onwardOf(vehicle);
+    let lane = vehicle.lane;
+    for (let hop = 0; hop < PLAN_AHEAD && option && left <= LOOK_BEYOND_METERS; hop += 1) {
+      const other = ways[option.way];
+      lane = vehicle.type === 'bus' ? lanesOf(other) - 1 : Math.min(lane, lanesOf(other) - 1);
+      const last = rear.get(laneKey(option.way, option.atStart, lane));
+      if (last && last !== vehicle) {
+        const gap = left + (option.atStart ? last.s : other.length - last.s) - (VEHICLES[last.type].length + VEHICLES[vehicle.type].length) / 2;
+        vehicle.limit = Math.min(vehicle.limit, followSpeed(gap, last.speed));
+        return;
+      }
+      left += other.length;
+      option = this.planned(vehicle, hop + 1);
     }
   }
 

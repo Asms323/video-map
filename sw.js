@@ -28,6 +28,7 @@ const SHELL = [
   './js/map.js',
   './js/life.js',
   './js/fleet.js',
+  './js/signals.js',
   './js/lights.js',
   './js/scene.js',
   './js/sight.js',

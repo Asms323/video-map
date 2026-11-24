@@ -645,6 +645,49 @@ export function speedLimitQuery(position, radiusMeters) {
   return `[out:json][timeout:15];way["highway"]["maxspeed"](around:${Math.round(radiusMeters)},${lat},${lng});out tags geom qt;`;
 }
 
+/**
+ * Overpass query for every traffic signal OpenStreetMap marks in Riyadh. The same whoever asks, and
+ * wherever from: nothing of where you are goes with it.
+ */
+export function signalQuery() {
+  const { west, south, east, north } = RIYADH.bounds;
+  return `[out:json][timeout:25];node["highway"="traffic_signals"](${south},${west},${north},${east});out skel qt;`;
+}
+
+/** Where the traffic signals of an Overpass answer stand: [[lng, lat], …], to the metre, those in Riyadh only. */
+export function signalPoints(answer) {
+  const elements = Array.isArray(answer?.elements) ? answer.elements : [];
+  const points = [];
+  for (const element of elements) {
+    if (element?.type !== 'node' || !inRiyadh({ lat: element.lat, lng: element.lon })) continue;
+    points.push([Math.round(element.lon * 1e5) / 1e5, Math.round(element.lat * 1e5) / 1e5]);
+  }
+  return points;
+}
+
+/** How long an answer about the city's signals is kept: a week. They are not moved about. */
+export const SIGNALS_KEPT_MS = 7 * 24 * 3600 * 1000;
+
+/** The signals of signalPoints() as they are kept on the phone: { at (when they were asked for, ms), places: [lng, lat, lng, lat, …] }. */
+export function packSignals(points, at) {
+  return { at, places: points.flat() };
+}
+
+/**
+ * The signals kept by packSignals(), as { at, points: [[lng, lat], …] }; or null if what was kept is
+ * not that (something else under the name, a list cut short, a place outside the city, a time yet to come).
+ */
+export function unpackSignals(kept, now) {
+  if (!kept || !Number.isFinite(kept.at) || kept.at > now || !Array.isArray(kept.places) || kept.places.length % 2 !== 0) return null;
+  const points = [];
+  for (let i = 0; i < kept.places.length; i += 2) {
+    const [lng, lat] = [kept.places[i], kept.places[i + 1]];
+    if (!inRiyadh({ lat, lng })) return null;
+    points.push([lng, lat]);
+  }
+  return { at: kept.at, points };
+}
+
 /** Roads with a usable speed limit from an Overpass answer: [{ limit, lines }]. */
 export function speedLimitRoads(answer) {
   const elements = Array.isArray(answer?.elements) ? answer.elements : [];

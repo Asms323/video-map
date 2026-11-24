@@ -2,7 +2,7 @@
 // and is asked as rarely as possible: answers are kept and reused.
 //
 //   OpenFreeMap   map styles and tiles (OpenStreetMap data)
-//   Overpass API  details of one place, and posted speed limits
+//   Overpass API  details of one place, posted speed limits, and where the city's traffic signals stand
 //   Photon        finding places by name, and the address of a point
 //   Open-Meteo    the weather where you are
 //   OSRM          a driving route between two points
@@ -13,17 +13,22 @@ import {
   BUILDING_STORE,
   PHOTO_SURE_ZOOM,
   RIYADH,
+  SIGNALS_KEPT_MS,
   buildingArchives,
   detailsQuery,
   distanceMeters,
   inRiyadh,
+  packSignals,
   photoBlockOf,
   photoInBlock,
   photoTileOf,
   photonPlace,
   routeSummary,
+  signalPoints,
+  signalQuery,
   speedLimitQuery,
   speedLimitRoads,
+  unpackSignals,
   weatherSummary,
 } from './lib.js';
 import { parseOpenSky } from './flights.js';
@@ -192,6 +197,62 @@ export async function speedLimitsNear(position) {
   } finally {
     limitBusy = false;
   }
+}
+
+// The traffic signals OpenStreetMap marks, for the 3D city (see signals.js). One question for the whole
+// of Riyadh, the same whoever asks it and wherever from, so nothing of where you are goes with it; and
+// the answer is kept on the phone for a week.
+
+const SIGNALS_KEY = 'vm.signals';
+const SIGNALS_FAILED_AGAIN_MS = 5 * 60 * 1000;
+let signalMarks = null; // { at, bounds, points } once known
+let signalAsking = null;
+let signalRetryAt = 0;
+
+function savedSignals() {
+  try {
+    const kept = unpackSignals(JSON.parse(localStorage.getItem(SIGNALS_KEY)), Date.now());
+    if (kept) return { at: kept.at, bounds: RIYADH.bounds, points: kept.points };
+  } catch {
+    // No storage, or something else is kept under the name.
+  }
+  return null;
+}
+
+async function askSignals() {
+  try {
+    const points = signalPoints(await overpass(signalQuery(), { timeout: 30000 }));
+    signalMarks = { at: Date.now(), bounds: RIYADH.bounds, points };
+    try {
+      localStorage.setItem(SIGNALS_KEY, JSON.stringify(packSignals(points, signalMarks.at)));
+    } catch {
+      // Asked again next time.
+    }
+  } catch {
+    signalRetryAt = Date.now() + SIGNALS_FAILED_AGAIN_MS;
+  } finally {
+    signalAsking = null;
+  }
+  return signalMarks;
+}
+
+/**
+ * Find out where OpenStreetMap marks traffic signals in Riyadh, and tell of it: tell is called with
+ * { at, bounds: { west, south, east, north } (the area the answer is for), points: [[lng, lat], …] }, at
+ * once if anything is known, and once more when something newer is in. (The same thing is told every
+ * time until there is something newer.) Overpass is asked once a week at most, never two questions at
+ * once, and after a failure not again for five minutes; an older answer serves until the new one is in.
+ */
+export function riyadhSignals(tell) {
+  signalMarks ??= savedSignals();
+  const had = signalMarks;
+  if (had) tell(had);
+  if (had && Date.now() - had.at < SIGNALS_KEPT_MS) return;
+  if (signalAsking || Date.now() < signalRetryAt) return;
+  signalAsking = askSignals();
+  signalAsking.then((marks) => {
+    if (marks && marks !== had) tell(marks);
+  });
 }
 
 // ── Photon ────────────────────────────────────────────────────────────────

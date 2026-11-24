@@ -939,12 +939,15 @@ export class SceneLayer {
    * is there, and its ragged edge is worked out point by point. late: true
    * for a light in the sky that shows through the haze on the horizon (the
    * sun's own disc, going down): it is drawn after the haze, with the lights.
+   * bright: true for what is lit from within and seen by day as well as by
+   * night (the lamp of a traffic signal): it keeps its colours in the dark.
    */
-  set(name, mesh, { shaded = true, lifted = 0, glow = false, point = 0, mask = false, sky = false, cloud = null, late = false } = {}) {
-    const part = this.parts.get(name) ?? { mesh: null, buffers: null, stale: true, shaded: true, lifted: 0, glow: false, point: 0, mask: false, sky: false, shift: null, cloud: null, late: false };
+  set(name, mesh, { shaded = true, lifted = 0, glow = false, point = 0, mask = false, sky = false, cloud = null, late = false, bright = false } = {}) {
+    const part = this.parts.get(name) ?? { mesh: null, buffers: null, stale: true, shaded: true, lifted: 0, glow: false, point: 0, mask: false, sky: false, shift: null, cloud: null, late: false, bright: false };
     part.shift = null;
     part.cloud = cloud;
     part.late = late;
+    part.bright = bright;
     part.mesh = mesh;
     part.stale = true;
     part.shaded = shaded;
@@ -1396,7 +1399,7 @@ export class SceneLayer {
         gl.uniform4f(this.at.grain, cloud.grain[0], cloud.grain[1], 1 / cloud.size, cloud.stretch);
         gl.uniform2f(this.at.grainTurn, cloud.wind[0], cloud.wind[1]);
       }
-      gl.uniform1f(this.at.night, part.sky ? 0 : night);
+      gl.uniform1f(this.at.night, part.sky || part.bright ? 0 : night);
       gl.uniform1f(this.at.lamps, part.sky ? 1 : part.point > 0 ? lamps : thrown);
       // (What is on a roof is drawn as much nearer as the roof was, or the roof would hide the foot of it.)
       if (part.lifted > 0) {

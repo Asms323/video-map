@@ -53,6 +53,7 @@ import { aircraftOverRiyadh, buildingArchive, loadStyle, photoDate, photoProtoco
 import { footprintGrid, heightsFromShadows, passSuns, pavedGrid, photoGrid, roofColours, tilesFor, treesInPhoto } from './sight.js';
 import { CasterMesh, groundCasters, shadowCasters, shadowFall, shadowMapSize } from './shade.js';
 import { Flights } from './flights.js';
+import { drawSignalLamps, drawSignals, signalsOf } from './signals.js';
 import { CLOUD_LAYERS, cloudDrift, cloudLayersOf, cloudsNear, drawAircraft, drawClouds, drawHeavens, drawStars, moonAt, planetsAt, starPoints, starsAt, sunBetween } from './sky.js';
 import { PARAPET_METERS, PARAPET_THICK_METERS, WallMesh, colourOf, facadeOf, footShade, parapetTops, tilePieces, wallTone, wallsOf } from './walls.js';
 
@@ -72,7 +73,7 @@ const WALL_NIGHT_STEPS = 8;
 const LAMPS_MOST = 3000;
 // How wide a point of light is, in metres: the head of a street lamp, a headlight or a tail light, the red
 // lamp on a tower, and one of the city's lights seen from afar. (None is ever drawn smaller than a speck.)
-const POINT_METERS = { lamp: 2.6, vehicle: 1.5, beacon: 3.4, far: 7 };
+const POINT_METERS = { lamp: 2.6, vehicle: 1.5, beacon: 3.4, far: 7, signal: 2.4 };
 const CORNER_LAMPS_FROM_METERS = 60; // a building this tall has a red lamp on each corner of its roof
 
 // Styles drawn on a dark ground need light text on the app's own markers.
@@ -475,6 +476,13 @@ export class MapView {
     this.roadsideMesh = new Mesh(); // barriers, sign gantries and the kerbs of medians
     this.roadsideMade = null;
     this.footbridgeMesh = new Mesh(); // the footbridges over the great roads
+    this.signalMesh = new Mesh(); // the traffic signals: their posts, arms and heads, and the stop lines
+    this.signalLampMesh = new Mesh(); // the lamp that is lit on each
+    this.signalGlowMesh = new Mesh(); // and its shine by night
+    this.signals = null; // where the signals stand and how they are run (see signals.js)
+    this.signalMarks = null; // where OpenStreetMap marks signals, once it has been asked: { bounds, points }
+    this.signalsMade = null;
+    this.signalsRead = null; // the streets and the marks the signals were last worked out from
     // The sky (see sky.js), in the order it is drawn in, the furthest first:
     this.skyWashMesh = new Mesh(); // the Earth's shadow, rising opposite the sun as it goes down
     this.skyGlowMesh = new Mesh(); // its light: the glare round the sun, the glow where it goes down, the shine round the moon
@@ -1129,6 +1137,7 @@ export class MapView {
       this.layStreet();
       this.layRoofs();
       this.layBridges();
+      this.laySignals();
       this.layLamps();
       this.treesLit = this.sun;
     }
@@ -1736,7 +1745,8 @@ export class MapView {
       this.traffic.level = trafficLevel(new Date(), centre.lng);
       this.traffic.view = null; // set again, from the new origin, before the next step
       this.lifeView = null;
-      this.traffic.setNetwork(this.network, shift, origin);
+      // (With the signals at its junctions: whoever is put on the new streets is put there with regard to them.)
+      this.traffic.setNetwork(this.network, shift, origin, this.readSignals(origin));
     }
     this.scene.setOrigin(origin);
     this.lifeMade = { box, tiles: this.tilesLoaded, stops: busStops.size, stations: stations.size };
@@ -1744,6 +1754,7 @@ export class MapView {
     this.layTrees();
     this.layRoofs();
     this.layBridges();
+    this.laySignals();
     this.layStreet();
     this.layLamps();
     this.layFarLights(farLines, box);
@@ -1814,6 +1825,68 @@ export class MapView {
       this.marksMade = { network: this.network, ...drawMarks(this.markMesh, this.network) };
       this.scene.set('marks', this.markMesh);
     }
+  }
+
+  /**
+   * What OpenStreetMap says of where traffic signals stand: { bounds: { west, south, east, north } (the
+   * area it has been asked about), points: [[lng, lat], …] }, or null if it has not been asked.
+   */
+  setSignalMarks(marks) {
+    if (marks === this.signalMarks) return;
+    this.signalMarks = marks ?? null;
+    this.laySignals();
+    this.map?.triggerRepaint();
+  }
+
+  /**
+   * Stand the traffic signals afresh at the junctions of the streets read from the map (see
+   * signals.js), and tell the traffic of them: it stops at their red.
+   */
+  laySignals() {
+    const origin = this.scene.origin;
+    if (!origin || this.type !== 'city' || !this.network) {
+      if (this.signalMesh.count > 0 || this.signalLampMesh.count > 0) {
+        for (const mesh of [this.signalMesh, this.signalLampMesh, this.signalGlowMesh]) mesh.clear();
+        this.scene.set('signals', this.signalMesh);
+        this.scene.set('signallamps', this.signalLampMesh, { shaded: false, bright: true });
+        this.scene.set('signalglow', this.signalGlowMesh, { glow: true, point: POINT_METERS.signal });
+      }
+      this.signals = null;
+      this.signalsMade = null;
+      this.signalsRead = null;
+      this.traffic.setSignals(null);
+      return;
+    }
+    this.readSignals(origin);
+    // (The traffic runs on this network only while it is switched on.)
+    this.traffic.setSignals(this.lifeOn && this.traffic.network === this.network ? this.signals : null);
+    const made = drawSignals(this.signalMesh, this.signals, lightFrom(this.sun));
+    this.scene.set('signals', this.signalMesh);
+    this.signalsMade = { ...made, marked: this.signals.junctions.filter((junction) => junction.marked).length };
+  }
+
+  /**
+   * The traffic signals of the streets read from the map, worked out afresh if the streets or what is
+   * known of where signals stand have changed since they last were. origin: where the streets are
+   * measured from, { lng, lat }.
+   */
+  readSignals(origin) {
+    if (this.signalsRead?.network === this.network && this.signalsRead?.marks === this.signalMarks) return this.signals;
+    // Where the map marks signals, measured as the streets are; and the area that is known for.
+    let marks = null;
+    if (this.signalMarks) {
+      const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
+      const { bounds, points } = this.signalMarks;
+      const [west, east] = [(bounds.west - origin.lng) * squeeze, (bounds.east - origin.lng) * squeeze];
+      const [south, north] = [(bounds.south - origin.lat) * METERS_PER_DEGREE, (bounds.north - origin.lat) * METERS_PER_DEGREE];
+      marks = {
+        points: points.map(([lng, lat]) => [(lng - origin.lng) * squeeze, (lat - origin.lat) * METERS_PER_DEGREE]),
+        within: (x, y) => x >= west && x <= east && y >= south && y <= north,
+      };
+    }
+    this.signals = signalsOf(this.network, { marks });
+    this.signalsRead = { network: this.network, marks: this.signalMarks };
+    return this.signals;
   }
 
   /**
@@ -2059,6 +2132,7 @@ export class MapView {
         this.scene.set('carlights', this.carLightMesh, { glow: true, point: POINT_METERS.vehicle });
       }
       this.lifeDrawn = 0;
+      this.darkenSignals();
       return false;
     }
     if (!this.lifeView && this.scene.origin) {
@@ -2079,6 +2153,14 @@ export class MapView {
     const scale = Math.min(Math.max(1 + (17.5 - zoom) * 0.5, 1), 1.5);
     this.lifeDrawn = drawTraffic(this.trafficMesh, this.traffic, lightFrom(this.sun), shadowReach(this.sun), scale);
     this.scene.set('traffic', this.trafficMesh);
+    // The signals: on each head the lamp that is lit just now, and by night its shine.
+    if (this.signals && this.traffic.signals) {
+      drawSignalLamps(this.signalLampMesh, this.signalGlowMesh, this.signals, Date.now() / 1000, { eye: this.scene.eye });
+      this.scene.set('signallamps', this.signalLampMesh, { shaded: false, bright: true });
+      this.scene.set('signalglow', this.signalGlowMesh, { glow: true, point: POINT_METERS.signal });
+    } else {
+      this.darkenSignals();
+    }
     // By night everything that moves has its lights on.
     if (lampsLit(this.night) > 0) {
       drawTrafficLights(this.lightMesh, this.traffic, scale, this.carLightMesh);
@@ -2270,6 +2352,15 @@ export class MapView {
     return this.skyMade;
   }
 
+  /** Put out the lamps of the signals: with no traffic running they stand dark. */
+  darkenSignals() {
+    if (this.signalLampMesh.count === 0 && this.signalGlowMesh.count === 0) return;
+    this.signalLampMesh.clear();
+    this.signalGlowMesh.clear();
+    this.scene.set('signallamps', this.signalLampMesh, { shaded: false, bright: true });
+    this.scene.set('signalglow', this.signalGlowMesh, { glow: true, point: POINT_METERS.signal });
+  }
+
   /** What is on the streets right now, for anyone who wants to count it. */
   lifeCounts() {
     return {
@@ -2284,6 +2375,8 @@ export class MapView {
       shelters: this.streetMade?.shelters ?? 0,
       bridges: this.bridgesMade,
       marks: this.marksMade ? { lines: this.marksMade.lines, crossings: this.marksMade.crossings } : null,
+      // The junctions with signals: how many, and at how many of them OpenStreetMap marks one (null: it has not said).
+      signals: this.signalsMade ? { junctions: this.signalsMade.junctions, approaches: this.signalsMade.approaches, heads: this.signalsMade.heads, marked: this.signalMarks ? this.signalsMade.marked : null, lit: this.signalLampMesh.count / 18 } : null,
       stayed: this.bridgesMade > 0 ? stayedHere(this.network, STAYED_BRIDGES).length : 0,
     };
   }

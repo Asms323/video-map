@@ -161,6 +161,23 @@ map opens on the city and keeps to it, and places are looked for in it.
   a sight of the night; the tankers stay away in the rush hours. There are
   more delivery bikes at lunch and from supper into the night. No vehicle
   is drawn after any one make, and none carries a badge or a name.
+- **Traffic lights, run the way Riyadh runs its own.** Where main roads
+  cross on the level there are signals: at each stop line a post by the
+  kerb with an arm out over the lanes, black heads on black boards lying
+  flat on the arm and standing upright on the post, and a second post on
+  the median of a wide carriageway. They are run as Riyadh's are: **one
+  side of the junction at a time**, with every other side at red, round the
+  junction in turn; the **green flashes three times** before the yellow; no
+  red-and-yellow comes before the green; and the waits are long, a large
+  junction taking about two minutes to come round. The traffic keeps to
+  them: it sees a signal from far enough to draw up gently at the stop
+  line, queues behind whoever stands there, moves off car by car at the
+  green, and **turns right at a red light** from the lane by the kerb once
+  it has stood, as Saudi traffic law lets it. A yellow light stops whoever
+  can still stop, and nobody runs the red. Where a signal stands is taken
+  from OpenStreetMap wherever it marks one. **Which light is lit is the app's own doing: it never shows
+  what a real signal is showing.** Look at the road, not at the map. Shown
+  with the traffic; switched off with it.
 - **Buses where buses run.** A bus only drives along a street that has a bus
   stop on the map (and on along the same street between stops), in the lane by
   the kerb, and pulls in at every stop on its side of the street, where a
@@ -284,7 +301,7 @@ Everything is free and needs no account or key.
 | Satellite photos | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. Shown only in the Satellite look. How sharp the photo comes differs from place to place: the service is asked, a square of tiles at a time, and only what it has is fetched. In the 3D city the photo is never shown: it is read on the phone, at one middling level of sharpness, for trees, shadows and the colours of roofs, and the service is asked once per area for the day the photo was taken |
 | One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
 | Detailed map picture | OpenStreetMap tile servers | [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
-| Place details, speed limits | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits |
+| Place details, speed limits, where the traffic signals stand | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits; and one for all of Riyadh's traffic signals, the same whoever asks it (so nothing of where you are goes with it), whose answer is kept on the phone for a week |
 | Search, nearest address | [Photon](https://photon.komoot.io) (OpenStreetMap data) | |
 | Routes | [OSRM](https://project-osrm.org) demo server (OpenStreetMap data) | |
 | Weather, and for the sky: how much cloud in each of three layers, the wind, how far one can see | [Open-Meteo](https://open-meteo.com) | Asked at most every half hour |
@@ -460,6 +477,43 @@ Road markings. The lanes painted are the ones the simulated traffic keeps to,
 which go by the class of the road, not by a count of its real lanes. Whether
 a given junction really has a zebra crossing is not known.
 
+Traffic lights. How Riyadh runs its signals is on record, and is kept to:
+each side of a junction in its turn, the three flashes of the green before
+the yellow, the right turn at a red light, the long waits. The rest is made
+up:
+
+- Which light is lit. No open source says what any signal in Riyadh is
+  showing at a given moment. Every junction here goes round by the phone's
+  clock, on a round of its own. **A green on this map says nothing about the
+  light in front of you.**
+- How long a light lasts. The real times are set junction by junction, and
+  at 350 of the busiest they follow the traffic. Here a side of a junction
+  has green for 18 to 42 seconds by the size of its road, then 3 seconds of
+  yellow and 2 with every side at red, so that a large junction comes round
+  in about two minutes. Rounds of 77 and 148 seconds have been measured in
+  the city, and a junction of four sides timed the usual Saudi way has been
+  worked out at five and a half minutes: the real waits are often longer.
+- Where they stand. OpenStreetMap marks traffic signals, and the app asks
+  once for all those in Riyadh. A junction has signals if a mark stands at
+  it, or if two main roads cross there on the level. Until the answer is
+  in, and if it never comes, a main road crossed by a lesser street has
+  them too. The map may lack a signal that is there, and two main roads may
+  really cross without one.
+- What they look like. No photograph of Riyadh's signals could be had while
+  this was made. Posts with arms out over the road are what the city's
+  contractors put up, and the Kingdom's road signs show signal heads both
+  upright and lying flat; the black heads on black boards, and one head on
+  the arm to every two lanes, are a guess. The heads are drawn 1.7 times
+  life size, or they could not be made out from above.
+- Which roads go together. Riyadh gives each approach its own green. Here
+  whatever comes in heading the same way, within sixty degrees, counts as
+  one side and goes together, and that is worked out from the lines on the
+  map: at a junction drawn askew a slip road may have its green with the
+  road beside it, not with the road it belongs to.
+- What drivers do. That some stop early when the green begins to flash is
+  known from a study of junctions in the Kingdom; that one in eight does is
+  the app's own figure. Nobody here runs a red light.
+
 Parked cars are set out by chance along residential streets, the same way
 every time for the same street. They are not the cars really parked there.
 The same goes for car parks. Their lanes are on the map; the bays beside
@@ -570,6 +624,8 @@ Watch video only when parked, or let a passenger watch.
   car are black and which white. The lorries' hours are those the traffic
   police publish for ordinary weeks; in Ramadan they differ, and that is
   not followed.
+- The traffic lights go by the app's own clock. They do not show what the
+  real signal in front of you shows, and are no guide to it.
 - The sky: the sun, the moon, the stars and the planets are where they
   really are (the moon and the planets to within a degree or so). The clouds
   are as many as the weather service says there are in each layer, but which
@@ -599,6 +655,12 @@ js/app.js               the app: layout, video, location, search, place details
 js/map.js               the map: styles, markers, following, taps
 js/life.js              the simulated traffic: street network, vehicles, trains,
                         and the bridges they cross
+js/fleet.js             which vehicles Riyadh has: kinds, shapes, colours, hours
+js/signals.js           the traffic signals: where they stand, how they are run,
+                        what they look like
+js/roadside.js          what stands along the great roads: barriers, medians
+                        with their palms, gantries
+js/cuttings.js          the roads that run below the ground, in open cuttings
 js/lights.js            the lights of the night: street lamps and their pools of
                         light, headlights, the light from shop windows
 js/scene.js             the layer that draws into the 3D scene: the walls, the
@@ -607,12 +669,19 @@ js/scene.js             the layer that draws into the 3D scene: the walls, the
 js/walls.js             the walls: their shape, their measure and their colours
 js/shade.js             the shadows on walls and roofs: what throws them
 js/landmarks.js         the landmarks modelled by hand, as stacks of slabs
+js/models.js            the famous buildings built as true models, face by face
+js/districts.js         the city's districts and what each is like
+js/districts-data.js    where each district lies
+js/plots.js             the walls and gates round the houses
 js/dress.js             metro station footbridges and pavilions, chain stores,
                         shop fronts, mosques
 js/roofs.js             the roofs: cut along the buildings' outlines, their
                         colours and coverings, the shade of their parapets
 js/sight.js             reading the satellite photo: shadows to heights, trees,
                         the colours of roofs
+js/sky.js               the sky: clouds, sun, moon, stars, planets, aircraft
+js/stars.js             the stars that rise over Riyadh
+js/flights.js           the aircraft: live ones, or the airport's usual traffic
 js/services.js          the open data services
 js/lib.js               everything that needs no browser: parsing, distances,
                         road matching, place categories, map styles by day
@@ -626,6 +695,7 @@ tools/firebase-deploy.sh  publishes to Firebase, refusing to replace another sit
 vendor/maplibre/        MapLibre GL JS 5.24.1 and the right-to-left text add-on
 vendor/pmtiles/         PMTiles 4.5.0, which reads the buildings archive
 vendor/earcut/          Earcut 3.2.4, which cuts a roof's outline into triangles
+vendor/d3-celestial/    the licence of the star file that js/stars.js is taken from
 tests/                  unit tests, browser test, small local server
 ```
 
