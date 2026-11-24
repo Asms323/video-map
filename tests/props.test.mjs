@@ -62,6 +62,44 @@ test('corners at one place share the way the surface looks there, so the light d
   assert.ok(near(normals[0], 1 / Math.sqrt(6), 1e-5) && near(normals[1], -1 / Math.sqrt(6), 1e-5) && near(normals[2], 2 / Math.sqrt(6), 1e-5));
 });
 
+test('the models are in models/, each a mesh and its picture, small enough for a phone', () => {
+  assert.deepEqual(PROPS.map((one) => one.id), ['blvd-world-pagoda', 'blvd-world-china-hall', 'blvd-world-china-great-hall', 'blvd-world-china-small-hall']);
+  assert.deepEqual([...new Set(PROPS.map((one) => one.file))], ['pagoda', 'hall']);
+  for (const file of new Set(PROPS.map((one) => one.file))) {
+    // One high as it is packed, standing on the ground; its picture a JPEG.
+    const mesh = readProp(bytesOf(`${file}.vmm`));
+    assert.ok(mesh && mesh.corners > 10000 && mesh.corners <= 65535, `${file}: ${mesh?.corners} corners`);
+    assert.ok(mesh.indices.length / 3 > 15000 && mesh.indices.length / 3 <= 32000, `${file}: ${mesh.indices.length / 3} triangles`);
+    let low = Infinity;
+    let high = -Infinity;
+    for (let i = 2; i < mesh.positions.length; i += 3) {
+      low = Math.min(low, mesh.positions[i]);
+      high = Math.max(high, mesh.positions[i]);
+    }
+    assert.ok(near(low, 0, 0.002) && near(high, 1, 1e-4) && near(mesh.top, 1, 1e-4), `${file}: from ${low} to ${high}`);
+    assert.ok(mesh.reach > 0.25 && mesh.reach < 1, `${file}: reaches ${mesh.reach.toFixed(2)}`);
+    for (let i = 0; i < mesh.uvs.length; i += 1) assert.ok(mesh.uvs[i] >= 0 && mesh.uvs[i] <= 1);
+    for (let i = 0; i < mesh.corners; i += 97) assert.ok(near(Math.hypot(mesh.normals[i * 3], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]), 1, 1e-4));
+    const picture = new Uint8Array(bytesOf(`${file}.jpg`));
+    assert.ok(picture[0] === 0xff && picture[1] === 0xd8 && picture.length < 400000, `${file}.jpg`);
+    assert.ok(bytesOf(`${file}.vmm`).byteLength < 600000, `${file}.vmm`);
+  }
+  for (const one of PROPS) {
+    assert.ok(one.name.length > 5 && one.height > 5 && one.height < 60 && one.night === 1 && one.within === 4000 && one.shade.height < one.height, one.id);
+    // In the fairground: within 420 m of its mark.
+    assert.ok(Math.hypot((one.at[0] - BOULEVARD_WORLD[0]) * METERS * Math.cos((BOULEVARD_WORLD[1] * Math.PI) / 180), (one.at[1] - BOULEVARD_WORLD[1]) * METERS) < 420, one.id);
+  }
+  // The hall is 1.29 times as long as it is tall, and 0.82 times as deep: the red hall, 17 m tall, is 22 m long.
+  const hall = readProp(bytesOf('hall.vmm'), 17);
+  let long = 0;
+  let deep = 0;
+  for (let i = 0; i < hall.positions.length; i += 3) {
+    long = Math.max(long, Math.abs(hall.positions[i]));
+    deep = Math.max(deep, Math.abs(hall.positions[i + 1]));
+  }
+  assert.ok(near(long * 2, 21.9, 0.2) && near(deep * 2, 13.9, 0.2), `${long * 2} by ${deep * 2}`);
+});
+
 test('the pagoda of Boulevard World: a mesh made from a photograph, and its picture', () => {
   const pagoda = PROPS.find((one) => one.id === 'blvd-world-pagoda');
   assert.ok(pagoda && pagoda.file === 'pagoda' && pagoda.height === 31 && pagoda.night === 1 && pagoda.within === 4000);
@@ -101,6 +139,7 @@ test('the models that carry a picture are shown near them only; each has its cle
   const box = (east, north, half) => [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([x, y]) => [prop.at[0] + (east + x * half) / squeeze, prop.at[1] + (north + y * half) / METERS]);
   assert.deepEqual([...replacedByLandmarks([{ id: 1, ring: box(3, -2, 8) }, { id: 2, ring: box(200, 300, 8) }])], [1]);
   // Its shadow: a footprint 13 m across, 25 m tall, where it stands.
+  assert.equal(landmarkShades().filter((one) => [25, 11, 13, 6.5].includes(one.height)).length >= 4, true);
   const shade = landmarkShades().find((one) => one.height === 25);
   assert.ok(shade && shade.polygons[0][0].every(([lng, lat]) => Math.hypot((lng - prop.at[0]) * squeeze, (lat - prop.at[1]) * METERS) < 6.6));
 });

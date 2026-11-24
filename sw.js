@@ -36,6 +36,8 @@ const SHELL = [
   './js/props.js',
   './models/pagoda.vmm',
   './models/pagoda.jpg',
+  './models/hall.vmm',
+  './models/hall.jpg',
   './js/lights.js',
   './js/scene.js',
   './js/sight.js',

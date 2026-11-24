@@ -16,32 +16,41 @@
 // the mesh. Nothing here touches the browser: the fetching is done by the
 // map, the drawing by the scene.
 //
-// A mesh is measured east, north and up from the middle of its foot. In the
-// file it is one high; here it is given its height in metres.
+// A mesh is measured east, north and up from the middle of its foot, and is
+// one high: it is given its height in metres where it is drawn, so that one
+// mesh may stand in several places, at several sizes.
 
 import { worldPlace } from './boulevard.js';
 
 /**
- * The models: id; file: its name in models/; at: [lng, lat] of the middle of
- * its foot; height in metres; turn: how far it is turned, in degrees
- * clockwise (its front, the side the photograph showed, looks south at 0);
- * night: how far its picture shows it as its lamps light it by night (1: a
- * photograph taken after dark; 0: one taken by day); within: built only for
- * a view whose middle is no further off than this, in metres; clear: within
- * this many metres of its middle the map's own buildings are taken out for
- * it; shade: a footprint and a height for the shadow it throws (see
+ * The models, each where it stands: id; file: its name in models/ (one file
+ * may stand in several places); at: [lng, lat] of the middle of its foot;
+ * height in metres; turn: how far it is turned, in degrees clockwise (its
+ * front, the side the photograph showed, looks south at 0); night: how far
+ * its picture shows it as its lamps light it by night (1: a photograph
+ * taken after dark; 0: one taken by day); within: shown only for a view
+ * whose middle is no further off than this, in metres; clear: within this
+ * many metres of its middle the map's own buildings are taken out for it;
+ * shade: a footprint and a height for the shadow it throws (see
  * landmarks.js, which reads both).
  */
 export const PROPS = [
-  // The pagoda of the Chinese quarter at Boulevard World: from the owner's photograph of it by night.
+  // The Chinese quarter of Boulevard World, from the owner's photographs of it by night.
+  // The pagoda:
   { id: 'blvd-world-pagoda', name: 'The pagoda, Boulevard World', file: 'pagoda', at: worldPlace([57.5, -238]), height: 31, turn: 90, night: 1, within: 4000, clear: 16, shade: { radius: 6.5, height: 25 } },
+  // The red hall beside it: two storeys, 22 m long, its shop front to the west.
+  { id: 'blvd-world-china-hall', name: 'The red hall, Boulevard World', file: 'hall', at: worldPlace([41, -234]), height: 17, turn: 90, night: 1, within: 4000, clear: 14, shade: { radius: 8, height: 11 } },
+  // The same hall stands for the quarter's two other halls, which no photograph shows whole: the great hall,
+  // 26 m long with its front to the south, and the small one north of the red hall.
+  { id: 'blvd-world-china-great-hall', name: 'The great hall, Boulevard World', file: 'hall', at: worldPlace([2, -191]), height: 20, turn: 0, night: 1, within: 4000, clear: 0, shade: { radius: 9, height: 13 } },
+  { id: 'blvd-world-china-small-hall', name: 'The small hall, Boulevard World', file: 'hall', at: worldPlace([40.4, -216]), height: 10, turn: 90, night: 1, within: 4000, clear: 0, shade: { radius: 5, height: 6.5 } },
 ];
 
 const HEAD_BYTES = 36;
 
 /**
- * Read a packed mesh (the bytes of a .vmm file) and give it its height.
- * Returns { corners, positions: Float32Array (east, north, up in metres),
+ * Read a packed mesh (the bytes of a .vmm file): one high, unless given a
+ * height. Returns { corners, positions: Float32Array (east, north, up),
  * uvs: Float32Array (across and down its picture, 0 to 1), indices:
  * Uint16Array, normals: Float32Array (which way the surface looks at each
  * corner), reach: how far it reaches from its middle line, top: its height },

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { BOULEVARD_WORLD, WORLD_PARTS, fountainJets, lagoonRings, onLagoon, worldPlace } from '../js/boulevard.js';
+import { BOULEVARD_WORLD, WORLD_PARTS, fountainJets, inFairground, lagoonRings, onLagoon, worldPlace } from '../js/boulevard.js';
 import { LANDMARKS, landmarkModels, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
 import { facesOf } from './model-faces.mjs';
@@ -33,6 +33,9 @@ test('the lagoon of Boulevard World: its shore as traced from the satellite phot
   assert.ok(onLagoon(...at(0, 0)) && onLagoon(...at(-60, 40)));
   assert.ok(!onLagoon(...worldPlace(part('blvd-world-sphere').at)) && !onLagoon(...at(600, 0)) && !onLagoon(46.67, 24.7));
   assert.deepEqual(worldPlace([0, 0]), BOULEVARD_WORLD);
+  // The fairground's own ground: the lagoon and every part built on it lie within; the city round it does not.
+  assert.ok(inFairground(...at(0, 0)) && inFairground(...at(-59, -259)) && WORLD_PARTS.filter((one) => one.id !== 'blvd-world-wheel').every((one) => inFairground(...worldPlace(one.at))));
+  assert.ok(!inFairground(...at(600, 0)) && !inFairground(...at(0, 500)) && !inFairground(46.67, 24.7));
   // The fountain's jets stand in a line across the basin, every one of them on the water.
   const jets = fountainJets();
   assert.equal(jets.length, 24);

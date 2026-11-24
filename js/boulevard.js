@@ -124,6 +124,18 @@ export function onLagoon(lng, lat) {
   return false;
 }
 
+// The fairground's own ground, as the street map outlines it: west, south, east, north.
+const FAIRGROUND = [46.59664, 24.7733, 46.60527, 24.78005];
+
+/**
+ * Whether a place lies within the fairground. (Seen from above it is full of
+ * dark water, dark canopies and rock, which beside a building look like the
+ * building's shadow: nothing there is measured by its shadow.)
+ */
+export function inFairground(lng, lat) {
+  return lng >= FAIRGROUND[0] && lng <= FAIRGROUND[2] && lat >= FAIRGROUND[1] && lat <= FAIRGROUND[3];
+}
+
 /** Where the jets of the lagoon's fountain stand, in a line across it: [east, north] in metres from BOULEVARD_WORLD. */
 export function fountainJets(count = 24) {
   const [[x0, y0], [x1, y1]] = [[-106.4, 0.4], [30.2, 72]];
@@ -739,20 +751,17 @@ function chineseHall(model, to, [halfU, halfV], { storeys = 1, tiles = TILE_GREY
 }
 
 /**
- * The Chinese quarter, square to the compass on its own quay: the great hall
- * with its red front to the south; the long gallery down the west side; the
- * two-storey hall in the south-east (the pagoda stands at its corner); kiosks
- * under green roofs and dark ones; lanterns on strings between them; and a
- * junk at anchor off the quay.
+ * The Chinese quarter, square to the compass on its own quay: the long
+ * gallery down its west side; kiosks under green roofs and dark ones;
+ * lanterns on strings between them; and a junk at anchor off the quay. (Its
+ * halls and its pagoda are models made from photographs: see props.js.)
  */
 function china(model) {
   const to = frame();
   prism(model, to, [[-31, 52], [18, 52], [22, 20], [70, -30], [70, -70], [-31, -70]], 0, 0.3, plain('#d9cdb4', '#ffcf9a', 0.3));
-  chineseHall(model, to, [13, 8]);
+  // (The great hall, the red hall and the small hall in the south-east, and the pagoda at the red hall's
+  // corner, are not built here: they are models made from photographs. See props.js.)
   chineseHall(model, frame([-27, 21], Math.PI / 2), [30, 4], { edge: '#ffb03a' });
-  chineseHall(model, frame([39, -43], Math.PI / 2), [11, 9.5], { storeys: 2, shops: true });
-  chineseHall(model, frame([38.4, -25]), [6.5, 6], { tiles: '#3f5560' });
-  // (The pagoda at the south-east hall's corner is not built here: it is a model made from a photograph. See props.js.)
   // Kiosks: four under green roofs, then two rows under dark ones, six-sided.
   for (const east of [-11, 0, 11, 22]) chineseHall(model, frame([east, -22]), [4, 3.2], { tiles: TILE_GREEN, edge: '#c8ff6a' });
   for (const [row, north] of [[0, -35], [1, -47]]) {
@@ -1245,7 +1254,7 @@ export const WORLD_PARTS = [
   },
   { id: 'blvd-world-rock', name: 'The rock at the entrance, Boulevard World', at: [-97, -205], height: 30, reach: 135, clear: 62, model: rock, shade: { radius: 44, height: 22 } },
   { id: 'blvd-world-entrance', name: 'The entrance, Boulevard World', at: [-136, -295], height: 21, reach: 55, clear: 52, model: entrance },
-  { id: 'blvd-world-china', name: 'The Chinese quarter, Boulevard World', at: [2, -191], height: 18.1, reach: 82, clear: 80, model: china },
+  { id: 'blvd-world-china', name: 'The Chinese quarter, Boulevard World', at: [2, -191], height: 12, reach: 82, clear: 80, model: china },
   { id: 'blvd-world-greece', name: 'The Greek village, Boulevard World', at: [203, -9], height: 16.2, reach: 85, clear: 34, model: greece },
   { id: 'blvd-world-bridge', name: 'The white bridge, Boulevard World', at: [149, -29.3], height: 3.5, reach: 66, clear: 0, model: whiteBridge },
   { id: 'blvd-world-venice', name: 'Little Venice, Boulevard World', at: [95, -40], height: 30.5, reach: 92, clear: 62, model: venice },

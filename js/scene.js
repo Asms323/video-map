@@ -801,11 +801,12 @@ attribute vec2 a_uv;
 uniform mat4 u_matrix;
 uniform vec3 u_at;      // where its foot stands, in the scene's metres
 uniform vec2 u_turn;    // the cosine and the sine of how far it is turned, clockwise
+uniform float u_tall;   // how tall it stands, in metres: the mesh itself is one high
 varying vec3 v_world;
 varying vec3 v_normal;
 varying vec2 v_uv;
 void main() {
-  vec3 place = vec3(a_pos.x * u_turn.x + a_pos.y * u_turn.y, a_pos.y * u_turn.x - a_pos.x * u_turn.y, a_pos.z);
+  vec3 place = vec3(a_pos.x * u_turn.x + a_pos.y * u_turn.y, a_pos.y * u_turn.x - a_pos.x * u_turn.y, a_pos.z) * u_tall;
   v_world = u_at + place;
   v_normal = vec3(a_normal.x * u_turn.x + a_normal.y * u_turn.y, a_normal.y * u_turn.x - a_normal.x * u_turn.y, a_normal.z);
   v_uv = a_uv;
@@ -1074,7 +1075,8 @@ export class SceneLayer {
     this.roofs = { mesh: null, buffers: null, stale: true }; // the roofs, worked out point by point
     this.walls = { mesh: null, buffers: null, stale: true }; // the walls, worked out point by point
     this.models = { mesh: null, buffers: null, stale: true }; // the models of the famous buildings
-    this.props = new Map(); // the models that carry a picture, by name: { mesh, picture, at, turn, lit, buffers, texture, stale }
+    this.props = []; // the models that carry a picture, each where it stands: { mesh, picture, at, turn, tall, lit }
+    this.propStore = new Map(); // what each of their meshes keeps in the graphics memory: mesh -> { buffers, texture }
     this.modelOpacity = 1; // they show from further off than the rest of the scene does
     this.haze = 0; // how much haze hangs in the distance: 0 in a view from above, 1 in one that reaches the horizon
     this.hazeBuffer = null;
@@ -1135,7 +1137,7 @@ export class SceneLayer {
     this.modelProgram = link(gl, MODEL_VERTEX, MODEL_FRAGMENT);
     this.modelAt = places(gl, this.modelProgram, ['pos', 'normal', 'surf', 'edge', 'tint', 'light', 'more'], ['matrix', 'opacity', 'sun', 'day', 'night', 'lamps', 'eye', 'pixel', 'skyHigh', 'skyLow', 'time', ...SHADOW_UNIFORMS]);
     this.propProgram = link(gl, PROP_VERTEX, PROP_FRAGMENT);
-    this.propAt = places(gl, this.propProgram, ['pos', 'normal', 'uv'], ['matrix', 'opacity', 'sun', 'day', 'night', 'at', 'turn', 'picture', 'lit', ...SHADOW_UNIFORMS]);
+    this.propAt = places(gl, this.propProgram, ['pos', 'normal', 'uv'], ['matrix', 'opacity', 'sun', 'day', 'night', 'at', 'turn', 'tall', 'picture', 'lit', ...SHADOW_UNIFORMS]);
     this.hazeProgram = link(gl, HAZE_VERTEX, HAZE_FRAGMENT);
     this.hazeAt = places(gl, this.hazeProgram, ['pos', 'thick'], ['matrix', 'haze']);
     this.hazeBuffer = null;
@@ -1163,11 +1165,7 @@ export class SceneLayer {
     this.walls.stale = true;
     this.models.buffers = null;
     this.models.stale = true;
-    for (const prop of this.props.values()) {
-      prop.buffers = null;
-      prop.texture = null;
-      prop.stale = true;
-    }
+    this.propStore.clear();
     this.shadow.target = null;
     this.shadow.buffer = null;
     this.shadow.ready = false;
@@ -1194,7 +1192,8 @@ export class SceneLayer {
     this.walls.buffers = null;
     if (this.models.buffers) for (const buffer of Object.values(this.models.buffers)) gl.deleteBuffer(buffer);
     this.models.buffers = null;
-    for (const prop of this.props.values()) this.dropProp(gl, prop);
+    for (const kept of this.propStore.values()) this.dropProp(gl, kept);
+    this.propStore.clear();
     for (const kept of [this.shadow, this.heights]) {
       const target = kept.target;
       if (target) {
@@ -1309,43 +1308,29 @@ export class SceneLayer {
   }
 
   /**
-   * Give the scene its models that carry a picture (see props.js): [{ id,
-   * mesh: { positions, normals, uvs, indices }, picture: an image, at:
+   * Give the scene its models that carry a picture (see props.js): [{ mesh:
+   * { positions, normals, uvs, indices } (one high), picture: an image, at:
    * [east, north, up] of its foot in the scene's metres, turn: degrees
-   * clockwise, lit: 0 to 1 }]. One that is already there is only moved; one
-   * no longer on the list is let go.
+   * clockwise, tall: its height in metres, lit: 0 to 1 }]. One mesh may
+   * stand in several places. A mesh no longer on the list is let go.
    */
   setProps(list) {
-    const named = new Set(list.map((one) => one.id));
-    for (const [id, prop] of this.props) {
-      if (named.has(id)) continue;
+    this.props = list.map((one) => ({ mesh: one.mesh, picture: one.picture, at: one.at, turn: one.turn ?? 0, tall: one.tall ?? 1, lit: one.lit ?? 0 }));
+    const used = new Set(this.props.map((one) => one.mesh));
+    for (const [mesh, kept] of this.propStore) {
+      if (used.has(mesh)) continue;
       const gl = this.map?.painter?.context?.gl;
-      if (gl) this.dropProp(gl, prop);
-      this.props.delete(id);
-    }
-    for (const one of list) {
-      const kept = this.props.get(one.id);
-      if (kept && kept.mesh === one.mesh && kept.picture === one.picture) {
-        kept.at = one.at;
-        kept.turn = one.turn;
-        kept.lit = one.lit;
-        continue;
-      }
-      if (kept) {
-        const gl = this.map?.painter?.context?.gl;
-        if (gl) this.dropProp(gl, kept);
-      }
-      this.props.set(one.id, { mesh: one.mesh, picture: one.picture, at: one.at, turn: one.turn, lit: one.lit, buffers: null, texture: null, stale: true });
+      if (gl) this.dropProp(gl, kept);
+      this.propStore.delete(mesh);
     }
   }
 
   /** Let go of what one such model keeps in the graphics memory. */
-  dropProp(gl, prop) {
-    if (prop.buffers) for (const buffer of Object.values(prop.buffers)) gl.deleteBuffer(buffer);
-    if (prop.texture) gl.deleteTexture(prop.texture);
-    prop.buffers = null;
-    prop.texture = null;
-    prop.stale = true;
+  dropProp(gl, kept) {
+    if (kept.buffers) for (const buffer of Object.values(kept.buffers)) gl.deleteBuffer(buffer);
+    if (kept.texture) gl.deleteTexture(kept.texture);
+    kept.buffers = null;
+    kept.texture = null;
   }
 
   /**
@@ -1714,7 +1699,7 @@ export class SceneLayer {
     const shown = this.opacity > 0;
     const models = this.models.mesh;
     const modelled = Boolean(models && models.count > 0 && this.modelOpacity > 0);
-    const pictured = this.props.size > 0 && this.modelOpacity > 0;
+    const pictured = this.props.length > 0 && this.modelOpacity > 0;
     if (!shown && !modelled && !pictured) return;
 
     // Metres around the origin, into the map's own measure of the world: the
@@ -1922,22 +1907,27 @@ export class SceneLayer {
       gl.uniform1i(at.picture, 3);
       gl.activeTexture(gl.TEXTURE3);
       for (const where of [at.pos, at.normal, at.uv]) gl.enableVertexAttribArray(where);
-      for (const prop of this.props.values()) {
-        if (!prop.buffers) prop.buffers = { positions: gl.createBuffer(), normals: gl.createBuffer(), uvs: gl.createBuffer(), indices: gl.createBuffer() };
+      for (const prop of this.props) {
+        // (What a mesh keeps in the graphics memory is made once, however many times it stands.)
+        let kept = this.propStore.get(prop.mesh);
+        const fresh = !kept;
+        if (fresh) {
+          kept = { buffers: { positions: gl.createBuffer(), normals: gl.createBuffer(), uvs: gl.createBuffer(), indices: gl.createBuffer() }, texture: gl.createTexture() };
+          this.propStore.set(prop.mesh, kept);
+        }
         const send = (buffer, where, data, size) => {
           gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-          if (prop.stale) gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+          if (fresh) gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
           gl.vertexAttribPointer(where, size, gl.FLOAT, false, 0, 0);
         };
-        send(prop.buffers.positions, at.pos, prop.mesh.positions, 3);
-        send(prop.buffers.normals, at.normal, prop.mesh.normals, 3);
-        send(prop.buffers.uvs, at.uv, prop.mesh.uvs, 2);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, prop.buffers.indices);
-        if (prop.stale) gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, prop.mesh.indices, gl.STATIC_DRAW);
-        if (!prop.texture) {
+        send(kept.buffers.positions, at.pos, prop.mesh.positions, 3);
+        send(kept.buffers.normals, at.normal, prop.mesh.normals, 3);
+        send(kept.buffers.uvs, at.uv, prop.mesh.uvs, 2);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, kept.buffers.indices);
+        if (fresh) gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, prop.mesh.indices, gl.STATIC_DRAW);
+        gl.bindTexture(gl.TEXTURE_2D, kept.texture);
+        if (fresh) {
           // Its picture: smoothed for the distance, and never repeated past its edge.
-          prop.texture = gl.createTexture();
-          gl.bindTexture(gl.TEXTURE_2D, prop.texture);
           gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
           gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, prop.picture);
@@ -1948,14 +1938,12 @@ export class SceneLayer {
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        } else {
-          gl.bindTexture(gl.TEXTURE_2D, prop.texture);
         }
-        prop.stale = false;
-        const angle = ((prop.turn ?? 0) * Math.PI) / 180;
+        const angle = (prop.turn * Math.PI) / 180;
         gl.uniform3f(at.at, prop.at[0], prop.at[1], prop.at[2] ?? 0);
         gl.uniform2f(at.turn, Math.cos(angle), Math.sin(angle));
-        gl.uniform1f(at.lit, prop.lit ?? 0);
+        gl.uniform1f(at.tall, prop.tall);
+        gl.uniform1f(at.lit, prop.lit);
         gl.drawElements(gl.TRIANGLES, prop.mesh.indices.length, gl.UNSIGNED_SHORT, 0);
       }
       for (const where of [at.pos, at.normal, at.uv]) gl.disableVertexAttribArray(where);

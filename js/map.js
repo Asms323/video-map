@@ -39,7 +39,7 @@ import {
   withOverlays,
 } from './lib.js';
 import { drawCuttings, overCutting } from './cuttings.js';
-import { onLagoon } from './boulevard.js';
+import { inFairground, onLagoon } from './boulevard.js';
 import { CHARACTERS, characterAt, districtAt } from './districts.js';
 import { dressHouses, parcelHouses, streetAprons } from './houses.js';
 import { PLAIN_FUEL, brandOf, localKind, mosqueExtras, mosquesAmong, stationExtras, storeExtras } from './dress.js';
@@ -542,7 +542,7 @@ export class MapView {
     this.housesMade = null;
     this.modelMesh = new ModelMesh(); // the famous buildings that are true models
     this.modelsMade = null;
-    this.propFiles = new Map(); // the models that carry a picture, as fetched: by name, { mesh, picture } (null while on their way)
+    this.propFiles = new Map(); // the models that carry a picture, as fetched: by file, { mesh, picture } (both null while on their way)
     this.propsMade = null;
     this.roadNames = null; // the layers of names along the roads, and how strongly they are shown
     this.spillMesh = new Mesh(); // the light from shop windows on the pavement
@@ -1595,7 +1595,8 @@ export class MapView {
     const list = [];
     for (const building of footprints) {
       for (const polygon of building.polygons) {
-        list.push({ ring: polygon[0].map(local), known: building.known ? building.height : null, id: building.id, usual: building.height });
+        // (In the fairground of Boulevard World dark water and canopies would be taken for shadows: nothing there is measured by its shadow.)
+        list.push({ ring: polygon[0].map(local), known: building.known ? building.height : null, id: building.id, usual: building.height, water: inFairground(polygon[0][0][0], polygon[0][0][1]) });
       }
     }
     // The ground taken up by roads, tracks and paths, a little wider than drawn: no tree stands there.
@@ -1629,8 +1630,8 @@ export class MapView {
         // Kept where nobody recorded a height and the shadow says the building is taller than the usual.
         const raised = new Set();
         read.heights.forEach((height, index) => {
-          const { id, known, usual } = list[index];
-          if (height === null || known !== null || id === undefined || !(height > usual + 1)) return;
+          const { id, known, usual, water } = list[index];
+          if (height === null || known !== null || id === undefined || water || !(height > usual + 1)) return;
           if (!(this.heights.get(id) >= height)) {
             this.heights.delete(id); // newest last, so the oldest can be forgotten first
             this.heights.set(id, height);
@@ -2270,26 +2271,26 @@ export class MapView {
     if (!origin) return;
     const shown = [];
     for (const { prop, east, north } of propsNear(origin)) {
-      const kept = this.propFiles.get(prop.id);
-      if (!kept) this.fetchProp(prop);
-      else if (kept.mesh) shown.push({ id: prop.id, mesh: kept.mesh, picture: kept.picture, at: [east, north, 0], turn: prop.turn ?? 0, lit: prop.night ?? 0 });
+      const kept = this.propFiles.get(prop.file);
+      if (!kept) this.fetchProp(prop.file);
+      else if (kept.mesh) shown.push({ mesh: kept.mesh, picture: kept.picture, at: [east, north, 0], turn: prop.turn ?? 0, tall: prop.height, lit: prop.night ?? 0 });
     }
     this.scene.setProps(shown);
     this.propsMade = { origin, shown: shown.length, triangles: shown.reduce((sum, one) => sum + one.mesh.indices.length / 3, 0) };
   }
 
-  /** Fetch one such model's mesh and its picture; when both are in, it is put in its place. One that cannot be had is left out, and not asked for again. */
-  fetchProp(prop) {
+  /** Fetch one such model's mesh and its picture; when both are in, it is put in its places. One that cannot be had is left out, and not asked for again. */
+  fetchProp(file) {
     const kept = { mesh: null, picture: null };
-    this.propFiles.set(prop.id, kept);
-    const mesh = fetch(`./models/${prop.file}.vmm`)
+    this.propFiles.set(file, kept);
+    const mesh = fetch(`./models/${file}.vmm`)
       .then((answer) => (answer.ok ? answer.arrayBuffer() : Promise.reject(new Error(`no mesh: ${answer.status}`))))
-      .then((bytes) => readProp(bytes, prop.height));
+      .then((bytes) => readProp(bytes));
     const picture = new Promise((resolve, reject) => {
       const image = new Image();
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error('no picture'));
-      image.src = `./models/${prop.file}.jpg`;
+      image.src = `./models/${file}.jpg`;
     });
     Promise.all([mesh, picture])
       .then(([made, image]) => {
