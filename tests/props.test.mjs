@@ -72,7 +72,7 @@ test('the models are in models/, each a mesh and its picture, small enough for a
   // (The house is a piece cut off the church's model, and keeps the church's picture.)
   assert.deepEqual([...new Set(PROPS.map((one) => one.picture ?? one.file))], ['pagoda', 'hall', 'pylon', 'church']);
   const house = readProp(bytesOf('house.vmm'));
-  assert.ok(house && house.corners > 2000 && house.indices.length / 3 > 3000 && near(house.top, 1, 1e-4) && house.reach < 0.9);
+  assert.ok(house && house.corners > 2000 && house.indices.length / 3 > 3000 && near(house.top, 1, 1e-4) && house.reach < 0.7);
   for (const file of new Set(PROPS.map((one) => one.picture ?? one.file))) {
     // One high as it is packed, standing on the ground; its picture a JPEG.
     const mesh = readProp(bytesOf(`${file}.vmm`));
@@ -97,7 +97,7 @@ test('the models are in models/, each a mesh and its picture, small enough for a
     // In the fairground: within 420 m of its mark.
     assert.ok(Math.hypot((one.at[0] - BOULEVARD_WORLD[0]) * METERS * Math.cos((BOULEVARD_WORLD[1] * Math.PI) / 180), (one.at[1] - BOULEVARD_WORLD[1]) * METERS) < 420, one.id);
   }
-  // The hall is 1.29 times as long as it is tall, and 0.82 times as deep: the red hall, 17 m tall, is 22 m long.
+  // The hall is 1.32 times as long as it is tall, and 0.84 times as deep: the red hall, 17 m tall, is 22 m long.
   const hall = readProp(bytesOf('hall.vmm'), 17);
   let long = 0;
   let deep = 0;
@@ -105,7 +105,17 @@ test('the models are in models/, each a mesh and its picture, small enough for a
     long = Math.max(long, Math.abs(hall.positions[i]));
     deep = Math.max(deep, Math.abs(hall.positions[i + 1]));
   }
-  assert.ok(near(long * 2, 21.9, 0.2) && near(deep * 2, 13.9, 0.2), `${long * 2} by ${deep * 2}`);
+  assert.ok(near(long * 2, 22.4, 0.2) && near(deep * 2, 14.2, 0.2), `${long * 2} by ${deep * 2}`);
+  // Each is as wide for its height as its photograph showed the thing (and not as the first of them were made,
+  // from photographs that reached the generator stretched to a square): how wide and how deep, for a height of 1.
+  const footOf = (file) => {
+    const { foot } = readProp(bytesOf(`${file}.vmm`));
+    return [foot[1] - foot[0], foot[3] - foot[2]];
+  };
+  for (const [file, wide, deep] of [['pagoda', 0.4, 0.41], ['hall', 1.32, 0.84], ['pylon', 0.53, 0.82], ['church', 1.24, 0.45], ['house', 0.84, 0.87]]) {
+    const foot = footOf(file);
+    assert.ok(near(foot[0], wide, 0.006) && near(foot[1], deep, 0.006), `${file}: ${foot.map((v) => v.toFixed(3)).join(' by ')}`);
+  }
   // The Greek village: fifteen houses of 6.5 to 9.5 m, each turned its own way, all within 30 m of the
   // village's middle, and none where a church stands.
   assert.equal(GREEK_HOUSES.length, 15);
@@ -133,7 +143,7 @@ test('the pagoda of Boulevard World: a mesh made from a photograph, and its pict
   const mesh = readProp(bytesOf('pagoda.vmm'), pagoda.height);
   assert.ok(mesh.corners > 10000 && mesh.corners <= 65535, `${mesh.corners} corners`);
   assert.ok(mesh.indices.length / 3 > 15000 && mesh.indices.length / 3 < 40000, `${mesh.indices.length / 3} triangles`);
-  // On the ground, 31 m tall, its eaves reaching some dozen metres from its middle line.
+  // On the ground, 31 m tall and slender: its eaves reach some eight metres from its middle line.
   let low = Infinity;
   let high = -Infinity;
   for (let i = 2; i < mesh.positions.length; i += 3) {
@@ -141,7 +151,7 @@ test('the pagoda of Boulevard World: a mesh made from a photograph, and its pict
     high = Math.max(high, mesh.positions[i]);
   }
   assert.ok(near(low, 0, 0.01) && near(high, 31, 0.01) && near(mesh.top, 31, 0.01));
-  assert.ok(mesh.reach > 8 && mesh.reach < 16, `reaches ${mesh.reach.toFixed(1)} m`);
+  assert.ok(mesh.reach > 6 && mesh.reach < 9, `reaches ${mesh.reach.toFixed(1)} m`);
   for (let i = 0; i < mesh.uvs.length; i += 1) assert.ok(mesh.uvs[i] >= 0 && mesh.uvs[i] <= 1);
   for (let i = 0; i < mesh.corners; i += 97) assert.ok(near(Math.hypot(mesh.normals[i * 3], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]), 1, 1e-4));
   // Its picture is a JPEG, small enough for a phone.

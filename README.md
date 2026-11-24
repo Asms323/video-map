@@ -192,6 +192,9 @@ map opens on the city and keeps to it, and places are looked for in it.
   own way. Where each house of that village stands is made up. The
   photographs were taken by night, so by night these show as their lamps
   light them, and by day their colours are only lifted out of the dark.
+  (The first of these models stood too wide for their height, the pagoda
+  most of all: their photographs had reached the generator stretched. They
+  have been brought back to the proportions the photographs show.)
   The names of a restaurant and of a shop were painted out of the
   photographs first. (The tower of the Paris quarter was tried too, and
   came out a solid cone: it stays built by hand.)
@@ -205,9 +208,10 @@ map opens on the city and keeps to it, and places are looked for in it.
   on the whole plot, and the app builds no wall of its own there. The app
   does all this already, but there is no such model yet (the generator
   gives about five a day): the first cut-outs wait in
-  `tools/models/inputs/`: two new villas from a photograph the owner sent,
-  and two older villas, a neighbourhood mosque and a block of flats from
-  open street photographs. Until then every house stays as described above.
+  `tools/models/inputs/`: new villas of one design from photographs the
+  owner sent (one of them from above, which shows the roof), and two
+  older villas, a neighbourhood mosque and a block of flats from open
+  street photographs. Until then every house stays as described above.
 - **Painted roads.** Main roads have their lanes: a broken line between lanes,
   a line along each edge, a yellow line down the middle where traffic runs
   both ways. A side street has a zebra crossing where it meets a main road,
@@ -893,8 +897,10 @@ phones drop their saved copy.
   `flats.png` are pieces cut out of street photographs by the Mapillary
   contributor mjoodealtamimi, taken in Riyadh in 2020, as published in
   OpenStreetView-5M: CC BY-SA 4.0 (`tools/models/inputs/inputs.json` names
-  each photograph). `villa-modern-1.png` and `villa-modern-2.png` are cut out
-  of a photograph the app's owner sent. None of these is part of the app.
+  each photograph). `villa-corner-above.png`, `villa-corner-front.png`,
+  `villa-corner-left.png`, `villa-straight.png`, `villa-modern-1.png` and
+  `villa-modern-2.png` are cut out of photographs the app's owner sent. None
+  of these is part of the app.
 - `tests/fixtures/map.har` holds map data © OpenStreetMap contributors (ODbL),
   as served by OpenFreeMap (© OpenMapTiles).
 - `tests/fixtures/buildings.json` holds building outlines from Overture Maps

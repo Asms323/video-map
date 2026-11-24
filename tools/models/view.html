@@ -10,7 +10,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-// Served by shot.mjs: view.html?glb=<file>&views=4&elev=18&bg=20242b&unlit=0
+// Served by shot.mjs: view.html?glb=<file>&views=4&elev=18&bg=20242b&unlit=0&from=30&narrow=1
+// (narrow: the model's footprint made so many times as wide, to try a correction of its proportions.)
 const query = new URLSearchParams(location.search);
 const views = Number(query.get('views') ?? 4);
 const elevation = (Number(query.get('elev') ?? 18) * Math.PI) / 180;
@@ -30,6 +31,8 @@ scene.add(sun);
 
 new GLTFLoader().load(query.get('glb'), (gltf) => {
   const model = gltf.scene;
+  const narrow = Number(query.get('narrow') ?? 1);
+  model.scale.set(narrow, 1, narrow);
   let triangles = 0;
   const textures = [];
   model.traverse((node) => {

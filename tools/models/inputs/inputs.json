@@ -1,4 +1,55 @@
 {
+  "villa-corner-above": {
+    "photo": "one of five photographs the app's owner sent on 24 November 2026 for this purpose, of new villas of one design in Riyadh, by day (1792 x 2400 each; the photographs themselves are not kept in this repository): the corner villa seen from a roof across the street",
+    "what": "the corner villa whole, from above: its flat roof with the stair house, water tank and two cooling units, the box of the upper floor with its band of wood and grilled windows, the yard walls, the garage across the cut-off corner, a street tree",
+    "scale": 0.7,
+    "lift": false,
+    "paint": [
+      "347,935,358,942,r",
+      "412,943,423,951,r"
+    ],
+    "painted": "the makers' badges on the two cooling units",
+    "outline": "20,1662 20,1452 62,1466 72,1466 160,1440 165,1437 143,1300 117,1092 100,936 262,903 265,749 400,742 404,716 487,716 492,730 639,736 650,868 787,886 965,901 965,1190 1150,1207 1150,1364 1017,1528 1030,1560 1034,1700 995,1765 940,1790 822,1775 800,1766 513,1818 500,1826 348,1774 174,1726",
+    "licence": "the owner's: see the README",
+    "first": true,
+    "leads": true
+  },
+  "villa-corner-front": {
+    "photo": "one of five photographs the app's owner sent on 24 November 2026 for this purpose, of new villas of one design in Riyadh, by day (1792 x 2400 each; the photographs themselves are not kept in this repository): the same villa from the street, facing its cut-off corner",
+    "what": "the same villa from the street: the garage wall across the corner, the box of the upper floor cornerwise above it, the door to the street; its walls run out of the photograph on both sides",
+    "scale": 0.5,
+    "lift": false,
+    "paint": [
+      "1660,1305,1681,1331"
+    ],
+    "painted": "a small plate beside the door",
+    "outline": "0,1592 0,1158 160,1122 165,1122 165,748 200,742 200,698 236,690 235,598 665,300 1155,468 1160,540 1190,572 1300,578 1540,662 1552,1165 1565,1178 1755,1181 1755,1592 1600,1592 1470,1596 1465,1608 1200,1612 1115,1640 1110,1665 735,1650 718,1634 228,1632 190,1626",
+    "licence": "the owner's: see the README",
+    "with": "villa-corner-above"
+  },
+  "villa-corner-left": {
+    "photo": "one of five photographs the app's owner sent on 24 November 2026 for this purpose, of new villas of one design in Riyadh, by day (1792 x 2400 each; the photographs themselves are not kept in this repository): the same villa from the side street",
+    "what": "the same villa from further left: the side wall with its gate, the garage, the band of wood and windows seen squarer; cut off by the photograph on the right",
+    "scale": 0.55,
+    "lift": false,
+    "paint": [
+      "1496,1331,1524,1350"
+    ],
+    "painted": "the label of the meter box",
+    "outline": "250,1460 250,1203 283,1200 285,1168 297,1142 381,1125 456,1131 465,1125 559,1119 559,800 559,735 572,725 578,648 890,348 1385,460 1388,516 1569,553 1792,621 1792,1556 1745,1562 1625,1562 1620,1583 1519,1588 1519,1619 1100,1619 1056,1594 1020,1580 546,1562 506,1552",
+    "licence": "the owner's: see the README",
+    "with": "villa-corner-above"
+  },
+  "villa-straight": {
+    "photo": "one of five photographs the app's owner sent on 24 November 2026 for this purpose, of new villas of one design in Riyadh, by day (1792 x 2400 each; the photographs themselves are not kept in this repository): another villa of the design, seen straight on from across its street",
+    "what": "a villa at the end of its row, straight on: the wall with the garage door on the left and the door on the right, a street tree, the box of the upper floor with its band of wood and three grilled windows",
+    "scale": 0.5,
+    "lift": false,
+    "paint": [],
+    "outline": "66,1478 66,1070 134,1068 134,1052 423,1052 423,573 576,573 576,477 1457,477 1457,1098 1716,1098 1726,1104 1726,1478 1322,1478 1195,1480 1190,1500 1040,1500 1040,1482 535,1479 105,1477",
+    "licence": "the owner's: see the README",
+    "first": true
+  },
   "villa-modern-1": {
     "photo": "a photograph the app's owner sent on 24 November 2026 for this purpose: a street of new villas of Riyadh by day (896 x 1190; the photograph itself is not kept in this repository)",
     "what": "the nearest villa: a wall to the street with a wide garage door and a street tree, two storeys of plain blocks behind it, windows with wooden shutters",
@@ -6,8 +57,7 @@
     "lift": false,
     "paint": [],
     "outline": "0,783 0,242 89,226 116,241 180,230 327,325 327,361 340,369 429,420 429,600 441,605 443,640 462,660 462,730 443,745 441,770 300,783",
-    "licence": "the owner's: see the README",
-    "first": true
+    "licence": "the owner's: see the README"
   },
   "villa-modern-2": {
     "photo": "a photograph the app's owner sent on 24 November 2026 for this purpose: a street of new villas of Riyadh by day (896 x 1190; the photograph itself is not kept in this repository)",
@@ -18,8 +68,7 @@
       "462,664,490,686,r"
     ],
     "outline": "443,768 443,622 426,600 426,464 495,458 560,500 560,642 604,652 604,760",
-    "licence": "the owner's: see the README",
-    "first": true
+    "licence": "the owner's: see the README"
   },
   "villa-a": {
     "photo": "1131787670634909",

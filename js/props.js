@@ -45,7 +45,7 @@ const WHITEWASHED = { gain: 1.5, plain: 0.55 };
 export const PROPS = [
   // Boulevard World, from the photographs of it by night that the app's owner sent. All within the fairground.
   // The Chinese quarter. The pagoda:
-  { id: 'blvd-world-pagoda', name: 'The pagoda, Boulevard World', file: 'pagoda', at: worldPlace(WORLD_SPOTS.pagoda), height: 31, turn: 90, night: 1, within: 4000, clear: 16, shade: { radius: 6.5, height: 25 } },
+  { id: 'blvd-world-pagoda', name: 'The pagoda, Boulevard World', file: 'pagoda', at: worldPlace(WORLD_SPOTS.pagoda), height: 31, turn: 90, night: 1, within: 4000, clear: 24, shade: { radius: 6.5, height: 25 } },
   // The red hall beside it: two storeys, 22 m long, its shop front to the west.
   { id: 'blvd-world-china-hall', name: 'The red hall, Boulevard World', file: 'hall', at: worldPlace(WORLD_SPOTS.halls.red), height: 17, turn: 90, night: 1, within: 4000, clear: 14, shade: { radius: 8, height: 11 } },
   // The same hall stands for the quarter's two other halls, which no photograph shows whole: the great hall,
@@ -55,7 +55,7 @@ export const PROPS = [
   // Egypt: the two gate towers before the temple, each with its king seated at its foot and a bowl of fire on
   // a stand: one model, standing twice. They face the lagoon, a little west of south.
   ...WORLD_SPOTS.pylons.map((at, n) => ({ id: `blvd-world-pylon-${n + 1}`, name: 'A gate tower of Egypt, Boulevard World', file: 'pylon', at: worldPlace(at), height: 12.5, turn: 16, night: 1, within: 4000, clear: 9, shade: { radius: 4.5, height: 11 } })),
-  // Greece: the church with its blue dome, 22 m long. It stands twice in the village: at its west front,
+  // Greece: the church with its blue dome, 17 m long. It stands twice in the village: at its west front,
   // facing the lagoon, and smaller at its south end, facing south.
   { id: 'blvd-world-church-1', name: 'The church, Greek village, Boulevard World', file: 'church', at: worldPlace(WORLD_SPOTS.churches[0]), height: 14, turn: 90, night: 1, day: WHITEWASHED, within: 4000, clear: 0, shade: { radius: 5, height: 9 } },
   { id: 'blvd-world-church-2', name: 'The chapel, Greek village, Boulevard World', file: 'church', at: worldPlace(WORLD_SPOTS.churches[1]), height: 11, turn: 0, night: 1, day: WHITEWASHED, within: 4000, clear: 0, shade: { radius: 4, height: 7 } },

@@ -820,7 +820,7 @@ export const GREEK_HOUSES = (() => {
       const far = Math.hypot(column * 9.4, row * 10.4);
       if (far > 25) continue;
       const at = [GREECE_AT[0] + column * 9.4 + (chance(n, 1) - 0.5) * 3, GREECE_AT[1] + row * 10.4 + (chance(n, 2) - 0.5) * 3];
-      // (No house where a church stands, nor hard up against one: a church is over 20 m long and 7 m deep.)
+      // (No house where a church stands, nor hard up against one: a church is 17 m long and 6 m deep.)
       if (WORLD_SPOTS.churches.some(([east, north]) => Math.hypot(at[0] - east, at[1] - north) < 15)) continue;
       houses.push({ at, height: Math.round((6.4 + 2.2 * (1 - far / 26) + 0.9 * chance(n, 6)) * 10) / 10, turn: Math.floor(chance(n, 3) * 4) * 90 + Math.round((chance(n, 4) - 0.5) * 16) });
     }

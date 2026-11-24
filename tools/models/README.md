@@ -7,22 +7,36 @@ how. The models themselves are in `models/`; where each stands is in
 
 ## The steps
 
-1. **A photograph** in which the thing shows clearly: the more it fills the
-   picture and the squarer it is seen, the better. Solid buildings work.
-   Lattices and wheels do not (the tower of the Paris quarter came out a solid
-   cone).
+1. **A photograph** in which the whole thing shows clearly, by day, with
+   nothing in front of it. Best is one taken from above and from a corner (a
+   roof or a window across the street): it shows the roof and two sides at
+   once, and what a photograph does not show the generator must guess. Solid
+   buildings work. Lattices and wheels do not (the tower of the Paris quarter
+   came out a solid cone).
 2. **Cut it out**: `python3 cutout.py <photo> <out.png> --outline "x,y x,y …"`
    draws a line round the thing and clears the rest. `--paint x0,y0,x1,y1`
    paints over a name, a number plate or a face first. Nothing with a name on
    it goes into the app.
-3. **Generate**: `python3 generate.py <out.png> <thing.glb>` sends the picture
-   to TRELLIS (Microsoft Research, MIT licence) as it is run on Hugging Face,
-   and fetches a mesh with a picture laid over it. This is done on the free
-   allowance of the account whose token is used: **about five models a day**.
-   A refusal says when the allowance is renewed. Do not work round it.
+3. **Generate**: `python3 generate.py <thing.glb> <cutout.png>` sends the
+   picture to TRELLIS (Microsoft Research, MIT licence) as it is run on
+   Hugging Face, and fetches a mesh with a picture laid over it. This is done
+   on the free allowance of the account whose token is used: **about five
+   models a day**. A refusal says when the allowance is renewed. Do not work
+   round it.
+   The picture is first made ready as the generator wants it (a square, the
+   thing in the middle, black where it is clear), and what is sent is kept
+   beside the model as `<thing>-sent-1.png`: look at it. `--ready` does only
+   that and sends nothing.
+   **Several photographs of the same thing** can be given at once, each cut
+   out: `python3 generate.py <thing.glb> <above.png> <front.png> <left.png>`.
+   The first leads, so it is the one that shows the whole thing best. The
+   generator was not taught this way and its makers call it an experiment:
+   whether it does better than the best single photograph is to be seen each
+   time.
 4. **Look at it**: `node shot.mjs <thing.glb> <out.png> 4 16 "&unlit=1&bg=0b0d14"`
    takes pictures of it from four sides. `node pieces.mjs` and `node
-   slices.mjs` measure it.
+   slices.mjs` measure it. Hold it against the photograph: is it as wide for
+   its height as the thing is?
 5. **Clean it**: `node clean.mjs <in.glb> <out.glb> [radius] [floor|none]
    [auto|box|crown]` drops what stood beside the thing in the photograph,
    stands it on the ground and puts its middle line at nought. `python3 cut.py
@@ -40,8 +54,21 @@ how. The models themselves are in `models/`; where each stands is in
 
 `simplify.mjs` and `shot.mjs` need `npm i --no-save --no-package-lock
 meshoptimizer@0.22.0 three@0.170.0` (anywhere in the project: it is not
-added to the app); `generate.py` needs `pip install gradio_client`;
-`shot.mjs` needs Playwright with its browser.
+added to the app); `generate.py` needs `pip install gradio_client numpy
+pillow`; `shot.mjs` needs Playwright with its browser.
+
+## A mistake that was made, and its mending
+
+Until 24 November 2026 `generate.py` sent a cut-out as it was. The generator
+makes every picture a square before it looks at it, so a cut-out that was not
+square reached it stretched, and the model came out as much too wide for its
+height: the pagoda, cut tall and narrow, by two thirds; Egypt's gate tower by
+a quarter; the Greek church and its house by three tenths; the red hall,
+nearly square, hardly at all. The five models in `models/` have had their
+footprints brought back (`node footprint.mjs <models/name.vmm> <the cut-out's
+width over its height>`), and `generate.py` now sends every picture ready
+made, exactly as the generator's own page prepares an upload (the two were
+compared, spot for spot).
 
 ## Whose photographs
 
@@ -54,10 +81,14 @@ come with it.
   Mapillary contributors, **CC BY-SA 4.0**. A model made from one is to be
   credited to its photographer in the app's README and shared on the same
   terms.
-- `inputs/villa-modern-1.png` and `villa-modern-2.png` are cut from a
-  photograph the app's owner sent for this purpose, a house number painted
-  out. They are kept here so that the work can go on from a fresh copy of the
-  project.
+- `inputs/villa-corner-above.png`, `villa-corner-front.png`,
+  `villa-corner-left.png`, `villa-straight.png`, `villa-modern-1.png` and
+  `villa-modern-2.png` are cut from five of the six photographs the app's
+  owner sent for this purpose, all of new villas of one design: a house
+  number, a plate by a door, a meter's label and the makers' badges on two
+  cooling units painted out. (The sixth, a close view of the upper floor, is
+  for checking a model's detail against.) The cut-outs are kept here so that
+  the work can go on from a fresh copy of the project.
 - The models of Boulevard World in `models/` were made from photographs the
   app's owner sent. Who took each is not recorded: see the app's README.
 
@@ -66,15 +97,24 @@ come with it.
 Made so far: the pagoda, the red hall, Egypt's gate tower and the Greek
 church (with the house cut off it), all at Boulevard World.
 
-Next, from `inputs/`, in this order: `villa-modern-1` and `villa-modern-2`
-(sharp, from a photograph the owner sent of a street of new villas; each has
-its own wall and garage or door to the street, so it goes into `HOUSE_MODELS`
-with `plot: true`), then `mosque`, `flats`, the Paris block if its cut-out is
-still to hand, and last the two older villas `villa-a` and `villa-b` (from
-small, hazy street photographs). With the first villa in `HOUSE_MODELS`, the
-houses near the middle of the view are drawn as it instead of as plain
-blocks; the app already does the rest (`pickHouseModels` in `js/map.js`,
-`standMany` and `housePlace` in `js/props.js`).
+Next, from `inputs/`, in this order (`inputs.json` says the same):
+
+1. `villa-corner-above` alone: the corner villa whole, from above. The best
+   photograph there is of any house so far.
+2. `villa-corner-above`, `villa-corner-front` and `villa-corner-left`
+   together: the same villa from three sides, to learn whether several
+   photographs do better than one.
+3. `villa-straight`: another villa of the design, straight on.
+4. `mosque`, then `flats` (small, hazy street photographs).
+5. Later: `villa-modern-1` and `villa-modern-2` (the same design again, from
+   the street), the Paris block if its cut-out is still to hand, and the two
+   older villas `villa-a` and `villa-b`.
+
+Each villa has its own wall and garage or door to the street, so it goes into
+`HOUSE_MODELS` with `plot: true`. With the first villa there, the houses near
+the middle of the view are drawn as it instead of as plain blocks; the app
+already does the rest (`pickHouseModels` in `js/map.js`, `standMany` and
+`housePlace` in `js/props.js`).
 A photograph taken by day gives a model with `night: 0`: how such a house
 shows its lamps by night is still to be written. The mosque and the block of
 flats need one more thing: fitting a model to the outline of any building,
