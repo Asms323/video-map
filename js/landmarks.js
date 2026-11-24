@@ -15,6 +15,7 @@
 //
 // Nothing here touches the browser. Measurements are in metres.
 
+import { WORLD_PARTS, worldPlace } from './boulevard.js';
 import { Model, ModelMesh } from './models.js';
 
 const TAU = Math.PI * 2;
@@ -1035,7 +1036,12 @@ function kafdStation() {
  * and how to build it: build() gives its slabs, model(model) builds it as a
  * true model (one may have both: a model that stands on a slab). clear: within this many metres of its middle the map's
  * own buildings are taken out, so the model does not stand inside a block.
- * shade: a footprint and height for its shadow, where the map data has none.
+ * shade: a footprint and height for its shadow, where the map data has none
+ * (shades: several, each with its own place, in metres east and north of the
+ * landmark's middle). covers(lng, lat): ground the landmark takes whole, a
+ * lake say; the map's own buildings standing on it are taken out as well.
+ * within: its model is built only for a view whose middle is no further off
+ * than this, in metres (without it: always, to be seen from across the city).
  */
 export const LANDMARKS = [
   { id: 'kingdom-centre', name: 'Kingdom Centre', at: [46.67441, 24.711346], bearing: 63.4, height: 302, clear: 48, build: kingdomPodium, model: kingdomCentre, nights: { '#e3ddd2': '#4a3f2e' } },
@@ -1073,6 +1079,9 @@ export const LANDMARKS = [
     // Lit from within, in the district's violet: light through the glass at its foot and through the bands where the shell is pierced.
     nights: { '#8fa7b8': '#efe0ff', '#f5f3ee': '#8a8798', '#e6d9bb': '#b24dff', '#efe9dc': '#9a93ad', '#ebe5d6': '#66627a' },
   },
+  // Boulevard World: its lagoon and what stands round it, each thing a landmark of its own (see boulevard.js).
+  // (They are many and low: built only for a view within a few kilometres of them.)
+  ...WORLD_PARTS.map(({ at, ...part }) => ({ ...part, at: worldPlace(at), bearing: 0, within: 4000 })),
 ];
 
 /** [lng, lat] of a point given in a landmark's own measure: u along its axis and v to the left, or east and north. */
@@ -1112,7 +1121,8 @@ export function landmarkSlabs() {
 /**
  * Build the landmarks that are true models into a mesh (a ModelMesh: see
  * models.js), each where it stands, measured in metres east and north of
- * origin ({ lng, lat }). Returns how many were built.
+ * origin ({ lng, lat }). Returns how many were built: those that are only
+ * for a view near them (within) are left out of one far off.
  */
 export function landmarkModels(mesh, origin) {
   mesh.clear();
@@ -1120,7 +1130,10 @@ export function landmarkModels(mesh, origin) {
   let models = 0;
   for (const landmark of LANDMARKS) {
     if (!landmark.model) continue;
-    landmark.model(new Model(mesh, { east: (landmark.at[0] - origin.lng) * squeeze, north: (landmark.at[1] - origin.lat) * METERS_PER_DEGREE, turn: landmark.bearing }));
+    const east = (landmark.at[0] - origin.lng) * squeeze;
+    const north = (landmark.at[1] - origin.lat) * METERS_PER_DEGREE;
+    if (landmark.within && Math.hypot(east, north) > landmark.within) continue;
+    landmark.model(new Model(mesh, { east, north, turn: landmark.bearing }));
     models += 1;
   }
   return models;
@@ -1204,11 +1217,15 @@ export const STAYED_BRIDGES = [
  * shadow from, in the form buildingShadows() takes: [{ height, base, polygons }].
  */
 export function landmarkShades() {
-  const shades = LANDMARKS.filter((landmark) => landmark.shade).map((landmark) => {
-    const ring = circle(landmark.shade.radius, 12).map(([u, v]) => place(landmark, u, v, true));
-    ring.push(ring[0]);
-    return { height: landmark.shade.height, base: 0, polygons: [[ring]] };
-  });
+  const shades = [];
+  for (const landmark of LANDMARKS) {
+    for (const shade of [...(landmark.shade ? [landmark.shade] : []), ...(landmark.shades ?? [])]) {
+      const [east, north] = shade.at ?? [0, 0];
+      const ring = circle(shade.radius, 12).map(([u, v]) => place(landmark, east + u, north + v, true));
+      ring.push(ring[0]);
+      shades.push({ height: shade.height, base: 0, polygons: [[ring]] });
+    }
+  }
   // The masts of the cable-stayed bridges.
   for (const bridge of STAYED_BRIDGES) {
     for (const along of bridge.masts) {
@@ -1230,6 +1247,18 @@ export function landmarkShades() {
 export function replacedByLandmarks(outlines) {
   const out = new Set();
   for (const landmark of LANDMARKS) {
+    if (landmark.covers) {
+      for (const { id, ring } of outlines) {
+        if (id === undefined || id === null || !ring || ring.length < 4) continue;
+        let lng = 0;
+        let lat = 0;
+        for (let i = 1; i < ring.length; i += 1) {
+          lng += ring[i][0];
+          lat += ring[i][1];
+        }
+        if (landmark.covers(lng / (ring.length - 1), lat / (ring.length - 1))) out.add(id);
+      }
+    }
     if (!(landmark.clear > 0)) continue;
     const squeeze = Math.cos((landmark.at[1] * Math.PI) / 180) * METERS_PER_DEGREE;
     const reach = landmark.clear * 3 / METERS_PER_DEGREE; // nothing further off than this needs a closer look

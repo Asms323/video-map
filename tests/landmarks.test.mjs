@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { WORLD_PARTS } from '../js/boulevard.js';
 import { LANDMARKS, STAYED_BRIDGES, landmarkBeacons, landmarkModels, landmarkRoofs, landmarkShades, landmarkSlabs, replacedByLandmarks } from '../js/landmarks.js';
 import { ModelMesh, cutMesh } from '../js/models.js';
 import { RoofMesh, roofDecks, roofingOf } from '../js/roofs.js';
@@ -36,17 +37,21 @@ function modelOf(id) {
   const mesh = new ModelMesh();
   landmarkModels(mesh, { lng: one.at[0], lat: one.at[1] });
   // (Only its own: its neighbours along King Fahd Road stand a street's width off, the rest kilometres.)
-  return facesOf(mesh).filter((face) => face.corners.every(([east, north]) => Math.hypot(east, north) < one.clear + 10));
+  // (A part of Boulevard World says for itself how far it reaches.)
+  return facesOf(mesh).filter((face) => face.corners.every(([east, north]) => Math.hypot(east, north) < (one.reach ?? one.clear) + 10));
 }
 
 test('every landmark is a stack of slabs, or a true model, standing where the building stands', () => {
   const data = landmarkSlabs();
   assert.equal(data.type, 'FeatureCollection');
   assert.equal(landmarkSlabs(), data, 'made once');
-  assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station']);
-  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower']);
+  // (After the buildings of the city come the parts of Boulevard World, each a landmark too: see boulevard.test.mjs.)
+  const world = WORLD_PARTS.map((one) => one.id);
+  assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station', ...world]);
+  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', ...world]);
   for (const one of LANDMARKS) {
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
+    if (world.includes(one.id)) continue;
     if (one.model) {
       // A model: no slabs, but for a podium it may stand on. It stands on the ground, is as tall as the
       // real one, and keeps to its plot.
@@ -707,12 +712,14 @@ test('replacedByLandmarks picks the tower\'s own outline, not the block it stand
   // The TV tower stands on open ground: nothing is cleared for it. It and the water tower bring their own shadow.
   assert.equal(landmark('tv-tower').clear, 0);
   const shades = landmarkShades();
-  assert.equal(shades.length, 4);
+  // (Between those two and the bridge's masts come the shades of Boulevard World: nine, three of them the pyramids'.)
+  assert.equal(shades.length, 4 + 9);
   assert.deepEqual(shades.slice(0, 2).map((shade) => [shade.height, shade.base, shade.polygons.length, shade.polygons[0][0].length]), [[150, 0, 1, 13], [58, 0, 1, 13]]);
+  assert.deepEqual(shades.slice(2, 11).map((shade) => Math.round(shade.height)), [34, 100, 7, 13, 15, 22, 10, 12, 28]);
   // So do the two masts of the Wadi Laban Bridge, which stand 405 m apart along its deck.
   const bridge = STAYED_BRIDGES[0];
   assert.deepEqual([bridge.id, bridge.masts, bridge.masts[1] - bridge.masts[0]], ['wadi-laban', [-202.5, 202.5], 405]);
-  const masts = shades.slice(2).map((shade) => {
+  const masts = shades.slice(11).map((shade) => {
     const ring = shade.polygons[0][0];
     const middle = [(ring[0][0] + ring[2][0]) / 2, (ring[0][1] + ring[2][1]) / 2];
     return { height: shade.height, at: along(bridge, from(bridge, middle)) };

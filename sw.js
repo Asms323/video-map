@@ -32,6 +32,7 @@ const SHELL = [
   './js/people.js',
   './js/houses.js',
   './js/boulevard.js',
+  './js/solids.js',
   './js/lights.js',
   './js/scene.js',
   './js/sight.js',

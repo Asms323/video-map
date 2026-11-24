@@ -167,6 +167,21 @@ map opens on the city and keeps to it, and places are looked for in it.
   in Riyadh: its asphalt runs from plot wall to plot wall, a little paler
   and dustier at the edges where the cars stand, with a narrow raised strip
   at the foot of the walls.
+- **Boulevard World.** The fairground in Hittin, which the street map shows
+  as an empty lot, is built as models round its lagoon: the water in its
+  parapet lit blue, the Sphere of screens, the Star Flyer tower, the three
+  pyramids in courses lit from below with their temple, pylons and sphinx,
+  the ring of rock at the entrance with the fairground's name in lamps over
+  its gate, the entrance plaza with its Najdi towers and golden camel riders,
+  the Chinese quarter with its halls and pagoda, the Greek village, Little
+  Venice with its bell tower and lighthouse, the Paris quarter with its
+  fountain and tower, the big wheel, the Mexican pyramid, the Indian hall,
+  the Kuwait Towers, Grendizer, and the pier with its coaster. They are
+  models, not photographs: plain shapes in the right places and colours.
+  How tall each is, is judged from pictures; where the big wheel, the tower
+  of the Paris quarter, Grendizer, the sphinx and Little Venice's bell tower
+  stand is a judgement too. The rest of the fairground's thirty quarters is
+  not built.
 - **Painted roads.** Main roads have their lanes: a broken line between lanes,
   a line along each edge, a yellow line down the middle where traffic runs
   both ways. A side street has a zebra crossing where it meets a main road,
@@ -355,6 +370,7 @@ Everything is free and needs no account or key.
 | Street map, names, places, road names | [OpenFreeMap](https://openfreemap.org), built from [OpenStreetMap](https://www.openstreetmap.org/copyright) | Drawn on the phone by [MapLibre](https://maplibre.org) |
 | Satellite photos | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. Shown only in the Satellite look. How sharp the photo comes differs from place to place: the service is asked, a square of tiles at a time, and only what it has is fetched. In the 3D city the photo is never shown: it is read on the phone, at one middling level of sharpness, for trees, shadows and the colours of roofs, and the service is asked once per area for the day the photo was taken |
 | What Riyadh's houses and house streets look like | [OpenStreetView-5M](https://huggingface.co/datasets/osv5m/osv5m) (Astruc and others, CVPR 2024): street photographs by Mapillary contributors, CC BY-SA 4.0 | Studied, not shown: the 1,629 photographs taken inside Riyadh were looked through and the houses are built by rules drawn from them. No photograph is in the app or fetched by it |
+| What stands at Boulevard World, and where | The satellite photo above (Esri World Imagery, taken in September 2025): the lagoon's shore was traced from it and every thing's place measured on it. Sixteen photographs of the place by night and the fairground's own booklet for the 2026-27 season, both sent by the app's owner | Studied, not shown: the models are built by hand from them. No photograph and no page of the booklet is in the app or fetched by it |
 | One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
 | Detailed map picture | OpenStreetMap tile servers | [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
 | Place details, speed limits, where the traffic signals stand | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits; and one for all of Riyadh's traffic signals, the same whoever asks it (so nothing of where you are goes with it), whose answer is kept on the phone for a week |
@@ -764,6 +780,9 @@ js/walls.js             the walls: their shape, their measure and their colours
 js/shade.js             the shadows on walls and roofs: what throws them
 js/landmarks.js         the landmarks modelled by hand, as stacks of slabs
 js/models.js            the famous buildings built as true models, face by face
+js/solids.js            plain solids for the models: blocks, tapers, things turned
+                        on a lathe, beams, sweeping roofs, panes
+js/boulevard.js         Boulevard World: its lagoon and what stands round it
 js/districts.js         the city's districts and what each is like
 js/districts-data.js    where each district lies
 js/plots.js             the walls and gates round the houses the map gives singly
