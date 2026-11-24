@@ -31,6 +31,7 @@ const SHELL = [
   './js/signals.js',
   './js/people.js',
   './js/houses.js',
+  './js/boulevard.js',
   './js/lights.js',
   './js/scene.js',
   './js/sight.js',

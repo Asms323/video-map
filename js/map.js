@@ -39,6 +39,7 @@ import {
   withOverlays,
 } from './lib.js';
 import { drawCuttings, overCutting } from './cuttings.js';
+import { onLagoon } from './boulevard.js';
 import { CHARACTERS, characterAt, districtAt } from './districts.js';
 import { dressHouses, parcelHouses, streetAprons } from './houses.js';
 import { PLAIN_FUEL, brandOf, localKind, mosqueExtras, mosquesAmong, stationExtras, storeExtras } from './dress.js';
@@ -1674,7 +1675,9 @@ export class MapView {
       lng: origin.lng + tree.x / squeeze,
       lat: origin.lat + tree.y / METERS_PER_DEGREE,
       radius: tree.radius,
-    }));
+    }))
+      // (The lagoon of Boulevard World is dark green in the photo, as a tree is: nothing is stood on its water.)
+      .filter((tree) => !onLagoon(tree.lng, tree.lat));
     this.photoRead = { day, buildings: list.length, measured, trees: this.trees.length };
     if (!this.scene.origin) this.scene.setOrigin(origin);
     this.layShade(); // the roofs go up with the buildings that were found to be taller
