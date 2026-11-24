@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { SIGNALS_KEPT_MS, packSignals, signalPoints, signalQuery, unpackSignals } from '../js/lib.js';
 import { Mesh, Traffic, VEHICLES, buildNetwork, pointAlong } from '../js/life.js';
-import { LIT, SIGNAL_TIMES, drawSignalLamps, drawSignals, greenSeconds, lampOf, lampPlace, signalState, signalsOf, untilRed } from '../js/signals.js';
+import { LIT, SIGNAL_TIMES, drawSignalLamps, drawSignals, greenSeconds, lampOf, lampPlace, laneArrows, signalState, signalsOf, untilRed } from '../js/signals.js';
 
 const ORIGIN = { lng: 46.67, lat: 24.7 };
 const EAST = 1 / (111320 * Math.cos((24.7 * Math.PI) / 180)); // degrees of longitude in a metre
@@ -201,15 +201,34 @@ test('a signal stands at the stop line: a post by the kerb with an arm over the 
   // Drawn: the stop lines, the posts and arms, the heads on their boards, every lamp unlit.
   const mesh = new Mesh();
   const made = drawSignals(mesh, signals, null);
-  assert.deepEqual(made, { junctions: 1, approaches: 4, posts: 4, heads: 8 });
-  // (A stop line is one face; a post five and its arm five; a head its box of five, its board, and three lenses of six-sided faces.)
-  assert.equal(mesh.count, 4 * 6 + 4 * (30 + 30) + 8 * (30 + 6 + 3 * 18));
+  assert.deepEqual(made, { junctions: 1, approaches: 4, posts: 4, heads: 8, arrows: 4 });
+  // (A stop line is one face, and the arrow in its one lane a bar and a head; a post five and its arm five;
+  // a head its box of five, its board, and three lenses of six-sided faces.)
+  assert.equal(mesh.count, 4 * (6 + 9) + 4 * (30 + 30) + 8 * (30 + 6 + 3 * 18));
   const all = corners(mesh);
-  const lineOf = all.slice(0, 24).filter((corner) => near(corner[0], approach.x, 0.3));
+  const lineOf = all.slice(0, 60).filter((corner) => near(corner[0], approach.x, 0.3));
   assert.ok(lineOf.length === 6 && lineOf.every((corner) => corner[2] < 0.3 && corner[1] <= 0.01 && corner[1] > -way.width / 2 && corner[3] > 200), 'white, across its own lanes only');
-  assert.ok(all.slice(24).every((corner) => corner[2] >= 0 && corner[2] < 9), 'nothing below the ground');
+  assert.ok(all.slice(60).every((corner) => corner[2] >= 0 && corner[2] < 9), 'nothing below the ground');
+  // The arrow: painted in the lane before the line, pointing at it, a little less white than the line.
+  assert.deepEqual(approach.lanesAcross.length, 1);
+  const arrowOf = all.slice(0, 60).filter((corner) => corner[0] < approach.x - 6 && corner[0] > approach.x - 11.5 && corner[1] < 0 && corner[1] > -way.width / 2);
+  assert.equal(arrowOf.length, 9);
+  assert.ok(arrowOf.every((corner) => corner[2] < 0.3 && corner[3] > 180 && corner[3] < 215 && near(corner[6], 0.86 * 255, 1.5)));
+  const tip = arrowOf.reduce((best, corner) => (corner[0] > best[0] ? corner : best));
+  assert.ok(near(tip[0], approach.x - 11 + 4.1, 0.01) && near(tip[1], -approach.lanesAcross[0], 0.01), 'its point is in the middle of the lane, towards the line');
+  // Which lane has which arrow: by the median it turns left, by the kerb it may turn right, between them straight on.
+  assert.deepEqual(laneArrows(1), ['ahead']);
+  assert.deepEqual(laneArrows(2), ['aheadLeft', 'aheadRight']);
+  assert.deepEqual(laneArrows(4), ['left', 'ahead', 'ahead', 'aheadRight']);
+  // (Three lanes: a turning arrow of two bars and a head, a straight one, and one that does both.)
+  const threeLaned = signalsFor([line('trunk', [[-600, 0], [600, 0]], { oneway: 1 }), line('secondary', [[0, -600], [0, 600]], { oneway: 1 })]);
+  const three = threeLaned.signals.approaches.find((one) => one.lanesAcross.length === 3);
+  const painted = new Mesh();
+  assert.equal(drawSignals(painted, { ...threeLaned.signals, approaches: [three], posts: [], heads: [] }).arrows, 3);
+  assert.equal(painted.count, 6 + 15 + 9 + 18);
+  assert.ok(three.lanesAcross[0] < three.lanesAcross[1] && three.lanesAcross[1] < three.lanesAcross[2], 'from the median to the kerb');
   assert.ok(!all.some((corner) => corner[3] > 240 && corner[4] < 80), 'no lamp lit');
-  assert.deepEqual(drawSignals(mesh, null), { junctions: 0, approaches: 0, posts: 0, heads: 0 });
+  assert.deepEqual(drawSignals(mesh, null), { junctions: 0, approaches: 0, posts: 0, heads: 0, arrows: 0 });
   assert.equal(mesh.count, 0);
 
   // The lamps that are lit: one to a head, in its colour, where its lamp is; and a point of light for each.

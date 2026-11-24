@@ -1436,3 +1436,49 @@ test('the app is made for Riyadh: where the city is, and what lies in it', () =>
   const across = (east - west) * 111320 * Math.cos((CITY.centre.lat * Math.PI) / 180);
   assert.ok(across > 70000 && across < 110000, String(across));
 });
+
+test('measured heights: a byte of a height tile, the spot of a tile a place lies in, and a building\'s height read off its outline', async () => {
+  const { HEIGHT_TILES, heightOfByte, heightSpot, measuredHeight } = await import('../js/lib.js');
+  // A byte: nothing; half metres up to a hundred; then steps of five.
+  assert.equal(heightOfByte(0), 0);
+  assert.equal(heightOfByte(undefined), 0);
+  assert.equal(heightOfByte(1), 0.5);
+  assert.equal(heightOfByte(25), 12.5);
+  assert.equal(heightOfByte(200), 100);
+  assert.equal(heightOfByte(201), 105);
+  assert.equal(heightOfByte(255), 375);
+  // A place: the tile of zoom 13 it lies in (as the tool that cuts the tiles counts them), and the spot of it.
+  assert.deepEqual(HEIGHT_TILES, { zoom: 13, size: 512 });
+  const spot = heightSpot(46.6753, 24.7136);
+  assert.deepEqual([spot.x, spot.y], [5158, 3515]);
+  assert.ok(spot.spotX >= 0 && spot.spotX < 512 && spot.spotY >= 0 && spot.spotY < 512);
+  // (A little to the east and to the south: further along the tile, and further down it.)
+  const next = heightSpot(46.6763, 24.7126);
+  assert.ok(next.spotX > spot.spotX && next.spotY > spot.spotY);
+  assert.deepEqual(heightSpot(46.6753, 24.7136, { zoom: 14, size: 256 }).x, 10316);
+
+  // A building: a square of some forty metres. Every spot inside it holds 24 (12 m), all else nothing.
+  const square = [[[46.6750, 24.7130], [46.6754, 24.7130], [46.6754, 24.7134], [46.6750, 24.7134], [46.6750, 24.7130]]];
+  const inSquare = (lng, lat) => lng > 46.6750 && lng < 46.6754 && lat > 24.7130 && lat < 24.7134;
+  assert.equal(measuredHeight([square], (lng, lat) => (inSquare(lng, lat) ? 24 : 0)), 12);
+  // One corner of it belongs to a taller neighbour on the tiles: the middle of what is found still tells its own height.
+  assert.equal(measuredHeight([square], (lng, lat) => (lng > 46.67525 && lat > 24.71325 ? 180 : inSquare(lng, lat) ? 24 : 0)), 12);
+  // Nothing known there, or one spot only: no height.
+  assert.equal(measuredHeight([square], () => 0), null);
+  assert.equal(measuredHeight([square], () => undefined), null);
+  let asked = 0;
+  assert.equal(measuredHeight([square], () => ((asked += 1) === 1 ? 30 : 0)), null);
+  assert.equal(measuredHeight([], () => 24), null);
+  assert.equal(measuredHeight([[[[46.675, 24.713], [46.6754, 24.713]]]], () => 24), null);
+  // Only places inside the outline are asked about: an L-shaped building, whose middle may lie outside it.
+  const ell = [[[0, 0], [0.0004, 0], [0.0004, 0.0001], [0.0001, 0.0001], [0.0001, 0.0004], [0, 0.0004], [0, 0]].map(([x, y]) => [46.675 + x, 24.713 + y])];
+  const where = [];
+  measuredHeight([ell], (lng, lat) => {
+    where.push([lng - 46.675, lat - 24.713]);
+    return 40;
+  });
+  assert.ok(where.length >= 2 && where.every(([x, y]) => (x < 0.0001 || y < 0.0001) && x > 0 && y > 0 && x < 0.0004 && y < 0.0004));
+  // Of several polygons the largest speaks.
+  const small = [[[46.6760, 24.7130], [46.67605, 24.7130], [46.67605, 24.71305], [46.6760, 24.71305], [46.6760, 24.7130]]];
+  assert.equal(measuredHeight([small, square], (lng, lat) => (inSquare(lng, lat) ? 60 : 10)), 30);
+});

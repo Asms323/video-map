@@ -121,13 +121,14 @@ export function heightAlong(way, distance) {
 }
 
 /** How many lanes a way has for one direction of traffic. */
-const lanesOf = (way) => (way.oneway === 0 ? Math.max(way.lanes - 1, 1) : way.lanes);
+/** How many lanes a way has for the traffic of one direction. */
+export const lanesOf = (way) => (way.oneway === 0 ? Math.max(way.lanes - 1, 1) : way.lanes);
 
 /**
  * How far to the right of a way's middle line a lane runs, in metres. Right-hand
  * traffic: a two-way road keeps its lanes to the right of the middle line.
  */
-function laneOffset(way, lane) {
+export function laneOffset(way, lane) {
   if (way.oneway !== 0) return (lane - (way.lanes - 1) / 2) * LANE_METERS;
   return (lane + 0.5) * (way.class === 'minor' ? NARROW_LANE_METERS : LANE_METERS);
 }
@@ -683,7 +684,7 @@ export function pointAlong(way, distance, out = [0, 0, 0, 0]) {
 const pick = (list, random) => list[Math.floor(random() * list.length)];
 
 /** A number from 0 up to 1 that is always the same for the same text. */
-function unitFrom(text) {
+export function unitFrom(text) {
   let hash = 2166136261;
   for (let i = 0; i < text.length; i += 1) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
   return (hash >>> 0) / 4294967296;
@@ -1634,15 +1635,60 @@ export function lightFrom(sun) {
   return { east: Math.sin(azimuth) * Math.cos(altitude), north: Math.cos(azimuth) * Math.cos(altitude), up: Math.sin(altitude) };
 }
 
+// A vehicle seen from close by (see drawVehicle()): how much of each corner of its body is cut off, as a
+// share of its width and of its length, and never more than so many metres; how wide a wheel is; the
+// colour of its hub.
+const ROUNDED_ACROSS = 0.3;
+const ROUNDED_ALONG = 0.1;
+const ROUNDED_MOST_METERS = 0.32;
+const WHEEL_WIDE_METERS = 0.24;
+const HUB_PAINT = [168, 172, 178];
+
+/** Whether a box of a vehicle has its corners rounded off from close by: its body and its cabin, not its load or the small things on it. */
+function isRounded(box) {
+  return (box[5] === 'body' || box[5] === 'glass') && box[2] >= 0.85 && box[1] - box[0] >= 0.3;
+}
+
+/**
+ * How a box of a vehicle draws in towards its top, seen from close by: as it is told, or, for the body
+ * of a car that is told nothing, a little at its nose and tail and along its sides.
+ */
+function leanOf(shape, box) {
+  if (box[6]) return box[6];
+  return box[5] === 'body' && wheelsOf(shape) && isRounded(box) && box[4] - box[3] < 1 ? BODY_LEAN : undefined;
+}
+const BODY_LEAN = [0.012, 0.022, 0.05];
+
+/**
+ * A vehicle's wheels: { radius (metres), axles: [how far along the vehicle each stands, 0 at its tail to
+ * 1 at its nose] }, or null for one that has none to show. Told with its shape, or, for a car, read off
+ * the dark that is drawn under it: as high as its wheels are.
+ */
+function wheelsOf(shape) {
+  if (shape.wheels === undefined) {
+    const under = shape.boxes.find((box) => box[5] === 'tyre' && box[2] >= 0.85);
+    shape.wheels = under && shape.width >= 1 ? { radius: under[4] * 1.04, axles: [0.175, 0.815] } : null;
+  }
+  return shape.wheels;
+}
+
+/** The outline of a box seen from above, with its four corners cut off: eight places [along, across], round it. */
+function cutRing(rear, front, side, along, across) {
+  return [[rear + along, -side], [front - along, -side], [front, -side + across], [front, side - across], [front - along, side], [rear + along, side], [rear, side - across], [rear, -side + across]];
+}
+
 /**
  * Add one vehicle to a mesh: the shade it throws on the road (twelve
  * corners, when the sun is up), its boxes (thirty corners each), and its
  * lamps (six corners each: two ahead and two behind, or one and one on a
  * motorbike, and none on a train's car). (x, y) is its middle, (east, north)
  * the way it points. reach: what shadowReach() gives, or null. scale: 1 is
- * life size. lift: how high the road is under it, on a bridge.
+ * life size. lift: how high the road is under it, on a bridge. fine: true
+ * for one seen from close by, which is drawn with more care: the corners of
+ * its body and its cabin rounded off, the body drawing in a little towards
+ * its top, and its wheels under it, each with its hub.
  */
-export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, light, reach, scale = 1, lift = 0) {
+export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, light, reach, scale = 1, lift = 0, fine = false) {
   const shape = VEHICLES[type];
   const length = shape.length * scale;
   const halfLength = length / 2;
@@ -1675,10 +1721,14 @@ export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, 
     shape.front = solid.reduce((best, one) => (one.box[1] > best.box[1] + 1e-9 ? one : best), solid[0]).index;
     shape.rear = solid.reduce((best, one) => (one.box[0] < best.box[0] - 1e-9 ? one : best), solid[0]).index;
   }
-  for (const [from, to, share, bottom, top, material, lean, aside = 0] of shape.boxes) {
+  const wheels = fine ? wheelsOf(shape) : null;
+  for (const box of shape.boxes) {
+    const [from, to, share, bottom, top, material, , aside = 0] = box;
+    const lean = fine ? leanOf(shape, box) : box[6];
     const rear = -halfLength + length * from;
     const front = -halfLength + length * to;
-    const side = halfWidth * share;
+    // (With its wheels drawn, the dark under a car is only what is between them.)
+    const side = halfWidth * share * (wheels && material === 'tyre' ? 0.7 : 1);
     const off = halfWidth * aside; // how far off the middle of the vehicle the box stands
     const low = lift + bottom * scale;
     const high = lift + top * scale;
@@ -1693,6 +1743,35 @@ export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, 
       const lit = faceLight(light, nEast, nNorth, nUp);
       mesh.face(a, b, c, d, face[0] * lit, face[1] * lit, face[2] * lit, shown);
     };
+    if (fine && isRounded(box)) {
+      // Its four corners cut off, at its foot and at its top: eight sides, each lit by the way it really faces.
+      const cut = Math.min(side * ROUNDED_ACROSS, ROUNDED_MOST_METERS * scale);
+      const foot = cutRing(rear, front, side, Math.min((front - rear) * ROUNDED_ALONG, cut * 1.15), cut);
+      const narrower = sideTop / side;
+      const head = cutRing(rearTop, frontTop, sideTop, Math.min((frontTop - rearTop) * ROUNDED_ALONG, cut * 1.15 * narrower), cut * narrower);
+      const lid = lean && material === 'glass' ? paint : colour;
+      const litTop = faceLight(light, 0, 0, 1);
+      mesh.room(18);
+      for (let i = 1; i < 7; i += 1) {
+        for (const k of [0, i, i + 1]) {
+          const [px, py, pz] = at(head[k][0], head[k][1], high);
+          mesh.corner(px, py, pz, lid[0] * litTop, lid[1] * litTop, lid[2] * litTop, shown);
+        }
+      }
+      for (let i = 0; i < 8; i += 1) {
+        const j = (i + 1) % 8;
+        const dAlong = foot[j][0] - foot[i][0];
+        const dAcross = foot[j][1] - foot[i][1];
+        const long = Math.hypot(dAlong, dAcross) || 1;
+        const [outAlong, outAcross] = [dAcross / long, -dAlong / long];
+        // (How far the face leans back: by how much its top stands in from its foot.)
+        const inset = ((foot[i][0] - head[i][0] + foot[j][0] - head[j][0]) * outAlong + (foot[i][1] - head[i][1] + foot[j][1] - head[j][1]) * outAcross) / 2;
+        const up = Math.max(inset, 0) / Math.hypot(inset, high - low);
+        const level = Math.sqrt(1 - up * up);
+        paintFace(at(foot[i][0], foot[i][1], low), at(foot[j][0], foot[j][1], low), at(head[j][0], head[j][1], high), at(head[i][0], head[i][1], high), (east * outAlong + rightEast * outAcross) * level, (north * outAlong + rightNorth * outAcross) * level, up);
+      }
+      continue;
+    }
     // The top: of a cabin, its roof, in the body's paint.
     paintFace(at(rearTop, -sideTop, high), at(frontTop, -sideTop, high), at(frontTop, sideTop, high), at(rearTop, sideTop, high), 0, 0, 1, lean && material === 'glass' ? paint : colour);
     // Front and rear, and the two sides.
@@ -1702,13 +1781,54 @@ export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, 
     paintFace(at(front, -side, low), at(rear, -side, low), at(rearTop, -sideTop, high), at(frontTop, -sideTop, high), -rightEast, -rightNorth, slope * 0.5);
   }
 
+  // Its wheels: each an eight-sided disc standing under the body's side, a touch proud of it, with a pale
+  // hub in its middle and as much of its tread as can be seen from above.
+  if (wheels) {
+    const radius = wheels.radius * scale;
+    const wide = WHEEL_WIDE_METERS * scale;
+    const tyre = MATERIALS.tyre;
+    for (const axle of wheels.axles) {
+      const middle = -halfLength + length * axle;
+      for (const sign of [-1, 1]) {
+        const outer = sign * (halfWidth + 0.012 * scale);
+        const inner = sign * (halfWidth - wide);
+        const at = (along, across, z) => [x + east * along + rightEast * across, y + north * along + rightNorth * across, lift + z];
+        const rim = [];
+        for (let k = 0; k < 8; k += 1) {
+          const angle = ((k + 0.5) * Math.PI) / 4;
+          rim.push([middle + Math.cos(angle) * radius, radius + Math.sin(angle) * radius]);
+        }
+        const litSide = faceLight(light, rightEast * sign, rightNorth * sign, 0);
+        mesh.room(24);
+        for (let k = 1; k < 7; k += 1) {
+          for (const i of [0, k, k + 1]) {
+            const [px, py, pz] = at(rim[i][0], outer, rim[i][1]);
+            mesh.corner(px, py, pz, tyre[0] * litSide, tyre[1] * litSide, tyre[2] * litSide, shown);
+          }
+        }
+        const hub = radius * 0.56;
+        const proud = outer + sign * 0.006 * scale;
+        mesh.face(at(middle - hub, proud, radius), at(middle, proud, radius - hub), at(middle + hub, proud, radius), at(middle, proud, radius + hub), HUB_PAINT[0] * litSide, HUB_PAINT[1] * litSide, HUB_PAINT[2] * litSide, shown);
+        // (The tread: the five of its eight sides that look up or along the road.)
+        for (let k = 0; k < 4; k += 1) {
+          const angle = ((k + 1) * Math.PI) / 4;
+          const lit = faceLight(light, east * Math.cos(angle), north * Math.cos(angle), Math.sin(angle));
+          mesh.face(at(rim[k][0], outer, rim[k][1]), at(rim[k + 1][0], outer, rim[k + 1][1]), at(rim[k + 1][0], inner, rim[k + 1][1]), at(rim[k][0], inner, rim[k][1]), tyre[0] * lit, tyre[1] * lit, tyre[2] * lit, shown);
+        }
+      }
+    }
+  }
+
   // Its lamps: a pale one at each corner of its front, a red one at each corner of its rear, standing a
   // touch proud of the face they are on. (A motorbike has one of each, in its middle. A train's cars come
   // one by one, and none of them knows whether it is the first: they carry none.)
   if (type === 'coach') return;
   const single = shape.width < 1;
   for (const [index, ahead, colour] of [[shape.front, 1, HEADLIGHTS], [shape.rear, -1, TAIL_LIGHTS]]) {
-    const [from, to, share, bottom, top, , lean, aside = 0] = shape.boxes[index];
+    const [from, to, share, bottom, top, , , aside = 0] = shape.boxes[index];
+    const lean = fine ? leanOf(shape, shape.boxes[index]) : shape.boxes[index][6];
+    // (On a front whose corners are rounded off, the lamps keep to the flat of it.)
+    const corners = fine && isRounded(shape.boxes[index]) ? [[-0.68, -0.34], [0.34, 0.68]] : [[-0.98, -0.56], [0.56, 0.98]];
     const tall = top - bottom;
     // On a low body they sit in its upper half; on a tall cab or a load, at its foot.
     const [z0, z1] = tall <= 1 ? [bottom + tall * 0.52, bottom + tall * 0.84] : [bottom + 0.06, bottom + 0.3];
@@ -1723,7 +1843,7 @@ export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, 
     const [foot, head] = [faceAt(z0), faceAt(z1)];
     const lit = faceLight(light, east * ahead, north * ahead, 0);
     const at = (along, across, z) => [x + east * along + rightEast * (across + off), y + north * along + rightNorth * (across + off), lift + z * scale];
-    for (const [inner, outer] of single ? [[-0.34, 0.34]] : [[-0.98, -0.56], [0.56, 0.98]]) {
+    for (const [inner, outer] of single ? [[-0.34, 0.34]] : corners) {
       mesh.face(at(foot.along, foot.wide * inner, z0), at(foot.along, foot.wide * outer, z0), at(head.along, head.wide * outer, z1), at(head.along, head.wide * inner, z1), colour[0] * lit, colour[1] * lit, colour[2] * lit, shown);
     }
   }
@@ -1734,11 +1854,15 @@ export function drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, 
  * train cars drawn. scale: how much larger than life to draw them, so they can
  * still be made out when the map shows a wide area.
  */
-export function drawTraffic(mesh, traffic, light, reach, scale = 1) {
+export function drawTraffic(mesh, traffic, light, reach, scale = 1, near = null) {
   mesh.clear();
   let drawn = 0;
+  // (Those seen from close by are drawn with more care: near.eye is where the eye is, [x, y, z], and
+  // near.within how far from it a vehicle is still large enough on screen for that to show.)
+  const within = near ? near.within * near.within : 0;
   traffic.eachVehicle((type, x, y, east, north, paint, cargo, shown, lift) => {
-    drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, light, reach, scale, lift);
+    const fine = within > 0 && (x - near.eye[0]) ** 2 + (y - near.eye[1]) ** 2 + near.eye[2] ** 2 < within;
+    drawVehicle(mesh, type, x, y, east, north, paint, cargo, shown, light, reach, scale, lift, fine);
     drawn += 1;
   });
   return drawn;
@@ -1747,7 +1871,7 @@ export function drawTraffic(mesh, traffic, light, reach, scale = 1) {
 // ── What stands still ─────────────────────────────────────────────────────
 
 /** A box standing at (x, y), turned so that its length runs along (east, north). lid: the colour of its top, if not that of its sides. */
-function drawBox(mesh, x, y, east, north, halfLength, halfWidth, low, high, colour, light, alpha = 1, lid = colour) {
+export function drawBox(mesh, x, y, east, north, halfLength, halfWidth, low, high, colour, light, alpha = 1, lid = colour) {
   const rightEast = north;
   const rightNorth = -east;
   const at = (along, across, z) => [x + east * along + rightEast * across, y + north * along + rightNorth * across, z];
@@ -1783,6 +1907,49 @@ const BAY_NEAR_BUILDING_METERS = 45; // beside a lane that is no car park's, car
 const BAY_LINE_HALF_METERS = 0.07;
 
 /**
+ * The cars that stand in the street are drawn once, plainly, all into one mesh. Those of them that are
+ * near the eye are drawn afresh here, with care (see drawVehicle()), into a mesh of their own; and each
+ * is taken out of the mesh of them all meanwhile, by folding its corners into one place, and put back
+ * when it is near no longer.
+ *
+ * fine: the mesh for those near. street: the mesh drawStreet() filled. cars: the cars as it gave them.
+ * kept: the places of that mesh's corners as drawStreet() left them (a copy). folded: a Set of the cars
+ * (by their number) that are out of the street's mesh just now. near: { eye: [x, y, z], within } or null
+ * for none. Returns { drawn, changed }: how many are drawn with care, and whether the street's mesh was
+ * altered (and has to be sent to the scene again).
+ */
+export function drawParkedNear(fine, street, cars, kept, folded, light, reach, near) {
+  fine.clear();
+  const within = near ? near.within * near.within : 0;
+  const positions = street.positions;
+  let changed = false;
+  let drawn = 0;
+  for (let i = 0; i < cars.length; i += 1) {
+    const car = cars[i];
+    const close = within > 0 && (car.x - near.eye[0]) ** 2 + (car.y - near.eye[1]) ** 2 + near.eye[2] ** 2 < within;
+    if (close !== folded.has(i)) {
+      if (close) {
+        for (let corner = car.from; corner < car.to; corner += 1) {
+          positions[corner * 3] = kept[car.from * 3];
+          positions[corner * 3 + 1] = kept[car.from * 3 + 1];
+          positions[corner * 3 + 2] = kept[car.from * 3 + 2];
+        }
+        folded.add(i);
+      } else {
+        positions.set(kept.subarray(car.from * 3, car.to * 3), car.from * 3);
+        folded.delete(i);
+      }
+      changed = true;
+    }
+    if (close) {
+      drawVehicle(fine, car.type, car.x, car.y, car.east, car.north, car.paint, car.cargo, 1, light, reach, 1, 0, true);
+      drawn += 1;
+    }
+  }
+  return { drawn, changed };
+}
+
+/**
  * Fill a mesh with what stands still along the streets: cars parked at the
  * kerbs of residential streets, cars in rows beside the lanes of car parks,
  * and a shelter at every bus stop on the map. The parked cars are set out
@@ -1806,6 +1973,13 @@ export function drawStreet(mesh, network, light, reach, most = 2500, { built = n
   let parked = 0;
   let shelters = 0;
   let bays = 0;
+  // (Every car that stands: which corners of the mesh are its own, and what it is, for drawParkedNear().)
+  const cars = [];
+  const stand = (type, x, y, east, north, paint, cargo) => {
+    const from = mesh.count;
+    drawVehicle(mesh, type, x, y, east, north, paint, cargo, 1, light, reach);
+    cars.push({ from, to: mesh.count, type, x, y, east, north, paint, cargo });
+  };
 
   // Every road and track, filed under the squares of ground it passes through: a bay keeps clear of them all.
   const SQUARE = 48;
@@ -1861,7 +2035,7 @@ export function drawStreet(mesh, network, light, reach, most = 2500, { built = n
         // On the right of the street a car faces the way the street runs, on the left the other way, unless the street is one-way.
         const facing = side === 1 || way.oneway === 1 ? 1 : -1;
         const turned = way.oneway === -1 ? -facing : facing;
-        drawVehicle(mesh, standing.type, spot[0] + spot[3] * side * aside, spot[1] - spot[2] * side * aside, spot[2] * turned, spot[3] * turned, standing.paint, standing.cargo, 1, light, reach);
+        stand(standing.type, spot[0] + spot[3] * side * aside, spot[1] - spot[2] * side * aside, spot[2] * turned, spot[3] * turned, standing.paint, standing.cargo);
         parked += 1;
       }
     }
@@ -1903,7 +2077,7 @@ export function drawStreet(mesh, network, light, reach, most = 2500, { built = n
         }
         if (!car || parked >= most) continue;
         const turned = noseOut ? 1 : -1;
-        drawVehicle(mesh, standing.type, x, y, outX * turned, outY * turned, standing.paint, standing.cargo, 1, light, reach);
+        stand(standing.type, x, y, outX * turned, outY * turned, standing.paint, standing.cargo);
         const key = squareOf(Math.floor(x / SPOT), Math.floor(y / SPOT));
         if (!stood.has(key)) stood.set(key, []);
         stood.get(key).push([x, y]);
@@ -1942,7 +2116,7 @@ export function drawStreet(mesh, network, light, reach, most = 2500, { built = n
       shelters += 1;
     }
   }
-  return { parked, shelters, bays };
+  return { parked, shelters, bays, cars };
 }
 
 // ── What is painted on the roads ──────────────────────────────────────────

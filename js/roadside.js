@@ -14,7 +14,7 @@
 // Nothing here touches the browser. Measurements are in metres, east and
 // north of the network's origin.
 
-import { faceLight, heightAlong, nearestOn, pointAlong } from './life.js';
+import { faceLight, heightAlong, nearestOn, pointAlong, unitFrom } from './life.js';
 
 const BARRIER_ROADS = new Set(['motorway', 'trunk']);
 const BARRIER_HALF_METERS = 0.28;
@@ -60,6 +60,12 @@ function filed(network, reach) {
   }
   return (x, y) => squares.get(squareOf(Math.floor(x / ROAD_SQUARE_METERS), Math.floor(y / ROAD_SQUARE_METERS))) ?? [];
 }
+
+/**
+ * A whole number that is a road's own: the same whenever the same road is read from the map again,
+ * wherever it then comes among the others. (What stands along a road by chance stands where it stood.)
+ */
+const ownNumber = (way) => Math.floor(unitFrom(way.key ?? '') * 1000003);
 
 /** Which side of a one-way road its median is on: the left of its traffic. 1 for the left of the line as drawn. */
 const medianSide = (way) => (way.oneway === 1 ? 1 : way.oneway === -1 ? -1 : 0);
@@ -129,7 +135,7 @@ export function drawRoadside(mesh, network, light) {
     }
     if (GANTRY_ROADS.has(way.class) && !way.ramp && way.length > 260) {
       // The gantries: the first a way along (no two roads alike), then one every kilometre or so.
-      const first = 120 + ((index * 197) % 400);
+      const first = 120 + ((ownNumber(way) * 197) % 400);
       for (let s = first; s < way.length - 60; s += GANTRY_EVERY_METERS) {
         if (way.sunk && heightAlong(way, s) < -0.5) continue; // none down in a cutting
         pointAlong(way, s, a);
@@ -173,6 +179,220 @@ export function drawRoadside(mesh, network, light) {
           span(left, right, GANTRY_TALL_METERS - 2.9, GANTRY_TALL_METERS - 0.2, GANTRY_PAINT, -towards * 1.4);
         }
         made.gantries += 1;
+      }
+    }
+  });
+  return made;
+}
+
+// ── Signs and hoardings ───────────────────────────────────────────────────
+//
+// Saudi road signs are of the kind used across Europe and the Gulf: what is ordered stands in a circle
+// (a speed limit is a white disc in a red ring), and the sign to stop is the red octagon, with the word
+// in Arabic. And Riyadh's great roads are lined with advertising hoardings, each a wide board high up
+// on a single post. Where any of these really stands, no map says: they are stood by rule. A speed
+// limit every few hundred metres along a main road, on the right of the traffic it is for. A stop sign
+// where a side street comes out into a greater road. A hoarding every half kilometre or so beside a
+// great road, where there is room for it: not on a road, not in a building. What is on a hoarding is
+// colours only: no name, no brand, nothing that is anybody's.
+const LIMIT_ROADS = new Set(['trunk', 'primary', 'secondary', 'tertiary']);
+const LIMIT_EVERY_METERS = 420;
+const LIMIT_FIRST_METERS = 45;
+const STOP_ROADS = { minor: 0, tertiary: 1 };
+const GREATER_THAN_STOP = { tertiary: 1, secondary: 2, primary: 3, trunk: 4, motorway: 5 };
+const STOP_BEFORE_METERS = 2.5; // before the edge of the road that is come out into
+const SIGN_FROM_KERB_METERS = 0.8;
+const SIGN_UP_METERS = 2.35; // to the middle of the sign
+const SIGN_RADIUS_METERS = 0.4;
+const SIGN_POST_HALF_METERS = 0.045;
+const SIGN_RED = [196, 30, 34];
+const SIGN_WHITE = [240, 240, 236];
+const SIGN_BLACK = [30, 30, 32];
+const SIGN_BACK = [150, 153, 158];
+const SIGN_POST = [158, 161, 166];
+const HOARDING_ROADS = new Set(['motorway', 'trunk', 'primary', 'secondary']);
+const HOARDING_EVERY_METERS = 540;
+const HOARDING_FROM_KERB_METERS = 6;
+const HOARDING_POST_METERS = 10.5;
+const HOARDING_HALF_WIDE_METERS = 5;
+const HOARDING_LOOK_ON_METERS = 180; // where there is no room for one, room is looked for this far further along
+const HOARDING_LOOK_STEP_METERS = 30;
+const HOARDING_TALL_METERS = 4;
+const HOARDING_POST_HALF_METERS = 0.38;
+const HOARDING_FRAME = [70, 74, 80];
+/** What a hoarding shows: [its ground, a band across it, a block on it], for want of anything real. */
+const HOARDING_ART = [
+  [[226, 222, 210], [190, 44, 48], [34, 40, 52]],
+  [[24, 60, 110], [236, 196, 60], [240, 240, 236]],
+  [[236, 236, 232], [28, 122, 92], [214, 150, 40]],
+  [[40, 42, 48], [226, 96, 36], [236, 232, 220]],
+  [[232, 206, 150], [110, 44, 96], [250, 246, 236]],
+  [[16, 110, 126], [240, 240, 236], [232, 72, 60]],
+];
+const HOARDING_GLOW = 0.5; // how strongly a hoarding is lit by night
+
+/**
+ * Fill a mesh with the signs that stand along the roads and the hoardings beside the great ones (see
+ * above), and a mesh of light with the hoardings as they are lit by night. light: the sun, as
+ * lightFrom() gives it, or null. built(x, y): whether a building stands at a spot; without it there
+ * are no hoardings. Returns { limits, stops, hoardings }.
+ */
+export function drawSigns(mesh, lights, network, light, { built = null } = {}) {
+  mesh.clear();
+  lights?.clear();
+  const made = { limits: 0, stops: 0, hoardings: 0 };
+  const spot = [0, 0, 0, 0];
+  const lit = (paint, east, north, up) => {
+    const bright = faceLight(light, east, north, up);
+    return [paint[0] * bright, paint[1] * bright, paint[2] * bright];
+  };
+  /** A post standing at a place: its four sides, of a half-width, from the ground to a height. */
+  const post = (x, y, east, north, half, tall, paint) => {
+    for (const [nAlong, nAcross] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nEast = east * nAlong - north * nAcross;
+      const nNorth = north * nAlong + east * nAcross;
+      const [r, g, bl] = lit(paint, nEast, nNorth, 0);
+      const ax = x + nEast * half - nNorth * half;
+      const ay = y + nNorth * half + nEast * half;
+      const bx = x + nEast * half + nNorth * half;
+      const by = y + nNorth * half - nEast * half;
+      mesh.face([ax, ay, 0], [bx, by, 0], [bx, by, tall], [ax, ay, tall], r, g, bl, 1);
+    }
+  };
+  /** A flat plate of eight sides that faces along (east, north): its middle, how far it stands out towards where it faces, its radius and its paint. */
+  const plate = (x, y, z, east, north, out, radius, paint) => {
+    const [r, g, bl] = lit(paint, east, north, 0);
+    const [cx, cy] = [x + east * out, y + north * out];
+    const at = (k) => {
+      const angle = ((k + 0.5) * Math.PI) / 4;
+      return [cx + north * Math.cos(angle) * radius, cy - east * Math.cos(angle) * radius, z + Math.sin(angle) * radius];
+    };
+    mesh.room(18);
+    const first = at(0);
+    for (let k = 1; k < 7; k += 1) {
+      for (const corner of [first, at(k), at(k + 1)]) mesh.corner(corner[0], corner[1], corner[2], r, g, bl, 1);
+    }
+  };
+  /** A flat upright bar on a sign that faces along (east, north): from one place across it and up it to another, in metres from its middle. */
+  const bar = (x, y, z, east, north, out, across0, across1, up0, up1, paint) => {
+    const [r, g, bl] = lit(paint, east, north, 0);
+    const at = (across, up) => [x + east * out + north * across, y + north * out - east * across, z + up];
+    mesh.face(at(across0, up0), at(across1, up0), at(across1, up1), at(across0, up1), r, g, bl, 1);
+  };
+  /** A sign on its post at the kerb, for traffic that drives along (east, north) and has the post on its right: 'limit' or 'stop'. */
+  const sign = (x, y, east, north, kind) => {
+    post(x, y, east, north, SIGN_POST_HALF_METERS, SIGN_UP_METERS + SIGN_RADIUS_METERS * 0.6, SIGN_POST);
+    // (It faces the traffic that comes: against the way that traffic drives. Its back is bare metal.)
+    const [fe, fn] = [-east, -north];
+    plate(x, y, SIGN_UP_METERS, east, north, SIGN_POST_HALF_METERS + 0.01, SIGN_RADIUS_METERS, SIGN_BACK);
+    plate(x, y, SIGN_UP_METERS, fe, fn, SIGN_POST_HALF_METERS + 0.01, SIGN_RADIUS_METERS, SIGN_RED);
+    if (kind === 'limit') {
+      plate(x, y, SIGN_UP_METERS, fe, fn, SIGN_POST_HALF_METERS + 0.02, SIGN_RADIUS_METERS * 0.74, SIGN_WHITE);
+      // (Its number: two figures, too small to be read from where the map is seen.)
+      bar(x, y, SIGN_UP_METERS, fe, fn, SIGN_POST_HALF_METERS + 0.03, -0.16, -0.03, -0.13, 0.13, SIGN_BLACK);
+      bar(x, y, SIGN_UP_METERS, fe, fn, SIGN_POST_HALF_METERS + 0.03, 0.03, 0.16, -0.13, 0.13, SIGN_BLACK);
+    } else {
+      // (The word on it: a line of white.)
+      bar(x, y, SIGN_UP_METERS, fe, fn, SIGN_POST_HALF_METERS + 0.02, -0.24, 0.24, -0.07, 0.07, SIGN_WHITE);
+    }
+  };
+  const roads = built ? filed(network, 3) : null;
+
+  network.ways.forEach((way, index) => {
+    if (!onGround(way) || way.ramp) return;
+    const own = ownNumber(way);
+    // The ways traffic drives along it: with the line, against it, or both.
+    const ways = way.oneway === 1 ? [1] : way.oneway === -1 ? [-1] : [1, -1];
+    if (LIMIT_ROADS.has(way.class) && way.length > LIMIT_FIRST_METERS + 30) {
+      for (const along of ways) {
+        // (No two roads alike: the first stands a different way along each.)
+        const first = LIMIT_FIRST_METERS + ((own * 131 + (along > 0 ? 0 : 211)) % LIMIT_EVERY_METERS);
+        for (let s = first; s < way.length - 20; s += LIMIT_EVERY_METERS) {
+          const at = along > 0 ? s : way.length - s;
+          if (way.sunk && heightAlong(way, at) < -0.5) continue; // none down in a cutting
+          pointAlong(way, at, spot);
+          const [east, north] = [spot[2] * along, spot[3] * along];
+          const out = way.width / 2 + SIGN_FROM_KERB_METERS;
+          sign(spot[0] + north * out, spot[1] - east * out, east, north, 'limit');
+          made.limits += 1;
+        }
+      }
+    }
+    if (STOP_ROADS[way.class] !== undefined) {
+      for (const along of ways) {
+        // Where its traffic comes out: into a road greater than itself?
+        const meeting = network.joins.get(way.ends[along > 0 ? 1 : 0]) ?? [];
+        const greater = meeting.filter((other) => other.way !== index && (GREATER_THAN_STOP[network.ways[other.way].class] ?? 0) > STOP_ROADS[way.class]);
+        if (greater.length === 0) continue;
+        // (The sign stands before the edge of the road that is come out into, not in it.)
+        const before = Math.max(...greater.map((other) => network.ways[other.way].width / 2)) + STOP_BEFORE_METERS;
+        if (way.length < before + 2) continue;
+        pointAlong(way, along > 0 ? way.length - before : before, spot);
+        const [east, north] = [spot[2] * along, spot[3] * along];
+        const out = way.width / 2 + SIGN_FROM_KERB_METERS;
+        sign(spot[0] + north * out, spot[1] - east * out, east, north, 'stop');
+        made.stops += 1;
+      }
+    }
+    if (roads && HOARDING_ROADS.has(way.class) && way.length > 120) {
+      const first = 70 + ((own * 173) % HOARDING_EVERY_METERS);
+      for (let from = first; from < way.length - 50; from += HOARDING_EVERY_METERS) {
+        // Room for it: its post clear of every other road, and its post and both ends of its board clear of
+        // every building. Where there is none, a little further along.
+        let s = from;
+        let x = 0;
+        let y = 0;
+        let east = 0;
+        let north = 0;
+        let room = false;
+        for (; s <= from + HOARDING_LOOK_ON_METERS && s < way.length - 30 && !room; s += room ? 0 : HOARDING_LOOK_STEP_METERS) {
+          if (way.sunk && heightAlong(way, s) < -0.5) continue;
+          pointAlong(way, s, spot);
+          // (On the right of a carriageway's traffic, away from its median; beside a road with traffic both ways, by turns on either side.)
+          const side = way.oneway === 1 ? 1 : way.oneway === -1 ? -1 : (own + Math.floor(from / HOARDING_EVERY_METERS)) % 2 === 0 ? 1 : -1;
+          [east, north] = [spot[2], spot[3]];
+          const out = (way.width / 2 + HOARDING_FROM_KERB_METERS) * side;
+          [x, y] = [spot[0] + north * out, spot[1] - east * out];
+          const ends = [[x, y], [x + north * HOARDING_HALF_WIDE_METERS, y - east * HOARDING_HALF_WIDE_METERS], [x - north * HOARDING_HALF_WIDE_METERS, y + east * HOARDING_HALF_WIDE_METERS]];
+          room = !ends.some(([px, py]) => built(px, py)) && !roads(x, y).some((other) => other !== way && nearestOn(other, x, y).distance < other.width / 2 + 2.5);
+          if (room) break;
+        }
+        if (!room) continue;
+        post(x, y, east, north, HOARDING_POST_HALF_METERS, HOARDING_POST_METERS, HOARDING_FRAME);
+        // Its board: across the way the road runs, so that it is read from the road; a face each way.
+        const [low, high] = [HOARDING_POST_METERS, HOARDING_POST_METERS + HOARDING_TALL_METERS];
+        const art = HOARDING_ART[(own * 7 + Math.floor(s)) % HOARDING_ART.length];
+        const corner = (across, z, ahead) => [x + north * across + east * ahead, y - east * across + north * ahead, z];
+        for (const facing of [1, -1]) {
+          const ahead = facing * 0.25;
+          const face = (across0, across1, z0, z1, paint, proud) => {
+            const [r, g, bl] = lit(paint, east * facing, north * facing, 0);
+            const d = ahead + facing * proud;
+            mesh.face(corner(across0, z0, d), corner(across1, z0, d), corner(across1, z1, d), corner(across0, z1, d), r, g, bl, 1);
+            if (lights && proud > 0) {
+              lights.room(6);
+              for (const [across, z] of [[across0, z0], [across1, z0], [across1, z1], [across0, z0], [across1, z1], [across0, z1]]) {
+                const [gx, gy, gz] = corner(across, z, d + facing * 0.02);
+                lights.glow(gx, gy, gz, paint[0], paint[1], paint[2], HOARDING_GLOW);
+              }
+            }
+          };
+          const w = HOARDING_HALF_WIDE_METERS;
+          face(-w, w, low, high, HOARDING_FRAME, 0);
+          face(-w + 0.25, w - 0.25, low + 0.25, high - 0.25, art[0], 0.02);
+          // (A band across it and a block on it: which side of the board each is on turns with the face.)
+          face(-w + 0.25, w - 0.25, low + 0.7, low + 1.5, art[1], 0.04);
+          face(facing * (w - 4.4), facing * (w - 1.2), low + 2.0, high - 0.7, art[2], 0.04);
+        }
+        // Its edges: top and bottom, and the two ends.
+        const [topR, topG, topB] = lit(HOARDING_FRAME, 0, 0, 1);
+        const w = HOARDING_HALF_WIDE_METERS;
+        mesh.face(corner(-w, high, -0.25), corner(w, high, -0.25), corner(w, high, 0.25), corner(-w, high, 0.25), topR, topG, topB, 1);
+        for (const end of [-1, 1]) {
+          const [r, g, bl] = lit(HOARDING_FRAME, north * end, -east * end, 0);
+          mesh.face(corner(w * end, low, -0.25), corner(w * end, low, 0.25), corner(w * end, high, 0.25), corner(w * end, high, -0.25), r, g, bl, 1);
+        }
+        made.hoardings += 1;
       }
     }
   });

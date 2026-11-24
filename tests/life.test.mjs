@@ -31,6 +31,9 @@ import {
   VEHICLES,
 } from '../js/life.js';
 
+/** What drawStreet() counted: without the list of the cars themselves. */
+const counted = ({ parked, shelters, bays }) => ({ parked, shelters, bays });
+
 const ORIGIN = { lng: 46.67, lat: 24.7 };
 const EAST = 1 / (111320 * Math.cos((24.7 * Math.PI) / 180)); // degrees of longitude in a metre
 const NORTH = 1 / 111320;
@@ -793,8 +796,8 @@ test('cars are parked along residential streets, the same way every time, and ev
   // With the sun out every car has a shade as well; and the cars can be capped.
   drawStreet(again, network, lightFrom({ azimuth: 180, altitude: 50 }), { bearing: 0, factor: 1 });
   assert.equal(again.count, parkedCorners + made.parked * 12 + 2 * 4 * 30);
-  assert.deepEqual(drawStreet(again, network, null, null, 5), { parked: 5, shelters: 2, bays: 0 });
-  assert.deepEqual(drawStreet(again, buildNetwork([], ORIGIN), null, null), { parked: 0, shelters: 0, bays: 0 });
+  assert.deepEqual(counted(drawStreet(again, network, null, null, 5)), { parked: 5, shelters: 2, bays: 0 });
+  assert.deepEqual(counted(drawStreet(again, buildNetwork([], ORIGIN), null, null)), { parked: 0, shelters: 0, bays: 0 });
   assert.equal(again.count, 0);
 });
 
@@ -873,7 +876,7 @@ test('in a car park cars stand in bays beside the lanes, wherever there is room 
   const part = drawStreet(again, network, null, null, 2500, { built, within: [-10, -50, 50, 120] });
   assert.ok(part.bays > 0 && part.bays < made.bays);
   for (let i = 0; i < again.count; i += 1) assert.ok(again.positions[i * 3] < 50 + 2.7);
-  assert.deepEqual(drawStreet(again, network, null, null), { parked: 0, shelters: 0, bays: 0 });
+  assert.deepEqual(counted(drawStreet(again, network, null, null)), { parked: 0, shelters: 0, bays: 0 });
   // Beside a lane that is no car park's, cars stand only where a building is near; a car park is a car park wherever it is.
   // (Here "near" is taken to be within 12 m, to tell the two ends of the lane apart; the app asks about 45 m.)
   const asked = new Set();
@@ -1035,7 +1038,7 @@ test('a bridge carries its road over the ground, with a ramp at either end, and 
   // No bus stops on a bridge, and nobody parks on one.
   assert.equal(small.stops.length, 0);
   const street = new Mesh();
-  assert.deepEqual(drawStreet(street, buildNetwork([lines[7]], ORIGIN), null, null), { parked: 0, shelters: 0, bays: 0 });
+  assert.deepEqual(counted(drawStreet(street, buildNetwork([lines[7]], ORIGIN), null, null)), { parked: 0, shelters: 0, bays: 0 });
 
   // A car on the flyover is drawn up on its deck; one on the street below, on the ground.
   const traffic = new Traffic({ seed: 2, most: 0, now: () => MORNING });

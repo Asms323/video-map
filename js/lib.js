@@ -868,6 +868,90 @@ export function sunLight(sun) {
   };
 }
 
+// ── Measured heights ──────────────────────────────────────────────────────
+//
+// Few of Riyadh's buildings have a height on record. For the rest there are the heights of the
+// GlobalBuildingAtlas (Zhu and others, 2025), which has one for nearly every building in the world,
+// estimated from satellite pictures. They come with the app as small tiles (see tools/heights.py): a
+// picture to each map tile of a zoom, every spot of it holding the height of the building that stands
+// there, in one byte.
+
+/** How the height tiles are cut: the map zoom, and how many spots a side each has. (tools/heights.py makes them so.) */
+export const HEIGHT_TILES = { zoom: 13, size: 512 };
+
+/** The height a byte of a height tile stands for, in metres: 0 for no building; half metres up to 100 m, then steps of five. */
+export function heightOfByte(value) {
+  if (!(value > 0)) return 0;
+  return value <= 200 ? value / 2 : 100 + (value - 200) * 5;
+}
+
+/** Which height tile a place lies in, and which spot of it: { x, y, spotX, spotY }. */
+export function heightSpot(lng, lat, { zoom, size } = HEIGHT_TILES) {
+  const world = 2 ** zoom;
+  const fx = ((lng + 180) / 360) * world;
+  const latitude = (clamp(lat, -85, 85) * Math.PI) / 180;
+  const fy = ((1 - Math.log(Math.tan(Math.PI / 4 + latitude / 2)) / Math.PI) / 2) * world;
+  const x = Math.floor(fx);
+  const y = Math.floor(fy);
+  return { x, y, spotX: Math.min(Math.floor((fx - x) * size), size - 1), spotY: Math.min(Math.floor((fy - y) * size), size - 1) };
+}
+
+/**
+ * The measured height of a building, read off the height tiles: the middle one of the heights found at
+ * a handful of places inside its outline (its middle, and part of the way from there to each of its
+ * corners), so that one spot that belongs to a neighbour does not count. polygons: its outline, each
+ * polygon a list of rings of [lng, lat]; read(lng, lat): the byte kept for a place, or nothing where no
+ * tile is known. Returns metres, or null if too little was found to go by.
+ */
+export function measuredHeight(polygons, read) {
+  // The largest of its polygons speaks for the building.
+  let outline = null;
+  let most = 0;
+  for (const polygon of polygons ?? []) {
+    const ring = polygon?.[0];
+    if (!ring || ring.length < 4) continue;
+    let doubled = 0;
+    for (let i = 1; i < ring.length; i += 1) doubled += ring[i - 1][0] * ring[i][1] - ring[i][0] * ring[i - 1][1];
+    if (Math.abs(doubled) > most) {
+      most = Math.abs(doubled);
+      outline = ring;
+    }
+  }
+  if (!outline) return null;
+  const count = outline.length - 1;
+  let lng = 0;
+  let lat = 0;
+  for (let i = 0; i < count; i += 1) {
+    lng += outline[i][0] / count;
+    lat += outline[i][1] / count;
+  }
+  const inside = (x, y) => {
+    let within = false;
+    for (let i = 1; i < outline.length; i += 1) {
+      const [x0, y0] = outline[i - 1];
+      const [x1, y1] = outline[i];
+      if (y0 > y !== y1 > y && x < x0 + ((y - y0) * (x1 - x0)) / (y1 - y0)) within = !within;
+    }
+    return within;
+  };
+  const found = [];
+  const ask = (x, y) => {
+    if (!inside(x, y)) return;
+    const value = read(x, y);
+    if (value > 0) found.push(value);
+  };
+  ask(lng, lat);
+  // (Of an outline with many corners, a dozen spread round it.)
+  const step = Math.max(Math.ceil(count / 12), 1);
+  for (let i = 0; i < count; i += step) {
+    ask(lng + (outline[i][0] - lng) * 0.55, lat + (outline[i][1] - lat) * 0.55);
+    ask(lng + (outline[i][0] - lng) * 0.25, lat + (outline[i][1] - lat) * 0.25);
+  }
+  if (found.length < 2) return null;
+  found.sort((a, b) => a - b);
+  return heightOfByte(found[Math.floor(found.length / 2)]);
+}
+
 /**
  * Building footprints from map-tile features, for the buildings that reach
  * into a box { west, south, east, north }: [{ height, base, polygons }], with

@@ -196,3 +196,108 @@ test('by night a motorbike shows one lamp ahead and one behind; a patrol car its
   assert.equal(taxi.length, 5);
   assert.ok(taxi[4][3] > 230 && taxi[4][4] > 190 && taxi[4][5] < 80 && near(taxi[4][2], 1.62, 1e-6));
 });
+
+test('from close by a vehicle is drawn with care: rounded corners, a body that draws in, and wheels with hubs', async () => {
+  const { Mesh, VEHICLES, drawVehicle, drawTraffic } = await import('../js/life.js');
+  const light = { east: 0.3, north: -0.4, up: 0.87 };
+  const reach = { bearing: 30, factor: 1 };
+  const draw = (type, fine, scale = 1) => {
+    const mesh = new Mesh();
+    drawVehicle(mesh, type, 0, 0, 1, 0, [200, 200, 200], [90, 90, 90], 1, light, reach, scale, 0, fine);
+    return Array.from({ length: mesh.count }, (_, i) => [...mesh.positions.subarray(i * 3, i * 3 + 3), ...mesh.colours.subarray(i * 4, i * 4 + 4)]);
+  };
+  // A car, plain: its shade, three boxes and four lamps. With care: the dark under it still a box; its body
+  // and its cabin eight-sided (a top of six triangles and eight sides); four wheels, each a disc of six
+  // triangles, a hub and four faces of tread; and its lamps.
+  assert.equal(draw('car', false).length, 12 + 3 * 30 + 4 * 6);
+  const car = draw('car', true);
+  assert.equal(car.length, 12 + 30 + 2 * (18 + 8 * 6) + 4 * (18 + 6 + 4 * 6) + 4 * 6);
+  const shape = VEHICLES.car;
+  // Nothing of it reaches outside the box it is measured by (but the wheels, a hair proud of its sides), or under the road.
+  const body = car.slice(12);
+  assert.ok(body.every((corner) => Math.abs(corner[0]) <= shape.length / 2 + 0.03 && Math.abs(corner[1]) <= shape.width / 2 + 0.03 && corner[2] >= 0 && corner[2] < 1.6));
+  // Its corners are cut off: nothing of it comes near the corners of that box.
+  assert.ok(body.every((corner) => !(Math.abs(corner[0]) > shape.length / 2 - 0.08 && Math.abs(corner[1]) > shape.width / 2 - 0.08)));
+  // The wheels: dark, under the body's sides, standing on the road and no higher than the body's waist; the hubs pale.
+  const tyres = body.filter((corner) => corner[3] < 40 && corner[4] < 40 && corner[5] < 45 && Math.abs(corner[1]) > shape.width / 2 - 0.3 && corner[2] < 0.7);
+  assert.ok(tyres.length >= 4 * (18 + 24) && Math.min(...tyres.map((corner) => corner[2])) < 0.06);
+  assert.ok(tyres.some((corner) => corner[0] > 1) && tyres.some((corner) => corner[0] < -1) && tyres.some((corner) => corner[1] > 0) && tyres.some((corner) => corner[1] < 0), 'one at each corner');
+  const hubs = body.filter((corner) => Math.abs(corner[1]) > shape.width / 2 && corner[3] > 100 && corner[3] === Math.round(corner[4] * (168 / 172)) || (Math.abs(corner[1]) > shape.width / 2 + 0.015 && corner[3] > 90));
+  assert.ok(hubs.length >= 4 * 6, 'a hub on each');
+  // Its body draws in towards its top: narrower up there than at its foot.
+  const paint = body.filter((corner) => corner[3] > 110 && corner[3] === corner[4] && corner[2] > 0.25 && corner[2] < 0.9);
+  const widest = (from, to) => Math.max(...paint.filter((corner) => corner[2] >= from && corner[2] <= to).map((corner) => Math.abs(corner[1])));
+  assert.ok(widest(0.8, 0.9) < widest(0.25, 0.3) - 0.02);
+  // A lorry, a van and a bus have their wheels told with their shape (a tanker three to a side); a motorbike and a train's car have none drawn.
+  assert.equal(draw('tanker', true).length - draw('tanker', false).length > 6 * 48 - 1, true);
+  assert.ok(draw('bus', true).length > draw('bus', false).length + 4 * 48 - 1);
+  assert.equal(draw('bike', true).length, draw('bike', false).length);
+  // (A train's car has its ends rounded, like the cars of the metro, and no wheels to be seen.)
+  assert.equal(draw('coach', true).length, draw('coach', false).length + 3 * 36);
+  // Drawn larger than life, it is larger all over: wheels and all.
+  const large = draw('car', true, 1.5);
+  assert.ok(Math.max(...large.map((corner) => corner[2])) > 1.5 * 1.4 && large.slice(12).every((corner) => Math.abs(corner[1]) <= (shape.width / 2 + 0.03) * 1.5));
+  // In the traffic: those near the eye with care, the rest plainly.
+  const traffic = { eachVehicle: (each) => { each('car', 0, 0, 1, 0, [200, 200, 200], [90, 90, 90], 1, 0); each('car', 900, 0, 1, 0, [200, 200, 200], [90, 90, 90], 1, 0); } };
+  const mesh = new Mesh();
+  assert.equal(drawTraffic(mesh, traffic, light, reach, 1, { eye: [0, -50, 60], within: 200 }), 2);
+  assert.equal(mesh.count, car.length + draw('car', false).length);
+  drawTraffic(mesh, traffic, light, reach, 1);
+  assert.equal(mesh.count, 2 * draw('car', false).length);
+});
+
+test('the cars that stand near the eye are drawn with care, and taken out of the mesh that holds them all plainly', async () => {
+  const { Mesh, buildNetwork, drawParkedNear, drawStreet, drawVehicle } = await import('../js/life.js');
+  const ORIGIN = { lng: 46.67, lat: 24.7 };
+  const EAST = 1 / (111320 * Math.cos((24.7 * Math.PI) / 180));
+  const NORTH = 1 / 111320;
+  const street = { class: 'minor', oneway: 0, tunnel: false, coordinates: [[-400, 0], [400, 0]].map(([x, y]) => [ORIGIN.lng + x * EAST, ORIGIN.lat + y * NORTH]) };
+  const network = buildNetwork([street], ORIGIN);
+  const light = { east: 0.3, north: -0.4, up: 0.87 };
+  const reach = { bearing: 30, factor: 1 };
+  const mesh = new Mesh();
+  const made = drawStreet(mesh, network, light, reach, 500);
+  // Every car that stands is told of: where in the mesh it is, and what it is.
+  assert.ok(made.parked >= 10, `${made.parked} cars parked`);
+  assert.equal(made.cars.length, made.parked);
+  assert.equal(made.cars.reduce((sum, car) => sum + car.to - car.from, 0), mesh.count, 'nothing else stands in this street');
+  const kept = mesh.positions.slice(0, mesh.count * 3);
+  const folded = new Set();
+  const fine = new Mesh();
+  // Seen from over the west end of the street: those within reach are drawn again, with their wheels.
+  const near = { eye: [-400, -20, 40], within: 150 };
+  const first = drawParkedNear(fine, mesh, made.cars, kept, folded, light, reach, near);
+  const close = made.cars.filter((car) => Math.hypot(car.x + 400, car.y + 20, 40) < 150);
+  assert.ok(close.length >= 2 && close.length < made.cars.length);
+  assert.deepEqual([first.drawn, first.changed, folded.size], [close.length, true, close.length]);
+  const one = new Mesh();
+  let corners = 0;
+  for (const car of close) {
+    one.clear();
+    drawVehicle(one, car.type, car.x, car.y, car.east, car.north, car.paint, car.cargo, 1, light, reach, 1, 0, true);
+    corners += one.count;
+  }
+  assert.equal(fine.count, corners);
+  // And in the mesh of them all, each of those is folded into one place (nothing of it is drawn), while the rest are as they were.
+  made.cars.forEach((car, i) => {
+    const own = mesh.positions.subarray(car.from * 3, car.to * 3);
+    if (folded.has(i)) {
+      for (let k = 0; k < own.length; k += 3) assert.ok(own[k] === own[0] && own[k + 1] === own[1] && own[k + 2] === own[2]);
+    } else {
+      assert.deepEqual(Array.from(own), Array.from(kept.subarray(car.from * 3, car.to * 3)));
+    }
+  });
+  // Asked again from the same place: nothing has to be altered.
+  assert.equal(drawParkedNear(fine, mesh, made.cars, kept, folded, light, reach, near).changed, false);
+  // From over the other end: the first lot are put back as they were, and others taken out.
+  const far = drawParkedNear(fine, mesh, made.cars, kept, folded, light, reach, { eye: [400, -20, 40], within: 150 });
+  assert.equal(far.changed, true);
+  made.cars.forEach((car, i) => {
+    if (!folded.has(i)) assert.deepEqual(Array.from(mesh.positions.subarray(car.from * 3, car.to * 3)), Array.from(kept.subarray(car.from * 3, car.to * 3)));
+  });
+  assert.ok([...folded].every((i) => made.cars[i].x > 200));
+  // With nobody near: all of them back, and nothing drawn with care.
+  const none = drawParkedNear(fine, mesh, made.cars, kept, folded, light, reach, null);
+  assert.deepEqual([none.drawn, folded.size, fine.count], [0, 0, 0]);
+  assert.deepEqual(Array.from(mesh.positions.subarray(0, mesh.count * 3)), Array.from(kept));
+});

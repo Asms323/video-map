@@ -36,7 +36,7 @@
 //
 // Nothing here touches the browser. Places are in the scene's metres, east and north of its origin.
 
-import { faceLight, heightAlong, pointAlong } from './life.js';
+import { faceLight, heightAlong, laneOffset, lanesOf, pointAlong } from './life.js';
 
 const TAU = Math.PI * 2;
 
@@ -154,8 +154,9 @@ function streamsAt(arms) {
  *     offset (seconds), approaches, marked }],
  *   approaches: [{ junction, way (its index), forward, stop (metres along the way: the stop line), x, y,
  *     east, north (the way its traffic drives, at the line), left, right (the edges of its lanes, in
- *     metres to the right of the way's middle as its traffic sees it), lanes, rank, from (seconds into
- *     the cycle at which its green begins), green (seconds) }],
+ *     metres to the right of the way's middle as its traffic sees it), lanes, lanesAcross (where the
+ *     middle of each lane runs, measured the same way), rank, from (seconds into the cycle at which its
+ *     green begins), green (seconds) }],
  *   posts: [{ x, y, tall, arm: [x, y] or null (where its arm ends), east, north }],
  *   heads: [{ approach, x, y, z, flat (lying on its side, on an arm) }],
  *   byWay: Map of way * 2 + (1 if forward) → approach,
@@ -319,6 +320,9 @@ export function signalsOf(network, { marks = null } = {}) {
           left: way.oneway !== 0 ? -way.width / 2 : 0,
           right: way.width / 2,
           lanes: way.lanes,
+          // (Where the middle of each of its lanes runs, in metres to the right of the way's middle as its
+          // traffic sees it: the lane by the median first, the one by the kerb last.)
+          lanesAcross: Array.from({ length: lanesOf(way) }, (_, lane) => laneOffset(way, lane)),
           rank: arm.rank,
           from: 0,
           green: 0,
@@ -505,14 +509,40 @@ function box(mesh, x, y, east, north, halfLong, halfWide, low, high, paint, ligh
   face(at(halfLong, -halfWide, low), at(-halfLong, -halfWide, low), at(-halfLong, -halfWide, high), at(halfLong, -halfWide, high), -rx, -ry, 0);
 }
 
+// The arrows painted in the lanes before a stop line: which way each lane goes on. The parts of one, as
+// [from, to along the lane, from, to across it] for a bar and [three corners] for a head, in metres from
+// the arrow's foot, the lane's own way being ahead and its right to the right. ('left' and 'right' turn
+// off; 'aheadLeft' and 'aheadRight' go straight on and turn off as well.)
+const ARROW_AHEAD = [[0, 2.5, -0.15, 0.15], [[2.5, -0.55], [2.5, 0.55], [4.1, 0]]];
+const ARROW_TURN = [[0, 2.35, -0.15, 0.15], [2.05, 2.35, 0.15, 0.6], [[1.55, 0.6], [2.85, 0.6], [2.2, 1.45]]];
+const ARROW_BRANCH = [[1.15, 1.45, 0.15, 0.6], [[0.65, 0.6], [1.95, 0.6], [1.3, 1.45]]];
+const ARROWS = {
+  ahead: [[ARROW_AHEAD, 1]],
+  left: [[ARROW_TURN, -1]],
+  right: [[ARROW_TURN, 1]],
+  aheadLeft: [[ARROW_AHEAD, 1], [ARROW_BRANCH, -1]],
+  aheadRight: [[ARROW_AHEAD, 1], [ARROW_BRANCH, 1]],
+};
+const ARROW_FOOT_BACK_METERS = 11; // how far before the stop line an arrow begins
+const ARROW_PAINT_STRENGTH = 0.86; // paint that traffic drives over all day is not as white as the line it stops at
+
+/** Which arrow each lane of an approach has: the lane by the median turns left, the one by the kerb may turn right, all but the first of three or more go straight on. */
+export function laneArrows(lanes) {
+  if (lanes <= 1) return ['ahead'];
+  if (lanes === 2) return ['aheadLeft', 'aheadRight'];
+  return Array.from({ length: lanes }, (_, lane) => (lane === 0 ? 'left' : lane === lanes - 1 ? 'aheadRight' : 'ahead'));
+}
+
 /**
- * Fill a mesh with the signals as they stand: the stop line across each approach, the posts and their
- * arms, the heads on their boards, every lamp unlit. (The lamp that is lit is drawn over them: see
- * drawSignalLamps().) light: as lightFrom() gives it. Returns { junctions, approaches, posts, heads }.
+ * Fill a mesh with the signals as they stand: the stop line across each approach and the arrows painted
+ * in its lanes, the posts and their arms, the heads on their boards, every lamp unlit. (The lamp that is
+ * lit is drawn over them: see drawSignalLamps().) light: as lightFrom() gives it. Returns { junctions,
+ * approaches, posts, heads, arrows }.
  */
 export function drawSignals(mesh, signals, light = null) {
   mesh.clear();
-  if (!signals) return { junctions: 0, approaches: 0, posts: 0, heads: 0 };
+  if (!signals) return { junctions: 0, approaches: 0, posts: 0, heads: 0, arrows: 0 };
+  let arrows = 0;
   for (const approach of signals.approaches) {
     // The stop line, across its lanes.
     const { x, y, east, north } = approach;
@@ -520,6 +550,26 @@ export function drawSignals(mesh, signals, light = null) {
     const [from, to] = [approach.left + 0.3, approach.right - 0.3];
     const at = (along, across) => [x + east * along + rx * across, y + north * along + ry * across, STOP_LINE_UP_METERS];
     mesh.face(at(-STOP_LINE_HALF_METERS, from), at(STOP_LINE_HALF_METERS, from), at(STOP_LINE_HALF_METERS, to), at(-STOP_LINE_HALF_METERS, to), LINE_PAINT[0], LINE_PAINT[1], LINE_PAINT[2], 0.92);
+    // And in each of its lanes, before the line, an arrow.
+    const kinds = laneArrows(approach.lanesAcross?.length ?? 0);
+    (approach.lanesAcross ?? []).forEach((middle, lane) => {
+      for (const [parts, side] of ARROWS[kinds[lane]]) {
+        for (const part of parts) {
+          if (part.length === 4) {
+            const [a0, a1, c0, c1] = part;
+            const spot = (along, across) => at(along - ARROW_FOOT_BACK_METERS, middle + across * side);
+            mesh.face(spot(a0, c0), spot(a1, c0), spot(a1, c1), spot(a0, c1), LINE_PAINT[0], LINE_PAINT[1], LINE_PAINT[2], ARROW_PAINT_STRENGTH);
+          } else {
+            mesh.room(3);
+            for (const [along, across] of part) {
+              const [px, py, pz] = at(along - ARROW_FOOT_BACK_METERS, middle + across * side);
+              mesh.corner(px, py, pz, LINE_PAINT[0], LINE_PAINT[1], LINE_PAINT[2], ARROW_PAINT_STRENGTH);
+            }
+          }
+        }
+      }
+      arrows += 1;
+    });
   }
   for (const post of signals.posts) {
     box(mesh, post.x, post.y, post.east, post.north, POST_HALF, POST_HALF, 0, post.tall, POST_PAINT, light);
@@ -541,7 +591,7 @@ export function drawSignals(mesh, signals, light = null) {
     mesh.face(board(-boardAcross, -boardUp), board(boardAcross, -boardUp), board(boardAcross, boardUp), board(-boardAcross, boardUp), BOARD_PAINT[0] * shade, BOARD_PAINT[1] * shade, BOARD_PAINT[2] * shade, 1);
     for (let which = 0; which < 3; which += 1) lens(mesh, lampPlace(head, which), east, north, DARK[which]);
   }
-  return { junctions: signals.junctions.length, approaches: signals.approaches.length, posts: signals.posts.length, heads: signals.heads.length };
+  return { junctions: signals.junctions.length, approaches: signals.approaches.length, posts: signals.posts.length, heads: signals.heads.length, arrows };
 }
 
 /**

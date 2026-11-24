@@ -43,10 +43,10 @@ import { characterAt } from './districts.js';
 import { PLAIN_FUEL, brandOf, localKind, mosqueExtras, mosquesAmong, stationExtras, storeExtras } from './dress.js';
 import { STAYED_BRIDGES, landmarkBeacons, landmarkModels, landmarkRoofs, landmarkShades, replacedByLandmarks } from './landmarks.js';
 import { drawFarLights, drawLamps, drawRoofLights, drawTrafficLights, lightPoints, shopSpill } from './lights.js';
-import { Mesh, Traffic, buildNetwork, drawBridges, drawMarks, drawRoofs, drawStreet, drawTraffic, drawTrees, faceLight, lightFrom, stayedHere, streetDirection, streetNear, trafficLevel } from './life.js';
+import { buildNetwork, drawBridges, drawMarks, drawParkedNear, drawRoofs, drawStreet, drawTraffic, drawTrees, faceLight, lightFrom, Mesh, stayedHere, streetDirection, streetNear, Traffic, trafficLevel } from './life.js';
 import { ModelMesh } from './models.js';
 import { plotWalls } from './plots.js';
-import { drawFootbridges, drawRoadside, medianPalms } from './roadside.js';
+import { drawFootbridges, drawRoadside, drawSigns, medianPalms } from './roadside.js';
 import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
 import { SceneLayer } from './scene.js';
 import { aircraftOverRiyadh, buildingArchive, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
@@ -54,6 +54,7 @@ import { footprintGrid, heightsFromShadows, passSuns, pavedGrid, photoGrid, roof
 import { CasterMesh, groundCasters, shadowCasters, shadowFall, shadowMapSize } from './shade.js';
 import { Flights } from './flights.js';
 import { drawSignalLamps, drawSignals, signalsOf } from './signals.js';
+import { Walkers, drawWalkers } from './people.js';
 import { CLOUD_LAYERS, cloudDrift, cloudLayersOf, cloudsNear, drawAircraft, drawClouds, drawHeavens, drawStars, moonAt, planetsAt, starPoints, starsAt, sunBetween } from './sky.js';
 import { PARAPET_METERS, PARAPET_THICK_METERS, WallMesh, colourOf, facadeOf, footShade, parapetTops, tilePieces, wallTone, wallsOf } from './walls.js';
 
@@ -75,6 +76,15 @@ const LAMPS_MOST = 3000;
 // lamp on a tower, and one of the city's lights seen from afar. (None is ever drawn smaller than a speck.)
 const POINT_METERS = { lamp: 2.6, vehicle: 1.5, beacon: 3.4, far: 7, signal: 2.4 };
 const CORNER_LAMPS_FROM_METERS = 60; // a building this tall has a red lamp on each corner of its roof
+// A vehicle is drawn with its wheels and its rounded corners while a pixel of the screen shows no more
+// of it than this; and never further from the eye than so far.
+const FINE_VEHICLE_METERS_A_PIXEL = 0.17;
+const FINE_VEHICLE_FURTHEST_METERS = 450;
+// Somebody on a pavement is drawn while a pixel of the screen shows no more than this of them (so that
+// they stand a dozen pixels tall at the least); and never further from the eye than so far.
+const PARKED_NEAR_AGAIN_METERS = 14; // the cars that stand near are looked over again when the eye has moved so far
+const WALKER_METERS_A_PIXEL = 0.14;
+const WALKER_FURTHEST_METERS = 320;
 
 // Styles drawn on a dark ground need light text on the app's own markers.
 const DARK_TYPES = new Set(['night', 'satellite']);
@@ -128,6 +138,10 @@ const SHADE_REACH_METERS = 1500; // never further than this from the middle of t
 const SHADE_SMALLEST_PX = 1.5;
 const SHADE_PAUSE_MS = 500;
 const SHADE_LONGEST_WAIT_MS = 2500;
+// The picture of the buildings from straight above (how open to the sky a place is): a spot of it is so
+// many metres of ground, and it is never more than so many spots a side.
+const HEIGHTS_FINE_METERS = 1.5;
+const HEIGHTS_SIZE_MOST = 1024;
 const SUN_CHECK_MS = 60000;
 const EARTH_AROUND_METERS = 40075016.686;
 const METERS_PER_DEGREE = 111320;
@@ -425,6 +439,11 @@ export class MapView {
     this.lifeDrawn = 0;
     this.traffic = new Traffic({ seed: Date.now() % 2147483647 });
     this.trafficMesh = new Mesh();
+    this.walkers = new Walkers({ seed: (Date.now() + 7919) % 2147483647 }); // the people on the pavements
+    this.walkerMesh = new Mesh();
+    this.parkedNearMesh = new Mesh(); // the cars that stand near the eye, drawn with care
+    this.parked = null; // { cars, kept, folded, at, drawn }: see layStreet() and moveParked()
+    this.walkersDrawn = 0;
     this.photoOn = true;
     this.photoMade = null; // the area the photo was last read for
     this.photoRequest = 0;
@@ -446,6 +465,8 @@ export class MapView {
     this.roofs = []; // the buildings the shadows were last laid for
     this.roofsMade = null;
     this.casterMesh = new CasterMesh(); // what throws the shadows on walls and roofs
+    this.heightMesh = new CasterMesh(); // the tops of the buildings, for the picture of how open to the sky each place is
+    this.heightsMade = null;
     this.shadowsMade = null;
     this.shadesNear = null; // which of the landmarks' shades were round here when the shadows were last laid
     this.wallMesh = new WallMesh(); // the walls, laid over the blocks the map draws
@@ -474,6 +495,9 @@ export class MapView {
     this.beaconMesh = new Mesh(); // the red lamps on what is tall
     this.plotMesh = new Mesh(); // the walls round the houses
     this.roadsideMesh = new Mesh(); // barriers, sign gantries and the kerbs of medians
+    this.signMesh = new Mesh(); // the signs along the roads, and the hoardings beside the great ones
+    this.signLightMesh = new Mesh(); // the hoardings as they are lit by night
+    this.signsMade = null;
     this.roadsideMade = null;
     this.footbridgeMesh = new Mesh(); // the footbridges over the great roads
     this.signalMesh = new Mesh(); // the traffic signals: their posts, arms and heads, and the stop lines
@@ -615,6 +639,7 @@ export class MapView {
     if (this.detailOn === Boolean(on)) return;
     this.detailOn = Boolean(on);
     this.layRoofs();
+    this.laySigns();
     this.map.triggerRepaint();
   }
 
@@ -1271,6 +1296,7 @@ export class MapView {
       walls: this.wallsMade ? { ...this.wallsMade, corners: this.wallMesh.count } : null,
       coloured: this.wallColours.size,
       shadows: made ? { size: made.size, top: made.top, corners: made.corners, box: made.box } : null,
+      heights: this.heightsMade ? { size: this.heightsMade.size, corners: this.heightsMade.corners, box: this.heightsMade.box, drawn: this.scene.heights.drawn, ready: this.scene.heights.ready } : null,
     };
   }
 
@@ -1299,6 +1325,8 @@ export class MapView {
         this.scene.setRoofs(this.deckMesh);
         this.scene.setWalls(this.wallMesh);
         this.scene.setShadows(this.casterMesh, null);
+        this.scene.setHeights(this.heightMesh, null);
+        this.scene.grounded = false;
       }
       if (this.spillMesh.count > 0 || this.roofLightMesh.count > 0 || this.beaconMesh.count > 0) {
         this.spillMesh.clear();
@@ -1306,7 +1334,7 @@ export class MapView {
         this.beaconMesh.clear();
         this.scene.set('spill', this.spillMesh, { glow: true });
         this.scene.set('rooflights', this.roofLightMesh, { glow: true, lifted: 2 });
-        this.scene.set('beacons', this.beaconMesh, { glow: true, point: POINT_METERS.beacon });
+        this.scene.set('beacons', this.beaconMesh, { glow: true, point: POINT_METERS.beacon, halo: true });
       }
       this.spillMade = null;
       this.roofsMade = null;
@@ -1414,7 +1442,7 @@ export class MapView {
     this.beaconMesh.clear();
     this.spillMade = { strips: spilled, beacons: lightPoints(this.beaconMesh, beacons), roofLamps: drawRoofLights(this.roofLightMesh, roofLamps) };
     this.scene.set('spill', this.spillMesh, { glow: true });
-    this.scene.set('beacons', this.beaconMesh, { glow: true, point: POINT_METERS.beacon });
+    this.scene.set('beacons', this.beaconMesh, { glow: true, point: POINT_METERS.beacon, halo: true });
     // (Like the shade on the roofs, the light on them is drawn a touch nearer the eye than the roofs are.)
     this.scene.set('rooflights', this.roofLightMesh, { glow: true, lifted: 2 });
     this.map.triggerRepaint();
@@ -1622,7 +1650,11 @@ export class MapView {
   /** Turn the moving traffic on or off. It is only ever drawn in the 3D city. */
   setLife(on) {
     this.lifeOn = Boolean(on);
-    if (!this.lifeOn) this.traffic = new Traffic({ seed: Date.now() % 2147483647 }); // a fresh start when it is switched on again
+    if (!this.lifeOn) {
+      // A fresh start when it is switched on again.
+      this.traffic = new Traffic({ seed: Date.now() % 2147483647 });
+      this.walkers = new Walkers({ seed: (Date.now() + 7919) % 2147483647 });
+    }
     this.lifeMade = null; // read the streets again, with or without traffic on them
     this.syncLife();
     this.layStreet();
@@ -1747,6 +1779,7 @@ export class MapView {
       this.lifeView = null;
       // (With the signals at its junctions: whoever is put on the new streets is put there with regard to them.)
       this.traffic.setNetwork(this.network, shift, origin, this.readSignals(origin));
+      this.walkers.setNetwork(this.network, origin);
     }
     this.scene.setOrigin(origin);
     this.lifeMade = { box, tiles: this.tilesLoaded, stops: busStops.size, stations: stations.size };
@@ -1774,6 +1807,12 @@ export class MapView {
     const ground = cast ? groundCasters(this.casterMesh, this.bankMesh) : 0;
     this.shadowsMade = cast ? { ...cast, fall, size: shadowMapSize(cast.box), corners: this.casterMesh.count, ground } : null;
     this.scene.setShadows(this.casterMesh, this.shadowsMade);
+    // And the same buildings as they stand under the open sky, seen from straight above: from that picture
+    // every wall, roof and patch of ground learns how much of the sky it sees (see scene.js). By night too.
+    const tops = this.detailOn && origin ? shadowCasters(this.heightMesh, [...this.roofs, ...landmarkShades().filter(near), ...this.extraShades.filter(near)], origin, [0, 0]) : null;
+    this.heightsMade = tops ? { box: tops.box, size: shadowMapSize(tops.box, HEIGHTS_FINE_METERS, HEIGHTS_SIZE_MOST), corners: this.heightMesh.count } : null;
+    this.scene.setHeights(this.heightMesh, this.heightsMade);
+    this.scene.grounded = this.detailOn;
   }
 
   /** Build the bridges and viaducts afresh: their decks, parapets and piers. And paint the roads: their lines and crossings. */
@@ -1849,7 +1888,7 @@ export class MapView {
         for (const mesh of [this.signalMesh, this.signalLampMesh, this.signalGlowMesh]) mesh.clear();
         this.scene.set('signals', this.signalMesh);
         this.scene.set('signallamps', this.signalLampMesh, { shaded: false, bright: true });
-        this.scene.set('signalglow', this.signalGlowMesh, { glow: true, point: POINT_METERS.signal });
+        this.scene.set('signalglow', this.signalGlowMesh, { glow: true, point: POINT_METERS.signal, halo: true });
       }
       this.signals = null;
       this.signalsMade = null;
@@ -1902,11 +1941,12 @@ export class MapView {
         this.farLightMesh.clear();
         this.scene.set('lampposts', this.lampPostMesh);
         this.scene.set('lamplight', this.lampLightMesh, { glow: true });
-        this.scene.set('lampheads', this.lampHeadMesh, { glow: true, point: POINT_METERS.lamp });
+        this.scene.set('lampheads', this.lampHeadMesh, { glow: true, point: POINT_METERS.lamp, halo: true });
         this.scene.set('farlights', this.farLightMesh, { glow: true, point: POINT_METERS.far });
       }
       this.lampsMade = null;
       this.farMade = null;
+      this.laySigns();
       return;
     }
     // (The side streets of a district have the new white lamps or the old amber ones, by the kind of district it is.)
@@ -1917,7 +1957,29 @@ export class MapView {
     this.lampsMade = { ...made, roofs: this.roofs };
     this.scene.set('lampposts', this.lampPostMesh);
     this.scene.set('lamplight', this.lampLightMesh, { glow: true });
-    this.scene.set('lampheads', this.lampHeadMesh, { glow: true, point: POINT_METERS.lamp });
+    this.scene.set('lampheads', this.lampHeadMesh, { glow: true, point: POINT_METERS.lamp, halo: true });
+    this.laySigns();
+  }
+
+  /**
+   * Stand the road signs afresh along the streets read from the map, and the hoardings beside the
+   * great roads (see roadside.js): like the lamps, wherever no building is in the way. They come with
+   * the detailed walls, and go with them.
+   */
+  laySigns() {
+    if (!this.scene.origin || this.type !== 'city' || !this.network || !this.detailOn) {
+      if (this.signMesh.count > 0 || this.signLightMesh.count > 0) {
+        this.signMesh.clear();
+        this.signLightMesh.clear();
+        this.scene.set('signs', this.signMesh);
+        this.scene.set('signlights', this.signLightMesh, { glow: true });
+      }
+      this.signsMade = null;
+      return;
+    }
+    this.signsMade = drawSigns(this.signMesh, this.signLightMesh, this.network, lightFrom(this.sun), { built: this.builtGround()?.built ?? null });
+    this.scene.set('signs', this.signMesh);
+    this.scene.set('signlights', this.signLightMesh, { glow: true });
   }
 
   /**
@@ -1941,17 +2003,44 @@ export class MapView {
   /** Draw the parked cars and the bus shelters afresh, for the streets the traffic runs on. */
   layStreet() {
     if (!this.scene.origin || !this.lifeOn || this.type !== 'city' || !this.lifeMade) {
-      if (this.streetMesh.count > 0) {
+      if (this.streetMesh.count > 0 || this.parkedNearMesh.count > 0) {
         this.streetMesh.clear();
+        this.parkedNearMesh.clear();
         this.scene.set('street', this.streetMesh);
+        this.scene.set('parkednear', this.parkedNearMesh);
       }
       this.streetMade = null;
+      this.parked = null;
       return;
     }
     this.streetMade = drawStreet(this.streetMesh, this.traffic.network, lightFrom(this.sun), shadowReach(this.sun), PARKED_MOST, this.builtGround() ?? {});
     this.streetMade.roofs = this.roofs;
     this.streetMade.trees = this.trees;
+    // (The cars that stand, as they were drawn: those near the eye are drawn again with more care, each
+    // taken out of this mesh meanwhile. See moveParked().)
+    this.parked = { cars: this.streetMade.cars, kept: this.streetMesh.positions.slice(0, this.streetMesh.count * 3), folded: new Set(), at: null, drawn: 0 };
+    delete this.streetMade.cars;
+    this.parkedNearMesh.clear();
     this.scene.set('street', this.streetMesh);
+    this.scene.set('parkednear', this.parkedNearMesh);
+  }
+
+  /**
+   * Draw the cars that stand near the eye with the care the moving ones near it are drawn with. Done
+   * again only when the eye has moved some way, or sees further or less far: near = { eye, within } as
+   * for the traffic, or null for none.
+   */
+  moveParked(near) {
+    const parked = this.parked;
+    if (!parked) return;
+    const at = parked.at;
+    if (near && at && at.near && Math.hypot(near.eye[0] - at.eye[0], near.eye[1] - at.eye[1], near.eye[2] - at.eye[2]) < PARKED_NEAR_AGAIN_METERS && Math.abs(near.within - at.within) < at.within * 0.1) return;
+    if (!near && at && !at.near) return;
+    parked.at = near ? { near: true, eye: [...near.eye], within: near.within } : { near: false };
+    const made = drawParkedNear(this.parkedNearMesh, this.streetMesh, parked.cars, parked.kept, parked.folded, lightFrom(this.sun), shadowReach(this.sun), near);
+    parked.drawn = made.drawn;
+    if (made.changed) this.scene.set('street', this.streetMesh);
+    this.scene.set('parkednear', this.parkedNearMesh);
   }
 
   /**
@@ -2125,6 +2214,11 @@ export class MapView {
         this.trafficMesh.clear();
         this.scene.set('traffic', this.trafficMesh);
       }
+      if (this.walkerMesh.count > 0) {
+        this.walkerMesh.clear();
+        this.scene.set('walkers', this.walkerMesh);
+      }
+      this.walkersDrawn = 0;
       if (this.lightMesh.count > 0 || this.carLightMesh.count > 0) {
         this.lightMesh.clear();
         this.carLightMesh.clear();
@@ -2151,13 +2245,24 @@ export class MapView {
     this.traffic.step(seconds);
     // Life size from zoom 17.5 in; up to half as large again further out, so a car is still a car and not a speck.
     const scale = Math.min(Math.max(1 + (17.5 - zoom) * 0.5, 1), 1.5);
-    this.lifeDrawn = drawTraffic(this.trafficMesh, this.traffic, lightFrom(this.sun), shadowReach(this.sun), scale);
+    // (A vehicle is drawn with more care while it is long enough on screen for that to show: so many
+    // pixels to its length, which it is out to so far from the eye.)
+    const eye = this.scene.eye;
+    const reach = Math.hypot(this.scene.focus[0] - eye[0], this.scene.focus[1] - eye[1], eye[2]);
+    const near = this.detailOn && this.scene.pixel > 0 ? { eye, within: Math.min((FINE_VEHICLE_METERS_A_PIXEL * reach) / this.scene.pixel, FINE_VEHICLE_FURTHEST_METERS) } : null;
+    this.lifeDrawn = drawTraffic(this.trafficMesh, this.traffic, lightFrom(this.sun), shadowReach(this.sun), scale, near);
     this.scene.set('traffic', this.trafficMesh);
+    this.moveParked(near);
+    // The people on the pavements: they walk on; and those near enough to be made out are drawn.
+    this.walkers.step(seconds);
+    const seen = this.scene.pixel > 0 ? { eye, within: Math.min((WALKER_METERS_A_PIXEL * reach) / this.scene.pixel, WALKER_FURTHEST_METERS) } : null;
+    this.walkersDrawn = drawWalkers(this.walkerMesh, this.walkers, lightFrom(this.sun), shadowReach(this.sun), seen);
+    this.scene.set('walkers', this.walkerMesh);
     // The signals: on each head the lamp that is lit just now, and by night its shine.
     if (this.signals && this.traffic.signals) {
       drawSignalLamps(this.signalLampMesh, this.signalGlowMesh, this.signals, Date.now() / 1000, { eye: this.scene.eye });
       this.scene.set('signallamps', this.signalLampMesh, { shaded: false, bright: true });
-      this.scene.set('signalglow', this.signalGlowMesh, { glow: true, point: POINT_METERS.signal });
+      this.scene.set('signalglow', this.signalGlowMesh, { glow: true, point: POINT_METERS.signal, halo: true });
     } else {
       this.darkenSignals();
     }
@@ -2358,7 +2463,7 @@ export class MapView {
     this.signalLampMesh.clear();
     this.signalGlowMesh.clear();
     this.scene.set('signallamps', this.signalLampMesh, { shaded: false, bright: true });
-    this.scene.set('signalglow', this.signalGlowMesh, { glow: true, point: POINT_METERS.signal });
+    this.scene.set('signalglow', this.signalGlowMesh, { glow: true, point: POINT_METERS.signal, halo: true });
   }
 
   /** What is on the streets right now, for anyone who wants to count it. */
@@ -2366,6 +2471,9 @@ export class MapView {
     return {
       ...this.traffic.counts(),
       drawn: this.lifeDrawn,
+      walkers: { out: this.walkers.walkers.length, drawn: this.walkersDrawn },
+      parkedNear: this.parked?.drawn ?? 0,
+      signs: this.signsMade,
       on: this.lifeOn && this.type === 'city',
       busStops: this.lifeMade?.stops ?? 0,
       stations: this.lifeMade?.stations ?? 0,

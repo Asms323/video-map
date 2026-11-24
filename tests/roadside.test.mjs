@@ -152,3 +152,71 @@ test('medianPalms: down the wide median of a great road the palms stand closer, 
   const tight = buildNetwork([line('motorway', [[0, 0], [900, 0]], { oneway: 1 }), line('motorway', [[900, width + 2], [0, width + 2]], { oneway: 1 })], ORIGIN);
   assert.equal(medianPalms(tight).length, 0);
 });
+
+test('drawSigns: a speed limit on the right of each way a main road is driven, a stop sign where a side street comes out, and hoardings where there is room', async () => {
+  const { drawSigns } = await import('../js/roadside.js');
+  const everything = (mesh) => Array.from({ length: mesh.count }, (_, i) => [...mesh.positions.subarray(i * 3, i * 3 + 3), ...mesh.colours.subarray(i * 4, i * 4 + 4)]);
+  const isRed = (corner) => corner[3] > 110 && corner[4] < 45 && corner[5] < 45;
+  // A main road east and west, two kilometres of it, and a side street that comes out into it from the south.
+  const network = buildNetwork([line('primary', [[-1000, 0], [1000, 0]]), line('minor', [[200, -300], [200, 0]])], ORIGIN);
+  const main = network.ways.find((way) => way.class === 'primary');
+  const side = network.ways.find((way) => way.class === 'minor');
+  const mesh = new Mesh();
+  const lights = new Mesh();
+  const made = drawSigns(mesh, lights, network, NOON);
+  // The limits: several each way; those for the traffic heading east on the south side, facing west, and the other way about.
+  assert.ok(made.limits >= 6 && made.limits <= 12, JSON.stringify(made));
+  assert.equal(made.stops, 1);
+  assert.equal(made.hoardings, 0, 'no hoarding where nobody has said what is built on');
+  assert.equal(lights.count, 0);
+  // (A sign: its post of four sides; a back and a front of eight sides; and on a limit its white and two figures, on a stop sign its word.)
+  assert.equal(mesh.count, made.limits * (24 + 18 + 18 + 18 + 12) + made.stops * (24 + 18 + 18 + 6));
+  const all = everything(mesh);
+  const out = main.width / 2 + 0.8;
+  const posts = all.filter((corner) => corner[2] === 0);
+  assert.ok(posts.every((corner) => Math.abs(Math.abs(corner[1]) - out) < 0.1 || (Math.abs(corner[0] - 200) < side.width / 2 + 1 && corner[1] < 0)), 'every post stands just off the edge of its road');
+  assert.ok(posts.some((corner) => corner[1] > 0) && posts.some((corner) => corner[1] < -out + 0.1 && Math.abs(corner[0] - 200) > 20), 'on both sides of the main road');
+  // Nothing higher than a sign on its post, nothing under the ground.
+  assert.ok(all.every((corner) => corner[2] >= 0 && corner[2] < 2.8));
+  // The red of a limit beside the eastbound lanes is seen from the west: it stands out west of its post.
+  const southRed = all.filter((corner) => isRed(corner) && corner[1] < 0 && Math.abs(corner[0] - 200) > 20);
+  const southPosts = posts.filter((corner) => corner[1] < 0 && Math.abs(corner[0] - 200) > 20).map((corner) => corner[0]);
+  assert.ok(southRed.length > 0 && southRed.every((corner) => southPosts.some((x) => corner[0] < x && x - corner[0] < 0.2)), 'faces the traffic that comes');
+  // The stop sign: at the end of the side street, on the right of whoever drives out of it (the east side), a little before the edge of the main road.
+  const stopRed = all.filter((corner) => isRed(corner) && Math.abs(corner[0] - 200) < 20 && corner[1] < -main.width / 2);
+  assert.equal(stopRed.length, 18);
+  assert.ok(stopRed.every((corner) => corner[0] > 200 && corner[1] < -main.width / 2 - 2 && corner[1] > -main.width / 2 - 3 && corner[2] > 1.9));
+  // Neither on a slip road nor in a tunnel; and no stop sign where two side streets meet.
+  const none = drawSigns(new Mesh(), null, buildNetwork([line('primary', [[-1000, 0], [1000, 0]], { ramp: true }), line('secondary', [[-1000, 60], [1000, 60]], { tunnel: true }), line('minor', [[0, 200], [300, 200]]), line('minor', [[150, 200], [150, 500]])], ORIGIN), NOON);
+  assert.deepEqual(none, { limits: 0, stops: 0, hoardings: 0 });
+
+  // Hoardings: beside a great road, every half kilometre or so, each on its post with a board across the way the road runs.
+  const open = new Mesh();
+  const glow = new Mesh();
+  const free = drawSigns(open, glow, buildNetwork([line('trunk', [[-1500, 0], [1500, 0]], { oneway: 1 })], ORIGIN), NOON, { built: () => false });
+  assert.ok(free.hoardings >= 4 && free.hoardings <= 7, JSON.stringify(free));
+  const boards = everything(open).filter((corner) => corner[2] > 10);
+  assert.ok(boards.length > 0 && boards.every((corner) => corner[2] <= 14.5 + 1e-6 && corner[1] < 0), 'on the right of its traffic, the board ten to fourteen metres up');
+  const trunk = buildNetwork([line('trunk', [[-1500, 0], [1500, 0]], { oneway: 1 })], ORIGIN).ways[0];
+  const reach = boards.map((corner) => -corner[1]);
+  assert.ok(Math.min(...reach) > trunk.width / 2 + 0.5 && Math.max(...reach) < trunk.width / 2 + 11.5, 'clear of the carriageway');
+  // (By night each is lit: both its faces, in its own colours.)
+  assert.equal(glow.count, free.hoardings * 2 * 3 * 6);
+  // None where a building stands, and none where another road runs alongside.
+  assert.equal(drawSigns(new Mesh(), new Mesh(), buildNetwork([line('trunk', [[-1500, 0], [1500, 0]], { oneway: 1 })], ORIGIN), NOON, { built: () => true }).hoardings, 0);
+  const beside = buildNetwork([line('trunk', [[-1500, 0], [1500, 0]], { oneway: 1 }), line('service', [[-1500, -13], [1500, -13]])], ORIGIN);
+  assert.equal(drawSigns(new Mesh(), new Mesh(), beside, NOON, { built: () => false }).hoardings, 0);
+  // Where a building is in the way at one spot, room is looked for a little further along the road.
+  const blocked = (x) => Math.abs(((x % 540) + 540) % 540 - 270) > 200; // built on, but for a gap of some 130 m in every 540
+  const shifted = drawSigns(new Mesh(), new Mesh(), buildNetwork([line('trunk', [[-1500, 0], [1500, 0]], { oneway: 1 })], ORIGIN), NOON, { built: (x) => blocked(x) });
+  assert.ok(shifted.hoardings >= 1 && shifted.hoardings <= free.hoardings, JSON.stringify(shifted));
+  // What stands along a road stands where it stood when the streets are read again with others among
+  // them: its place goes by the road itself, not by where the road comes in the list.
+  const highest = (mesh) => everything(mesh).filter((corner) => corner[2] > 14.4).map((corner) => `${Math.round(corner[0])},${Math.round(corner[1])}`).sort();
+  const again = new Mesh();
+  drawSigns(again, new Mesh(), buildNetwork([line('minor', [[-1500, 900], [1500, 900]]), line('minor', [[-1500, 1000], [1500, 1000]]), line('trunk', [[-1500, 0], [1500, 0]], { oneway: 1 })], ORIGIN), NOON, { built: () => false });
+  assert.deepEqual(highest(again), highest(open));
+  // And what is on them is no more than a few flat colours.
+  const tones = new Set(everything(open).filter((corner) => corner[2] > 10.6 && corner[2] < 14.2).map((corner) => `${corner[3] >> 4},${corner[4] >> 4},${corner[5] >> 4}`));
+  assert.ok(tones.size >= 3 && tones.size < 60);
+});

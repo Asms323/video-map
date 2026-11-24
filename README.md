@@ -50,6 +50,23 @@ map opens on the city and keeps to it, and places are looked for in it.
   and warm, the warmer the lower the sun; one that faces away is lit by the
   sky alone; and every wall darkens towards its foot, where the street
   gathers shade.
+- **Dim where little of the sky is seen.** Light comes from the whole sky,
+  not only from the sun, and a place that sees little of the sky is dim. So
+  a lane between two houses is darker than an open street, a wall is darker
+  where a neighbour stands close in front of it, a low roof is darker beside
+  the tall block that stands over it, and the ground is darker along the
+  foot of every wall. And the sunlit ground throws its own warm light back
+  up at the foot of the walls that stand open to it.
+- **Walls and ground that are made of something.** From close by plaster
+  has its grain; about one larger building in three is faced with stone,
+  course upon course, every stone a shade of its own; rain and dust have
+  left their streaks down from the top of the walls, and the dust of the
+  street dulls their foot. Glass is a mirror as well as a window: it shows
+  the sky or the streets, by the way it is looked at, each pane a little
+  differently. The ground is patched and grained, as asphalt and sand are,
+  where the map paints one flat colour from kerb to kerb. And the brightest
+  things, a white wall in full sun, lose their glare gently, as on film.
+  A roof lies under patches of dust.
 - **Riyadh by night.** As the sun sets over the city the model goes dark,
   little by little, and its lights come on. The streets glow the way they do
   from the air: white along the great roads, the amber of sodium lamps on the
@@ -68,8 +85,9 @@ map opens on the city and keeps to it, and places are looked for in it.
   carriageways are mapped apart; by turns on either side of a wide street;
   down one side of a residential street; on the parapets of bridges; and in
   car parks. By night each has a point of light at its head and throws a pool
-  of light on the road. From across the city the lamps are dots of light
-  along the streets.
+  of light on the road; seen from close by, a lamp has a soft glow round it,
+  as dusty air and a lens give it. From across the city the lamps are dots
+  of light along the streets.
 - **Lit landmarks.** By night Kingdom Centre shows the band of light along
   its arch and its lit sky bridge, Al Faisaliah its glowing golden ball, the
   TV Tower its lantern, the KAFD station the light through its pierced shell.
@@ -135,7 +153,9 @@ map opens on the city and keeps to it, and places are looked for in it.
 - **Painted roads.** Main roads have their lanes: a broken line between lanes,
   a line along each edge, a yellow line down the middle where traffic runs
   both ways. A side street has a zebra crossing where it meets a main road,
-  and so has every arm of a crossroads of main roads.
+  and so has every arm of a crossroads of main roads. Before the stop line
+  at a traffic light an arrow is painted in every lane: left by the median,
+  straight on in the middle, straight on or right by the kerb.
 - **Traffic on the real streets.** Cars, vans and lorries drive the streets:
   they keep to the lanes, drive on the right, obey one-way streets, queue
   behind each other, turn at junctions, disappear into tunnels, and are busier
@@ -160,7 +180,10 @@ map opens on the city and keeps to it, and places are looked for in it.
   days (Sunday to Thursday), nor from 5 until 9 at the weekend, so they are
   a sight of the night; the tankers stay away in the rush hours. There are
   more delivery bikes at lunch and from supper into the night. No vehicle
-  is drawn after any one make, and none carries a badge or a name.
+  is drawn after any one make, and none carries a badge or a name. From
+  close by a vehicle is drawn with more care, whether it drives or stands
+  parked: the corners of its body and cabin rounded off, the body drawing
+  in towards its top, and its wheels under it, each with its hub.
 - **Traffic lights, run the way Riyadh runs its own.** Where main roads
   cross on the level there are signals: at each stop line a post by the
   kerb with an arm out over the lanes, black heads on black boards lying
@@ -178,6 +201,19 @@ map opens on the city and keeps to it, and places are looked for in it.
   from OpenStreetMap wherever it marks one. **Which light is lit is the app's own doing: it never shows
   what a real signal is showing.** Look at the road, not at the map. Shown
   with the traffic; switched off with it.
+- **Signs and hoardings.** Along the main roads stand speed-limit signs, the
+  white disc in its red ring, on the right of the traffic they are for; and
+  where a side street comes out into a greater road stands the red octagon
+  of the stop sign. Beside the great roads rise advertising hoardings, each
+  a wide board on one tall post, lit by night. What is on them is a few flat
+  colours: no name, no brand.
+- **People on the pavements.** Along the pavements people walk: men in the
+  white thobe with the red-and-white shemagh or the white ghutra, women in
+  the black abaya, and many in shirt and trousers. Few in the heat of the
+  day, most in the evening, hardly anybody in the small hours; more along
+  the main streets than in the streets of houses. Each throws a shadow. They
+  are drawn from close by only, where they can be made out. Like the cars,
+  they are made up: nobody on the map is anybody.
 - **Buses where buses run.** A bus only drives along a street that has a bus
   stop on the map (and on along the same street between stops), in the lane by
   the kerb, and pulls in at every stop on its side of the street, where a
@@ -252,11 +288,13 @@ map opens on the city and keeps to it, and places are looked for in it.
   more work for the phone with every picture. If the map moves slowly, both
   can be switched off under the map options ("Detailed walls and shadows");
   the walls are then plain, with a simple pattern of windows, and the roofs
-  stay. (On a computer that draws without a graphics chip, at a phone's
-  sharpness, a picture takes 6 to 33 per cent longer with them. By night a
-  picture takes about as long as by day, within a tenth either way: there are
-  no shadows to work out then, and the lamps' light costs about as much. What
-  any of it costs on a phone's own graphics chip has not been measured.)
+  stay. The grain of the ground, the dimness where little of the sky is
+  seen, the signs and hoardings and the wheels of the cars go with them.
+  (On a computer that draws without a graphics chip, at a phone's sharpness,
+  a picture takes a fifth to a half longer with them: about 20 per cent in
+  a view from above, up to 55 in the driving view. By night it is about the
+  same. What any of it costs on a phone's own graphics chip has not been
+  measured.)
 - Four more looks: **Streets** (colours and icons), **Dark** (a flat map in
   dark colours), **Satellite** (real photos with the names on top) and
   **Detailed** (the classic OpenStreetMap picture). In the Satellite look the
@@ -360,6 +398,11 @@ outlines do not say is made up to look right:
   its foot. Blinds, the rooms that are lit by night and the colours of the
   signboards are picked by chance. None of this is what the real front looks
   like.
+- What a wall is made of. Not known for any building. Which buildings are
+  faced with stone is picked by chance (about one in three of those that
+  are not houses), and so is where rain has left a streak; the grain of
+  plaster and the dust at a wall's foot are the same on every wall. None
+  of it is what the real wall looks like.
 - Wall colour. Worked out from the colour of the building's own roof in the
   satellite photo: the roof's hue, much calmed, at the brightness of a wall in
   daylight. A guess that is right in kind more often than not (a sand-coloured
@@ -475,7 +518,15 @@ street really has no pavement, or a wider one, the map does not say.
 
 Road markings. The lanes painted are the ones the simulated traffic keeps to,
 which go by the class of the road, not by a count of its real lanes. Whether
-a given junction really has a zebra crossing is not known.
+a given junction really has a zebra crossing is not known. Nor is which
+lane really goes which way: the arrows before a traffic light are painted
+by rule, the same at every junction.
+
+The ground. Its patches and its grain are made up: a pattern that is the
+same wherever it is looked at, laid over asphalt and sand alike. It does
+not show where a real road is patched or a real plot is stained. The
+dimness along the foot of the walls and in the lanes goes by the buildings'
+outlines and heights, so it is as right as those are.
 
 Traffic lights. How Riyadh runs its signals is on record, and is kept to:
 each side of a junction in its turn, the three flashes of the green before
@@ -513,6 +564,19 @@ up:
 - What drivers do. That some stop early when the green begins to flash is
   known from a study of junctions in the Kingdom; that one in eight does is
   the app's own figure. Nobody here runs a red light.
+
+Signs and hoardings. Where a road sign or a hoarding really stands is on no
+map: they are stood by rule (a speed limit every 420 m of main road, a stop
+sign at the mouth of every side street, a hoarding every 540 m beside a
+great road wherever no building and no other road is in the way). The limit
+on a sign cannot be read, and is not meant to be: for the limit of the road
+you are on, see the top of the map. A hoarding shows nothing real.
+
+People. Who walks where is made up, and so is how many: no count of
+Riyadh's pavements was to be had. That there are few at midday and most in
+the evening, and what they wear, is what anyone sees who walks there. They
+keep to the pavements the app lays by rule, walk straight on where a street
+leads straight on and turn back where none does, and never cross a road.
 
 Parked cars are set out by chance along residential streets, the same way
 every time for the same street. They are not the cars really parked there.
@@ -658,8 +722,9 @@ js/life.js              the simulated traffic: street network, vehicles, trains,
 js/fleet.js             which vehicles Riyadh has: kinds, shapes, colours, hours
 js/signals.js           the traffic signals: where they stand, how they are run,
                         what they look like
-js/roadside.js          what stands along the great roads: barriers, medians
-                        with their palms, gantries
+js/people.js            the people on the pavements
+js/roadside.js          what stands along the roads: barriers, medians with
+                        their palms, gantries, road signs, hoardings
 js/cuttings.js          the roads that run below the ground, in open cuttings
 js/lights.js            the lights of the night: street lamps and their pools of
                         light, headlights, the light from shop windows

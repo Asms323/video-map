@@ -67,15 +67,15 @@ export const SHAPES = {
   // A pick-up with a double cab and an open bed behind it: the Hilux, the D-Max.
   pickup: { length: 5.3, width: 1.85, boxes: [[0.04, 0.96, 0.95, 0.02, 0.38, 'tyre'], [0, 1, 1, 0.34, 1.02, 'body'], [0.4, 0.8, 0.93, 1.02, 1.8, 'glass', [0.03, 0.13, 0.1]], [0.03, 0.385, 0.84, 1.0, 1.035, 'dark']] },
   // A van or a minibus: the HiAce.
-  van: { length: 5.3, width: 2.0, boxes: [[0, 1, 1, 0.3, 1.15, 'body'], [0.02, 0.9, 0.94, 1.15, 1.95, 'body'], [0.72, 0.93, 0.95, 1.2, 1.8, 'glass']] },
+  van: { length: 5.3, width: 2.0, wheels: { radius: 0.36, axles: [0.17, 0.8] }, boxes: [[0, 1, 1, 0.3, 1.15, 'body'], [0.02, 0.9, 0.94, 1.15, 1.95, 'body'], [0.72, 0.93, 0.95, 1.2, 1.8, 'glass']] },
   // A light lorry with a box body behind its cab: what Riyadh calls a Dyna.
-  light: { length: 6.4, width: 2.1, boxes: [[0.02, 0.98, 0.86, 0.12, 0.8, 'dark'], [0, 0.7, 1, 0.8, 2.75, 'cargo'], [0.74, 1, 0.92, 0.45, 2.15, 'body'], [0.88, 1, 0.93, 1.3, 1.9, 'glass']] },
+  light: { length: 6.4, width: 2.1, wheels: { radius: 0.42, axles: [0.2, 0.85] }, boxes: [[0.02, 0.98, 0.86, 0.12, 0.8, 'dark'], [0, 0.7, 1, 0.8, 2.75, 'cargo'], [0.74, 1, 0.92, 0.45, 2.15, 'body'], [0.88, 1, 0.93, 1.3, 1.9, 'glass']] },
   // A tanker: the lorry that brings a house its water.
-  tanker: { length: 8.2, width: 2.5, boxes: [[0.02, 0.98, 0.84, 0.15, 1.0, 'dark'], [0.03, 0.72, 0.88, 1.0, 2.8, 'cargo', [0.04, 0.04, 0.5]], [0.2, 0.55, 0.14, 2.8, 2.9, 'dark'], [0.76, 1, 0.94, 0.5, 2.7, 'body'], [0.9, 1, 0.95, 1.55, 2.35, 'glass']] },
+  tanker: { length: 8.2, width: 2.5, wheels: { radius: 0.5, axles: [0.13, 0.26, 0.87] }, boxes: [[0.02, 0.98, 0.84, 0.15, 1.0, 'dark'], [0.03, 0.72, 0.88, 1.0, 2.8, 'cargo', [0.04, 0.04, 0.5]], [0.2, 0.55, 0.14, 2.8, 2.9, 'dark'], [0.76, 1, 0.94, 0.5, 2.7, 'body'], [0.9, 1, 0.95, 1.55, 2.35, 'glass']] },
   // A heavy lorry.
-  truck: { length: 9, width: 2.5, boxes: [[0, 0.74, 1, 0.9, 3.4, 'cargo'], [0.78, 1, 0.96, 0.5, 2.6, 'body'], [0.9, 1.0, 0.97, 1.5, 2.3, 'glass']] },
-  bus: { length: 12, width: 2.55, boxes: [[0, 1, 1, 0.35, 1.3, 'body'], [0.01, 0.99, 0.97, 1.3, 2.5, 'glass'], [0, 1, 1, 2.5, 3.1, 'body']] },
-  coach: { length: 20, width: 2.9, boxes: [[0, 1, 1, 0.5, 1.6, 'body'], [0.02, 0.98, 0.97, 1.6, 2.9, 'glass'], [0, 1, 1, 2.9, 3.6, 'body'], [0.08, 0.92, 0.42, 3.6, 3.9, 'cargo']] },
+  truck: { length: 9, width: 2.5, wheels: { radius: 0.52, axles: [0.1, 0.22, 0.87] }, boxes: [[0, 0.74, 1, 0.9, 3.4, 'cargo'], [0.78, 1, 0.96, 0.5, 2.6, 'body'], [0.9, 1.0, 0.97, 1.5, 2.3, 'glass']] },
+  bus: { length: 12, width: 2.55, wheels: { radius: 0.5, axles: [0.17, 0.8] }, boxes: [[0, 1, 1, 0.35, 1.3, 'body'], [0.01, 0.99, 0.97, 1.3, 2.5, 'glass'], [0, 1, 1, 2.5, 3.1, 'body']] },
+  coach: { length: 20, width: 2.9, wheels: null, boxes: [[0, 1, 1, 0.5, 1.6, 'body'], [0.02, 0.98, 0.97, 1.6, 2.9, 'glass'], [0, 1, 1, 2.9, 3.6, 'body'], [0.08, 0.92, 0.42, 3.6, 3.9, 'cargo']] },
   // A taxi: a large saloon in the taxis' green, with its light on the roof.
   taxi: {
     length: 4.9,
@@ -101,6 +101,7 @@ export const SHAPES = {
   ambulance: {
     length: 5.6,
     width: 2.05,
+    wheels: { radius: 0.37, axles: [0.17, 0.8] },
     boxes: [[0, 1, 1, 0.3, 1.2, 'body'], [0.02, 0.9, 0.95, 1.2, 2.3, 'body'], [0.05, 0.88, 0.975, 1.32, 1.52, 'cargo'], [0.72, 0.93, 0.96, 1.6, 2.1, 'glass'], [0.62, 0.68, 0.5, 2.3, 2.42, 'red']],
     lamps: [[0.64, 0, 2.45, MATERIALS.red]],
   },

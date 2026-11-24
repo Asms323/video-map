@@ -60,6 +60,40 @@ float inShadow(vec3 point, float margin) {
   return mix(mix(a, b, part.x), mix(c, d, part.x), part.y) * u_shadowDeep;
 }`;
 
+// How open to the sky a place is. Light comes not only from the sun but from the whole sky, and a place
+// that sees little of the sky is dim: the foot of a wall, a lane between two houses, a yard, a low roof
+// with a tall block standing over it. For that the scene keeps a second picture: the buildings seen from
+// straight above, every spot holding the height of what stands there (counted up to so many metres: what
+// rises higher shuts out no more of the sky from close by). A place asks it how high the buildings stand
+// at a few spots round about, and is the dimmer the more they rise over it and the nearer they are.
+const HEIGHTS_MOST = '120.0';
+const HEIGHTS = `
+uniform sampler2D u_heights;
+uniform vec4 u_heightsBox;  // the ground the picture covers: west, south, 1 / width, 1 / height (metres); no width at all when there is none
+float builtAt(vec2 at) {
+  vec2 spot = (at - u_heightsBox.xy) * u_heightsBox.zw;
+  if (spot.x <= 0.0 || spot.x >= 1.0 || spot.y <= 0.0 || spot.y >= 1.0) return 0.0;
+  return texture2D(u_heights, spot).r * ${HEIGHTS_MOST};
+}
+// How much of the sky is shut out for a point by what stands so far off, one way: by how steeply one has to look up to see over it.
+float shut(vec3 point, vec2 away, float far) {
+  float rise = max(builtAt(point.xy + away * far) - point.z, 0.0);
+  return rise / (rise + far);
+}`;
+
+// The light as a camera takes it. A white wall in full sun is not a patch of pure white on the film: the
+// brightest things lose their glare gently, and keep what is drawn on them.
+// (Half of the easing is of the brightness as a whole, so that a cream wall stays cream in the sun; half
+// is of each colour apart, as film does it, which pales the brightest things a little.)
+const TONE = `
+vec3 toned(vec3 colour) {
+  float bright = max(colour.r, max(colour.g, colour.b));
+  float over = max(bright - 0.7, 0.0);
+  vec3 whole = colour * ((bright - over + over / (1.0 + over * 2.4)) / max(bright, 0.0001));
+  vec3 each = max(colour - 0.7, 0.0);
+  return mix(whole, colour - each + each / (1.0 + each * 2.4), 0.5);
+}`;
+
 // The colour a shadow leaves of what it falls on: as on the ground, where the map lays a dark blue over it.
 const SHADOW_TINT = 'vec3(0.078, 0.102, 0.157)';
 const SHADOW_DEPTH = '0.42';
@@ -82,6 +116,7 @@ uniform vec3 u_eye;         // where the eye is, in the scene's metres
 uniform float u_cloud;      // more than 0 for a layer of cloud: how solid its clouds are
 uniform vec4 u_grain;       // for a layer of cloud: where its grain is measured from (x, y), one over the size of its coarsest grain, and how many times longer than wide the grain is, along the wind
 uniform vec2 u_grainTurn;   // the way the wind blows: (east, north), one long
+uniform float u_halo;       // 1 for the glow round a point of light: wide and faint
 varying vec4 v_color;
 varying vec3 v_world;
 varying float v_solid;
@@ -120,6 +155,13 @@ void main() {
       gl_PointSize = u_point * u_pointRange.x / 1.1 * (1.0 + 5.0 * a_color.a);
       v_color.a = 0.0;
     }
+  } else if (u_halo > 0.5) {
+    // The glow round a lamp, as a lens and the dusty air make it: several times as wide as the lamp
+    // itself and faint. It is seen from near by only: from further off than it is a few pixels wide,
+    // the lamp is a point and has none.
+    float wide = u_point / max(u_pixel * gl_Position.w, 0.000001);
+    gl_PointSize = min(wide, u_pointRange.y * 7.0);
+    v_color *= smoothstep(u_pointRange.x * 5.0, u_pointRange.x * 14.0, wide);
   } else if (u_point > 0.0) {
     float wide = u_point / max(u_pixel * gl_Position.w, 0.000001);
     gl_PointSize = clamp(wide, u_pointRange.x, u_pointRange.y);
@@ -145,6 +187,7 @@ uniform float u_lamps;  // how far the lamps are on: 0 by day, 1 by night
 uniform float u_glow;   // 1 for a part that gives light of its own
 uniform float u_point;  // more than 0 for a part that is points of light
 uniform float u_cloud;  // more than 0 for a layer of cloud: how solid its clouds are
+uniform float u_halo;   // 1 for the glow round a point of light
 uniform float u_opacity;
 varying vec4 v_color;
 varying vec3 v_world;
@@ -167,9 +210,10 @@ void main() {
   vec4 colour = v_color;
   if (u_glow > 0.5) {
     if (u_point > 0.0) {
-      // Round, brightest in its middle.
+      // Round, brightest in its middle. (Its glow falls away faster from the middle than the lamp does.)
       vec2 from = gl_PointCoord - 0.5;
-      colour *= max(1.0 - 4.0 * dot(from, from), 0.0);
+      float round = max(1.0 - 4.0 * dot(from, from), 0.0);
+      colour *= mix(round, round * round * round, u_halo);
     }
     gl_FragColor = colour * u_lamps;
     return;
@@ -227,6 +271,8 @@ void main() {
 
 const ROOF_FRAGMENT = `${PRECISION}
 ${SHADOW}
+${HEIGHTS}
+${TONE}
 uniform vec3 u_sun;      // the way to the sun: east, north, up
 uniform float u_day;     // 1 while the sun is up, 0 once it is down
 uniform float u_night;   // 0 by day, 1 by night, in between at dusk and dawn
@@ -270,15 +316,25 @@ void main() {
   float grain = chance(floor(v_lay / 0.3) + seed) - 0.5;
   colour = mix(colour, mix(colour, grey, 0.3) * (0.97 + 0.07 * grain * (1.0 - smoothstep(0.05, 0.16, pixel))), gravel);
 
-  // The light: the whole sky, and the sun by how high it stands, unless a neighbour is in its way.
+  // Dust and old rain lie in patches on every flat roof: seen until the roof is a few pixels across.
+  vec2 lies = v_lay / 7.0 + seed;
+  vec2 whole = floor(lies);
+  vec2 part = fract(lies);
+  part = part * part * (3.0 - 2.0 * part);
+  float patch = mix(mix(chance(whole), chance(whole + vec2(1.0, 0.0)), part.x), mix(chance(whole + vec2(0.0, 1.0)), chance(whole + vec2(1.0, 1.0)), part.x), part.y);
+  colour *= 1.0 - 0.10 * patch * (1.0 - smoothstep(1.5, 6.0, pixel));
+
+  // The light: the whole sky, less what a taller neighbour shuts out of it; and the sun by how high it
+  // stands, unless a neighbour is in its way.
   float sunned = max(u_sun.z, 0.0) * u_day;
   if (sunned > 0.0) sunned *= 1.0 - inShadow(v_world, 0.5);
-  vec3 sky = vec3(0.63, 0.66, 0.73);
-  vec3 sunlight = mix(vec3(1.0, 0.74, 0.48), vec3(1.0, 0.95, 0.86), smoothstep(0.1, 0.6, u_sun.z)) * 0.5;
-  vec3 light = mix(vec3(0.80, 0.82, 0.88), sky + sunlight * sunned, u_day);
+  float closed = 0.25 * (shut(v_world, vec2(1.0, 0.0), 3.0) + shut(v_world, vec2(-1.0, 0.0), 3.0) + shut(v_world, vec2(0.0, 1.0), 3.0) + shut(v_world, vec2(0.0, -1.0), 3.0));
+  vec3 sky = vec3(0.59, 0.62, 0.67) * (1.0 - 0.6 * closed);
+  vec3 sunlight = mix(vec3(1.0, 0.72, 0.44), vec3(1.0, 0.925, 0.77), smoothstep(0.1, 0.6, u_sun.z)) * 0.62;
+  vec3 light = mix(vec3(0.80, 0.82, 0.88) * (1.0 - 0.4 * closed), sky + sunlight * sunned, u_day);
   // By night no lamp shines on a roof: it has what light the sky over a lit city gives, little and blue.
   light = mix(light, vec3(0.15, 0.175, 0.26), u_night);
-  gl_FragColor = vec4(min(colour * light, vec3(1.0)) * u_opacity, u_opacity);
+  gl_FragColor = vec4(min(toned(colour * light), vec3(1.0)) * u_opacity, u_opacity);
 }`;
 
 // A wall. Each point of it knows where on its wall it is (how far along and how far up, in metres), how
@@ -308,6 +364,8 @@ void main() {
 
 const WALL_FRAGMENT = `${PRECISION}
 ${SHADOW}
+${HEIGHTS}
+${TONE}
 uniform vec3 u_sun;      // the way to the sun: east, north, up
 uniform float u_day;     // 1 while the sun is up, 0 once it is down
 uniform float u_night;   // 0 by day, 1 by night, in between at dusk and dawn
@@ -315,6 +373,8 @@ uniform float u_lamps;   // how far the lamps are on: 0 by day, 1 by night
 uniform vec3 u_eye;      // where the eye is, in the scene's metres
 uniform float u_pixel;   // metres of wall to a pixel of the screen, for each unit of depth
 uniform float u_top;     // how much of the top of a wall is roof and parapet, above the top floor
+uniform vec3 u_skyHigh;  // the colour of the sky overhead
+uniform vec3 u_skyLow;   // and where it meets the ground
 uniform float u_opacity;
 varying vec4 v_surf;     // along the wall, up the wall, the wall's length, the wall's height
 varying vec2 v_normal;
@@ -327,6 +387,14 @@ float chance(vec2 p) {
 // A soft-edged step: 0 below the edge and 1 above it, over a width.
 float over(float edge, float width, float value) {
   return smoothstep(edge - width, edge + width, value);
+}
+// What a mirror shows along a line: up, and it is the sky, paler towards the horizon; down, and it is the
+// city: the far of it pale in the haze, the near of it sand-coloured by day and a glow of lamps by night.
+vec3 mirrored(vec3 along) {
+  vec3 streets = mix(vec3(0.60, 0.56, 0.49), vec3(0.20, 0.14, 0.09), u_night);
+  vec3 above = mix(u_skyLow, u_skyHigh, smoothstep(0.0, 0.35, along.z));
+  vec3 below = mix(u_skyLow * 0.72, streets * 0.82, smoothstep(0.0, -0.3, along.z));
+  return mix(below, above, smoothstep(-0.04, 0.04, along.z));
 }
 
 void main() {
@@ -346,6 +414,24 @@ void main() {
   vec3 wall = v_tint.rgb;
   // No wall is one flat colour: weather and repainting leave it a little uneven.
   wall *= 0.965 + 0.07 * chance(vec2(floor(along / 5.0) + seed, floor(up / 3.4)));
+  // What a wall is made of shows from close by. Plaster is rough. And one in three or so of the larger
+  // buildings is faced with stone, as Riyadh's are: courses of it, every stone a shade of its own, with
+  // the joints between them. (A tower of glass is neither.)
+  float solidWall = 1.0 - tower;
+  wall *= 1.0 + 0.05 * (chance(floor(vec2(along, up) / 0.15) + seed) - 0.5) * (1.0 - smoothstep(0.03, 0.14, pixel)) * solidWall;
+  float stone = (1.0 - house) * solidWall * step(fract(seed * 0.4142), 0.38);
+  float course = floor(up / 0.6);
+  float laid = along + 0.6 * mod(course, 2.0);
+  wall *= 1.0 + stone * 0.08 * (chance(vec2(floor(laid / 1.2) + seed, course * 1.7)) - 0.5) * (1.0 - smoothstep(0.08, 0.4, pixel));
+  float jointWide = max(0.012, 0.75 * pixel);
+  float joint = max(1.0 - smoothstep(0.0, jointWide, 0.6 * (0.5 - abs(fract(up / 0.6) - 0.5))), 1.0 - smoothstep(0.0, jointWide, 1.2 * (0.5 - abs(fract(laid / 1.2) - 0.5))));
+  wall *= 1.0 - stone * 0.16 * joint * min(0.012 / (0.75 * pixel), 1.0);
+  // Rain and dust run down a wall from its top and leave their streaks: here a long one, there none.
+  float runs = chance(vec2(floor(along / 0.5) + seed * 5.3, 2.0));
+  float streak = step(0.66, runs) * exp(-max(tall - up, 0.0) / (1.0 + 4.5 * fract(runs * 11.0))) * sin(3.14159 * fract(along / 0.5));
+  wall *= 1.0 - 0.09 * streak * solidWall * (1.0 - smoothstep(0.12, 0.5, pixel));
+  // And the dust of the street dulls its foot.
+  wall = mix(wall, wall * vec3(0.94, 0.90, 0.83), 0.6 * (1.0 - smoothstep(0.2, 2.0, up)));
 
   // (Only the front of a wall is ever drawn: see the scene's own note on that.)
   vec2 normal = normalize(v_normal);
@@ -362,6 +448,11 @@ void main() {
   // the blue of ice, a warm white, or white.
   float towerWay = fract(seed * 0.381966);
   vec3 towerTint = mix(vec3(0.74, 0.42, 1.0), mix(vec3(0.30, 0.85, 1.0), mix(vec3(1.0, 0.82, 0.55), vec3(0.95, 0.97, 1.0), step(45.0, seed)), step(30.0, seed)), step(15.0, seed));
+  // Glass is a mirror too, the more the more it is looked along: follow the eye's line as the wall would
+  // throw it. (The wall is upright: a line that comes down to it goes on down, to the streets.)
+  vec3 thrownFlat = reflect(-eye, vec3(facing, 0.0));
+  float glance = pow(1.0 - max(dot(vec3(facing, 0.0), eye), 0.0), 3.0);
+  float mirror = mix(0.14, 0.40, tower) + 0.45 * glance;
   if (front > 0.5) {
     // Towers are glass in a frame of metal, and the glass shows the sky: lighter the higher it is.
     vec3 glassTint = mix(vec3(0.36, 0.44, 0.54), mix(vec3(0.40, 0.54, 0.68), mix(vec3(0.42, 0.58, 0.60), vec3(0.58, 0.52, 0.44), step(40.0, seed)), step(20.0, seed)), tower);
@@ -396,6 +487,10 @@ void main() {
       // The glass: dark, with the sky in it, the lighter the higher; a blind or a curtain behind some.
       vec3 pane = glassTint * (0.40 + 0.50 * gy) * (0.82 + 0.36 * pick) * mix(1.0, 0.86 + 0.5 * up / tall, tower);
       pane = mix(pane, vec3(0.74, 0.71, 0.64) * (0.7 + 0.3 * gy), step(0.72, pick) * 0.55 * (1.0 - tower) * (1.0 - shopFloor));
+      // And what a mirror standing so would show the eye: the sky, or the streets (see below). No two
+      // panes are set quite alike, so each shows a slightly different piece of it.
+      vec3 thrownHere = normalize(vec3(thrownFlat.xy, thrownFlat.z + (pick - 0.5) * 0.2));
+      pane = mix(pane, mirrored(thrownHere) * mix(vec3(1.0), min(glassTint * 1.7, vec3(1.0)), 0.55), min(mirror * (0.75 + 0.5 * pick), 1.0));
       // The window is set back in the wall: its head and the side towards the sun throw a shade on the glass.
       float deep = mix(0.20, 0.45, shopFloor);
       float headShade = deep * u_sun.z / max(towardsSun, 0.18) / (each * (box.w - box.z));
@@ -452,7 +547,7 @@ void main() {
       // Seen from so far off that a bay is a pixel or two, a wall is the even mixture of its wall and its
       // glass, and gives the even mixture of its lights.
       float cover = (box.y - box.x) * (box.w - box.z) * mix(1.0, 0.78, house);
-      vec3 mean = mix(wall, glassTint * 0.66, cover);
+      vec3 mean = mix(wall, mix(glassTint * 0.66, mirrored(thrownFlat) * mix(vec3(1.0), min(glassTint * 1.7, vec3(1.0)), 0.55), mirror), cover);
       // (A floor that is lit from end to end still shows as a band of light from where its windows no
       // longer do; from further off than that, a tower has the even light of all its floors.)
       float evenShare = mix(share + 0.08 * tower * (1.0 - unlit), 0.52, offices);
@@ -475,9 +570,16 @@ void main() {
 
   // The light. By day: the sky from all round, a little more of it from the south-west, and the sun on
   // what faces it and is not in shadow. Once the sun is down: an even light, as on the rest of the city.
-  vec3 sky = vec3(0.60, 0.63, 0.70) * (0.95 + 0.10 * dot(facing, vec2(-0.6, -0.8)));
-  vec3 sunlight = mix(vec3(1.0, 0.74, 0.48), vec3(1.0, 0.95, 0.86), smoothstep(0.1, 0.6, u_sun.z)) * 0.52;
-  vec3 light = mix(vec3(0.80, 0.82, 0.88), sky + sunlight * sunned, u_day);
+  // (A wall sees the less of the sky, the nearer something stands in front of it and the higher that
+  // rises over this point of it: so a lane between two houses is dim, and the top of a wall is not.)
+  float closed = 0.45 * shut(v_world, facing, 2.5) + 0.35 * shut(v_world, facing, 6.0) + 0.20 * shut(v_world, facing, 14.0);
+  float open = 1.0 - 0.62 * closed;
+  vec3 sky = vec3(0.57, 0.60, 0.66) * (0.95 + 0.10 * dot(facing, vec2(-0.6, -0.8))) * open;
+  // The sunlit ground throws its light back up at the foot of every wall that stands open to it: warm,
+  // as the ground of this city is, and fading upwards.
+  vec3 thrownUp = vec3(0.20, 0.168, 0.12) * max(u_sun.z, 0.0) * exp(-up / 16.0) * open * open;
+  vec3 sunlight = mix(vec3(1.0, 0.72, 0.44), vec3(1.0, 0.925, 0.77), smoothstep(0.1, 0.6, u_sun.z)) * 0.62;
+  vec3 light = mix(vec3(0.80, 0.82, 0.88) * (0.6 + 0.4 * open), sky + thrownUp + sunlight * sunned, u_day);
   // By night: what little the sky gives, and on the foot of the wall the light of the street lamps, warm,
   // fading upwards, and stronger near a lamp than between two.
   vec3 lamps = vec3(1.0, 0.72, 0.42) * 0.62 * exp(-up / 5.5) * (0.72 + 0.28 * sin(along * 0.21 + seed)) * front * u_lamps;
@@ -488,7 +590,7 @@ void main() {
   vec3 floodTint = mix(vec3(1.0, 0.87, 0.64), vec3(0.14, 0.95, 0.55), step(0.5, up / tall) * step(fract(seed * 0.3183099), 0.45));
   vec3 flooded = floodTint * (0.30 + 0.55 * (1.0 - storey) * (1.0 - storey)) * flood * u_lamps;
   light = mix(light, vec3(0.15, 0.17, 0.25) + lamps + flooded, u_night);
-  gl_FragColor = vec4(min(colour * light + glow * u_lamps, vec3(1.0)) * u_opacity, u_opacity);
+  gl_FragColor = vec4(min(toned(colour * light) + glow * u_lamps, vec3(1.0)) * u_opacity, u_opacity);
 }`;
 
 // A face of a model of one of the famous buildings (see models.js). It is flat, and knows which way it
@@ -526,6 +628,7 @@ void main() {
 
 const MODEL_FRAGMENT = `${PRECISION}
 ${SHADOW}
+${TONE}
 uniform vec3 u_sun;      // the way to the sun: east, north, up
 uniform float u_day;     // 1 while the sun is up, 0 once it is down
 uniform float u_night;   // 0 by day, 1 by night, in between at dusk and dawn
@@ -579,7 +682,7 @@ void main() {
   float sunned = max(dot(normal, u_sun), 0.0) * u_day;
   if (sunned > 0.0 && open < 0.5) sunned *= 1.0 - inShadow(v_world + vec3(normal.xy * 4.0, 0.0), 0.6);
   vec3 sky = vec3(0.60, 0.63, 0.70) * (0.88 + 0.12 * normal.z) * (0.95 + 0.10 * dot(normal.xy, vec2(-0.6, -0.8)));
-  vec3 sunlight = mix(vec3(1.0, 0.74, 0.48), vec3(1.0, 0.95, 0.86), smoothstep(0.1, 0.6, u_sun.z)) * 0.52;
+  vec3 sunlight = mix(vec3(1.0, 0.72, 0.44), vec3(1.0, 0.925, 0.77), smoothstep(0.1, 0.6, u_sun.z)) * 0.60;
   vec3 light = mix(vec3(0.80, 0.82, 0.88), sky + sunlight * sunned, u_day);
   light = mix(light, vec3(0.15, 0.17, 0.25), u_night);
 
@@ -680,7 +783,104 @@ void main() {
     colour = mix(colour, vec3(0.74, 0.79, 0.80) * light, 0.7 * line);
     show += mix(mix(v_light.rgb, turning, changing), vec3(1.0), 0.3) * step(0.004, v_light.a) * line * (0.25 + 0.35 * step(0.5, fract(up / 8.5)));
   }
-  gl_FragColor = vec4(min(colour + glow * u_lamps + show * smoothstep(0.5, 0.85, u_night), vec3(1.0)) * u_opacity, u_opacity);
+  gl_FragColor = vec4(min(toned(colour) + glow * u_lamps + show * smoothstep(0.5, 0.85, u_night), vec3(1.0)) * u_opacity, u_opacity);
+}`;
+
+// The ground. The map paints it in flat colours: asphalt one grey, sand one beige, from kerb to kerb and
+// from here to the horizon. Real ground is never one colour over any distance: it is patched, stained,
+// dusty, grained. So over all that lies flat the scene lays a thin dark veil that is uneven: wide
+// patches, smaller ones, and from close by a grain; each is left out where it would be finer than the
+// screen can show. And the veil is thicker wherever the ground sees little of the sky: along the foot of
+// every wall, deeper in the lanes between houses (see the picture of heights, above). The veil is fixed
+// to the ground itself, wherever the scene happens to be measured from. It hides nothing: whatever
+// stands on the ground is drawn after it.
+const GROUND_ROUND = 4096; // metres: the grain comes round again after so far, each way
+// (Metres of the world to a degree, the same wherever the scene is measured from: east at Riyadh's latitude.)
+const GROUND_METERS_NORTH = 111320;
+const GROUND_METERS_EAST = 111320 * Math.cos((24.7 * Math.PI) / 180);
+const GROUND_UP_METERS = 0.2; // drawn so far over the ground: above the shadows the map lays on it
+const GROUND_VERTEX = `
+attribute vec2 a_pos;      // a corner of the square of ground the veil is laid on: -1 to 1 each way
+uniform mat4 u_matrix;
+uniform vec4 u_ground;     // the square's middle (east, north), half its width, and how high it lies (metres)
+varying vec3 v_world;
+void main() {
+  v_world = vec3(u_ground.xy + a_pos * u_ground.z, u_ground.w);
+  gl_Position = u_matrix * vec4(v_world, 1.0);
+}`;
+
+const GROUND_FRAGMENT = `${PRECISION}
+uniform sampler2D u_open;   // how much of the sky each spot of ground sees: worked out once from the picture of heights (see OPEN_FRAGMENT)
+uniform vec4 u_heightsBox;  // the ground that picture covers: west, south, 1 / width, 1 / height (metres); no width at all when there is none
+uniform vec4 u_ground;
+uniform vec2 u_anchor;     // where the scene is measured from, in metres of the world, counted round and round: the grain is the ground's own
+uniform float u_pixel;     // metres of ground to a pixel of the screen, for each unit of depth
+uniform float u_night;
+uniform float u_opacity;
+varying vec3 v_world;
+// A number from 0 to 1 for each square of a grid that comes round again after so many squares; and the
+// same, running smoothly from square to square.
+float speck(vec2 cell, float round) {
+  vec2 p = mod(cell, round);
+  p = fract(p * vec2(0.1031, 0.1030));
+  p += dot(p, p.yx + 33.33);
+  return fract((p.x + p.y) * p.y);
+}
+float grain(vec2 p, float round) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(speck(i, round), speck(i + vec2(1.0, 0.0), round), f.x), mix(speck(i + vec2(0.0, 1.0), round), speck(i + vec2(1.0, 1.0), round), f.x), f.y);
+}
+void main() {
+  float pixel = u_pixel / gl_FragCoord.w;
+  float dark = 0.0;
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+  vec2 at = v_world.xy + u_anchor;
+  dark += 0.055 * grain(at / 64.0, ${GROUND_ROUND / 64}.0) * (1.0 - smoothstep(8.0, 30.0, pixel));
+  dark += 0.055 * grain(at / 16.0 + 3.7, ${GROUND_ROUND / 16}.0) * (1.0 - smoothstep(2.0, 8.0, pixel));
+  dark += 0.04 * grain(at / 2.0 + 1.3, ${GROUND_ROUND / 2}.0) * (1.0 - smoothstep(0.3, 1.2, pixel));
+  dark += 0.05 * speck(floor(at / 0.25), ${GROUND_ROUND * 4}.0) * (1.0 - smoothstep(0.04, 0.16, pixel));
+#endif
+  // How much of the sky the ground sees here.
+  vec2 spot = (v_world.xy - u_heightsBox.xy) * u_heightsBox.zw;
+  float closed = spot.x <= 0.0 || spot.x >= 1.0 || spot.y <= 0.0 || spot.y >= 1.0 ? 0.0 : texture2D(u_open, spot).r;
+  dark = 1.0 - (1.0 - dark) * (1.0 - 0.62 * closed);
+  // (The veil thins out towards the edge of its square; and by night, when there is little light to be shut out.)
+  float edge = 1.0 - smoothstep(0.7, 1.0, length(v_world.xy - u_ground.xy) / u_ground.z);
+  float veil = dark * edge * u_opacity * mix(1.0, 0.55, u_night);
+  gl_FragColor = vec4(vec3(0.115, 0.095, 0.075) * veil, veil);
+}`;
+
+// How open the ground is, worked out once for every spot of it whenever the buildings change, and kept
+// as a picture as large as the picture of heights: what is asked of that picture for each spot is how
+// high the buildings stand round about, close by and a little further off, eight ways each; and what
+// is kept is how much of the sky they shut out between them, 0 to 1. So the veil on the ground has one
+// thing to look up for each pixel it draws, where it would have had sixteen.
+const OPEN_VERTEX = `
+attribute vec2 a_pos;
+varying vec2 v_at;
+void main() {
+  v_at = a_pos * 0.5 + 0.5;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}`;
+
+const OPEN_FRAGMENT = `${PRECISION}
+uniform sampler2D u_heights;
+uniform vec2 u_metre; // a metre of ground, as a share of the picture: across it and up it
+varying vec2 v_at;
+float shutBy(vec2 away, float far) {
+  float rise = texture2D(u_heights, v_at + away * far * u_metre).r * ${HEIGHTS_MOST};
+  return rise / (rise + far);
+}
+void main() {
+  float closed = 0.0;
+  for (int i = 0; i < 8; i += 1) {
+    float angle = (float(i) + 0.5) * 0.7853982;
+    vec2 away = vec2(cos(angle), sin(angle));
+    closed += shutBy(away, 2.5) + shutBy(away, 7.0);
+  }
+  gl_FragColor = vec4(vec3(closed / 16.0), 1.0);
 }`;
 
 // The haze. Air is not clear: what is far off is seen through all the dust between, and fades towards
@@ -717,20 +917,31 @@ const HAZE_HEIGHTS = [[0, 0], [8, 1], [260, 1], [750, 0]]; // [metres up, how th
 
 // The picture the shadows are read from. Every corner of a building is put where the ray of sunlight
 // through it lands on the ground, and of all that lands on one spot the highest is kept, with its height.
+// (The picture of heights is drawn the same way, with rays that fall straight down: then every corner
+// lands under itself. It keeps its heights more coarsely, in metres up to a limit, so that they can be
+// read off smoothly between one spot and the next.)
 const CAST_VERTEX = `
 attribute vec3 a_pos;
 uniform vec4 u_box;  // west, south, 1 / width, 1 / height
 uniform vec3 u_fall; // east and north for each metre of height; and the height counted up to
 varying float v_height;
+varying float v_metres;
 void main() {
   vec2 lands = (a_pos.xy + a_pos.z * u_fall.xy - u_box.xy) * u_box.zw;
   v_height = (a_pos.z + ${SHADOW_BELOW}) / (u_fall.z + ${SHADOW_BELOW});
+  v_metres = a_pos.z;
   gl_Position = vec4(lands * 2.0 - 1.0, 1.0 - 2.0 * v_height, 1.0);
 }`;
 
 const CAST_FRAGMENT = `${PRECISION}
+uniform float u_plain; // 1 for the picture of heights
 varying float v_height;
+varying float v_metres;
 void main() {
+  if (u_plain > 0.5) {
+    gl_FragColor = vec4(vec3(clamp(v_metres / ${HEIGHTS_MOST}, 0.0, 1.0)), 1.0);
+    return;
+  }
   float height = clamp(v_height, 0.0, 0.99998) * 255.0;
   gl_FragColor = vec4(floor(height) / 255.0, fract(height), 0.0, 1.0);
 }`;
@@ -760,7 +971,12 @@ function places(gl, program, attributes, uniforms) {
   return at;
 }
 
+// The glow round a lamp seen from close by: so many times as wide as the lamp, and so faint.
+const HALO_WIDER = 7;
+const HALO_FAINT = 0.2;
+const HEIGHTS_SIZE_MOST = 1024; // spots a side, at most, in the picture of heights: a spot a metre or two of ground
 const SHADOW_UNIFORMS = ['shadow', 'shadowBox', 'shadowFall', 'shadowSize', 'shadowDeep'];
+const HEIGHTS_UNIFORMS = ['heights', 'heightsBox'];
 
 /**
  * Where the eye is, for a matrix that takes the scene's metres to the
@@ -813,6 +1029,13 @@ export class SceneLayer {
     this.wallTop = 0; // how much of the top of a wall is roof and parapet
     // The shadows: what throws them, and the picture they are read from.
     this.shadow = { casters: null, frame: null, stale: false, target: null, buffer: null, ready: false, drawn: 0 };
+    // The buildings from straight above, for how open to the sky a place is; and the veil that lies on the ground.
+    this.heights = { casters: null, frame: null, stale: false, target: null, buffer: null, ready: false, drawn: 0 };
+    this.grounded = false; // whether the ground is given its grain and the dimness at the foot of its walls
+    this.groundProgram = null;
+    this.groundBuffer = null;
+    this.open = { target: null, ready: false }; // how open to the sky each spot of ground is: a picture, worked out from the heights
+    this.openProgram = null;
     this.map = null;
     this.program = null;
     this.roofProgram = null;
@@ -833,18 +1056,25 @@ export class SceneLayer {
   /** Make what the scene keeps in the map's graphics memory: its programs. Everything drawn so far is sent there again. */
   build(gl) {
     this.program = link(gl, VERTEX, FRAGMENT);
-    this.at = places(gl, this.program, ['pos', 'color'], ['matrix', 'opacity', 'shaded', 'night', 'lamps', 'glow', 'point', 'pointRange', 'pixel', 'depth', 'sky', 'shift', 'eye', 'cloud', 'grain', 'grainTurn', ...SHADOW_UNIFORMS]);
+    this.at = places(gl, this.program, ['pos', 'color'], ['matrix', 'opacity', 'shaded', 'night', 'lamps', 'glow', 'point', 'pointRange', 'pixel', 'depth', 'sky', 'shift', 'eye', 'cloud', 'grain', 'grainTurn', 'halo', ...SHADOW_UNIFORMS]);
     this.roofProgram = link(gl, ROOF_VERTEX, ROOF_FRAGMENT);
-    this.roofAt = places(gl, this.roofProgram, ['pos', 'lay', 'tint'], ['matrix', 'opacity', 'sun', 'day', 'night', 'pixel', ...SHADOW_UNIFORMS]);
+    this.roofAt = places(gl, this.roofProgram, ['pos', 'lay', 'tint'], ['matrix', 'opacity', 'sun', 'day', 'night', 'pixel', ...SHADOW_UNIFORMS, ...HEIGHTS_UNIFORMS]);
     this.wallProgram = link(gl, WALL_VERTEX, WALL_FRAGMENT);
-    this.wallAt = places(gl, this.wallProgram, ['pos', 'surf', 'normal', 'tint'], ['matrix', 'opacity', 'sun', 'day', 'night', 'lamps', 'eye', 'pixel', 'top', ...SHADOW_UNIFORMS]);
+    this.wallAt = places(gl, this.wallProgram, ['pos', 'surf', 'normal', 'tint'], ['matrix', 'opacity', 'sun', 'day', 'night', 'lamps', 'eye', 'pixel', 'top', 'skyHigh', 'skyLow', ...SHADOW_UNIFORMS, ...HEIGHTS_UNIFORMS]);
+    this.groundProgram = link(gl, GROUND_VERTEX, GROUND_FRAGMENT);
+    this.groundAt = places(gl, this.groundProgram, ['pos'], ['matrix', 'ground', 'anchor', 'pixel', 'night', 'opacity', 'open', 'heightsBox']);
+    this.groundBuffer = null;
+    this.openProgram = link(gl, OPEN_VERTEX, OPEN_FRAGMENT);
+    this.openAt = places(gl, this.openProgram, ['pos'], ['heights', 'metre']);
+    this.open.target = null;
+    this.open.ready = false;
     this.modelProgram = link(gl, MODEL_VERTEX, MODEL_FRAGMENT);
     this.modelAt = places(gl, this.modelProgram, ['pos', 'normal', 'surf', 'edge', 'tint', 'light', 'more'], ['matrix', 'opacity', 'sun', 'day', 'night', 'lamps', 'eye', 'pixel', 'skyHigh', 'skyLow', 'time', ...SHADOW_UNIFORMS]);
     this.hazeProgram = link(gl, HAZE_VERTEX, HAZE_FRAGMENT);
     this.hazeAt = places(gl, this.hazeProgram, ['pos', 'thick'], ['matrix', 'haze']);
     this.hazeBuffer = null;
     this.castProgram = link(gl, CAST_VERTEX, CAST_FRAGMENT);
-    this.castAt = places(gl, this.castProgram, ['pos'], ['box', 'fall']);
+    this.castAt = places(gl, this.castProgram, ['pos'], ['box', 'fall', 'plain']);
     // Shadows are worked out in metres over kilometres of ground: too fine a sum for a device that counts coarsely.
     const fine = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
     this.shadow.able = Boolean(fine && fine.precision > 0);
@@ -871,6 +1101,10 @@ export class SceneLayer {
     this.shadow.buffer = null;
     this.shadow.ready = false;
     this.shadow.stale = true;
+    this.heights.target = null;
+    this.heights.buffer = null;
+    this.heights.ready = false;
+    this.heights.stale = true;
   }
 
   onRemove(_map, gl) {
@@ -889,21 +1123,31 @@ export class SceneLayer {
     this.walls.buffers = null;
     if (this.models.buffers) for (const buffer of Object.values(this.models.buffers)) gl.deleteBuffer(buffer);
     this.models.buffers = null;
-    const target = this.shadow.target;
-    if (target) {
-      gl.deleteFramebuffer(target.frame);
-      gl.deleteTexture(target.picture);
-      gl.deleteRenderbuffer(target.depth);
+    for (const kept of [this.shadow, this.heights]) {
+      const target = kept.target;
+      if (target) {
+        gl.deleteFramebuffer(target.frame);
+        gl.deleteTexture(target.picture);
+        gl.deleteRenderbuffer(target.depth);
+      }
+      if (kept.buffer) gl.deleteBuffer(kept.buffer);
+      kept.target = null;
+      kept.buffer = null;
+      kept.ready = false;
     }
-    if (this.shadow.buffer) gl.deleteBuffer(this.shadow.buffer);
-    this.shadow.target = null;
-    this.shadow.buffer = null;
-    this.shadow.ready = false;
     if (this.blank) gl.deleteTexture(this.blank);
     this.blank = null;
     if (this.hazeBuffer) gl.deleteBuffer(this.hazeBuffer);
     this.hazeBuffer = null;
-    for (const name of ['program', 'roofProgram', 'wallProgram', 'modelProgram', 'hazeProgram', 'castProgram']) {
+    if (this.groundBuffer) gl.deleteBuffer(this.groundBuffer);
+    this.groundBuffer = null;
+    if (this.open.target) {
+      gl.deleteFramebuffer(this.open.target.frame);
+      gl.deleteTexture(this.open.target.picture);
+    }
+    this.open.target = null;
+    this.open.ready = false;
+    for (const name of ['program', 'roofProgram', 'wallProgram', 'modelProgram', 'hazeProgram', 'castProgram', 'groundProgram', 'openProgram']) {
       if (this[name]) gl.deleteProgram(this[name]);
       this[name] = null;
     }
@@ -941,13 +1185,17 @@ export class SceneLayer {
    * sun's own disc, going down): it is drawn after the haze, with the lights.
    * bright: true for what is lit from within and seen by day as well as by
    * night (the lamp of a traffic signal): it keeps its colours in the dark.
+   * halo: true for points of light that have a glow round them when they are
+   * seen from close by, as a lens and dusty air give a lamp: each is drawn a
+   * second time, several times as wide and faint.
    */
-  set(name, mesh, { shaded = true, lifted = 0, glow = false, point = 0, mask = false, sky = false, cloud = null, late = false, bright = false } = {}) {
-    const part = this.parts.get(name) ?? { mesh: null, buffers: null, stale: true, shaded: true, lifted: 0, glow: false, point: 0, mask: false, sky: false, shift: null, cloud: null, late: false, bright: false };
+  set(name, mesh, { shaded = true, lifted = 0, glow = false, point = 0, mask = false, sky = false, cloud = null, late = false, bright = false, halo = false } = {}) {
+    const part = this.parts.get(name) ?? { mesh: null, buffers: null, stale: true, shaded: true, lifted: 0, glow: false, point: 0, mask: false, sky: false, shift: null, cloud: null, late: false, bright: false, halo: false };
     part.shift = null;
     part.cloud = cloud;
     part.late = late;
     part.bright = bright;
+    part.halo = Boolean(halo) && glow && point > 0;
     part.mesh = mesh;
     part.stale = true;
     part.shaded = shaded;
@@ -1001,21 +1249,133 @@ export class SceneLayer {
     if (!this.shadow.frame) this.shadow.ready = false;
   }
 
-  /** Before the map's own picture is begun: draw the picture of the shadows, if what throws them has changed. */
+  /**
+   * Give the scene the buildings as they are seen from straight above: a
+   * CasterMesh of their tops, and { box: [west, south, east, north], size } (as
+   * shadowCasters() gives the box when nothing falls aslant). From it every
+   * wall, roof and patch of ground learns how much of the sky it sees.
+   * Without a frame everything sees all of it.
+   */
+  setHeights(casters, frame) {
+    this.heights.casters = casters;
+    this.heights.frame = frame && casters && casters.count > 0 ? frame : null;
+    this.heights.stale = true;
+    if (!this.heights.frame) {
+      this.heights.ready = false;
+      this.open.ready = false;
+    }
+  }
+
+  /**
+   * Before the map's own picture is begun: draw the picture of the shadows
+   * and the picture of the heights, each if what it shows has changed.
+   */
   prerender(gl) {
-    const shadow = this.shadow;
     if (!this.castProgram || gl.isContextLost()) return;
     if (!gl.isProgram(this.castProgram)) this.build(gl); // the graphics memory was taken away and handed back empty
-    if (!shadow.stale) return;
-    shadow.stale = false;
-    shadow.ready = false;
-    const { casters, frame } = shadow;
-    if (!shadow.able || !frame || !casters || casters.count === 0) return;
-    const [west, south, east, north] = frame.box;
-    if (!(east > west && north > south && frame.top > 0)) return;
-    const size = Math.min(frame.size || 1024, shadow.most);
+    const shadow = this.shadow;
+    if (shadow.stale) {
+      shadow.stale = false;
+      shadow.ready = false;
+      const { casters, frame } = shadow;
+      if (shadow.able && frame && casters && casters.count > 0 && frame.top > 0) {
+        const size = Math.min(frame.size || 1024, shadow.most);
+        if (this.cast(gl, shadow, casters, frame.box, [frame.fall[0], frame.fall[1], frame.top], size, false)) {
+          shadow.using = { box: [...frame.box], fall: [frame.fall[0], frame.fall[1]], top: frame.top, size };
+        }
+      }
+    }
+    const heights = this.heights;
+    if (heights.stale) {
+      heights.stale = false;
+      heights.ready = false;
+      const { casters, frame } = heights;
+      if (shadow.able && frame && casters && casters.count > 0) {
+        // (Its rays fall straight down. The tallest thing there could be is put at the bottom of its depth.)
+        const size = Math.min(frame.size || 512, shadow.most, HEIGHTS_SIZE_MOST);
+        if (this.cast(gl, heights, casters, frame.box, [0, 0, 1200], size, true)) heights.using = { box: [...frame.box], size };
+      }
+      this.open.ready = heights.ready && this.lay(gl, heights);
+    }
+  }
 
-    let target = shadow.target;
+  /**
+   * Work out how open to the sky every spot of ground is, from the picture
+   * of heights, and keep it as a picture of the same size (see
+   * OPEN_FRAGMENT). Returns whether it was done.
+   */
+  lay(gl, heights) {
+    const { box, size } = heights.using;
+    let target = this.open.target;
+    if (!target || target.size !== size || !gl.isFramebuffer(target.frame)) {
+      if (target) {
+        gl.deleteFramebuffer(target.frame);
+        gl.deleteTexture(target.picture);
+      }
+      const picture = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, picture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const made = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, made);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, picture, 0);
+      const whole = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      target = { frame: made, picture, size };
+      this.open.target = target;
+      if (!whole) return false;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.frame);
+    gl.viewport(0, 0, size, size);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.disable(gl.STENCIL_TEST);
+    gl.disable(gl.CULL_FACE);
+    gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+    gl.colorMask(true, true, true, true);
+    gl.useProgram(this.openProgram);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, heights.target.picture);
+    gl.uniform1i(this.openAt.heights, 0);
+    gl.uniform2f(this.openAt.metre, 1 / (box[2] - box[0]), 1 / (box[3] - box[1]));
+    if (!this.groundBuffer) {
+      this.groundBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.groundBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]), gl.STATIC_DRAW);
+    } else {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.groundBuffer);
+    }
+    gl.enableVertexAttribArray(this.openAt.pos);
+    gl.vertexAttribPointer(this.openAt.pos, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.disableVertexAttribArray(this.openAt.pos);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    gl.depthMask(true);
+    gl.enable(gl.DEPTH_TEST);
+    return true;
+  }
+
+  /**
+   * Draw a picture of what throws the shadows into what `kept` keeps (the
+   * scene's shadows, or its heights): every corner where its ray lands on
+   * the ground, the highest of all that lands on a spot being kept. box:
+   * the ground the picture covers; fall: [east, north] for each metre of
+   * height, and the height counted up to; size: spots a side; plain: true
+   * for the picture of heights. Returns whether it was drawn.
+   */
+  cast(gl, kept, casters, box, fall, size, plain) {
+    const [west, south, east, north] = box;
+    if (!(east > west && north > south)) return false;
+    let target = kept.target;
     if (!target || target.size !== size || !gl.isFramebuffer(target.frame)) {
       if (target) {
         gl.deleteFramebuffer(target.frame);
@@ -1026,8 +1386,9 @@ export class SceneLayer {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, picture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      // (The shadows' heights are kept in two parts, which cannot be read off between two spots; the plain heights can.)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, plain ? gl.LINEAR : gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, plain ? gl.LINEAR : gl.NEAREST);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       gl.bindTexture(gl.TEXTURE_2D, null);
@@ -1042,10 +1403,10 @@ export class SceneLayer {
       const whole = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       target = { frame: made, picture, depth, size };
-      shadow.target = target;
+      kept.target = target;
       if (!whole) {
-        shadow.able = false; // this device cannot keep such a picture: it goes without these shadows
-        return;
+        this.shadow.able = false; // this device cannot keep such a picture: it goes without them
+        return false;
       }
     }
 
@@ -1065,9 +1426,10 @@ export class SceneLayer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.useProgram(this.castProgram);
     gl.uniform4f(this.castAt.box, west, south, 1 / (east - west), 1 / (north - south));
-    gl.uniform3f(this.castAt.fall, frame.fall[0], frame.fall[1], frame.top);
-    if (!shadow.buffer) shadow.buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, shadow.buffer);
+    gl.uniform3f(this.castAt.fall, fall[0], fall[1], fall[2]);
+    gl.uniform1f(this.castAt.plain, plain ? 1 : 0);
+    if (!kept.buffer) kept.buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, kept.buffer);
     gl.bufferData(gl.ARRAY_BUFFER, casters.positions.subarray(0, casters.count * 3), gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(this.castAt.pos);
     gl.vertexAttribPointer(this.castAt.pos, 3, gl.FLOAT, false, 0, 0);
@@ -1076,9 +1438,9 @@ export class SceneLayer {
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-    shadow.ready = true;
-    shadow.drawn += 1;
-    shadow.using = { box: [west, south, east, north], fall: [frame.fall[0], frame.fall[1]], top: frame.top, size };
+    kept.ready = true;
+    kept.drawn += 1;
+    return true;
   }
 
   /**
@@ -1160,6 +1522,70 @@ export class SceneLayer {
     }
   }
 
+  /** Tell a program where the heights of the buildings are to be read from: how open to the sky a place is. */
+  heightsFor(gl, at) {
+    const heights = this.heights;
+    const ready = heights.ready && heights.target && gl.isTexture(heights.target.picture);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, ready ? heights.target.picture : this.blank);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(at.heights, 2);
+    if (ready) {
+      const { box } = heights.using;
+      gl.uniform4f(at.heightsBox, box[0], box[1], 1 / (box[2] - box[0]), 1 / (box[3] - box[1]));
+    } else {
+      gl.uniform4f(at.heightsBox, 0, 0, 0, 0);
+    }
+  }
+
+  /**
+   * Lay the veil on the ground (see GROUND_FRAGMENT): a square of it round
+   * the middle of the picture, wide enough to reach as far as its grain can
+   * be seen. Nothing of it is written into the picture's depth.
+   */
+  drawGround(gl, matrix, pixelPerDepth, night) {
+    if (!this.grounded || !this.groundProgram || !this.origin) return;
+    const reach = Math.hypot(this.focus[0] - this.eye[0], this.focus[1] - this.eye[1], this.eye[2]);
+    if (!(reach > 1)) return;
+    const half = Math.min(Math.max(reach * 8, 300), 5000);
+    const at = this.groundAt;
+    gl.useProgram(this.groundProgram);
+    gl.uniformMatrix4fv(at.matrix, false, matrix);
+    gl.uniform4f(at.ground, this.focus[0], this.focus[1], half, GROUND_UP_METERS);
+    // Where the scene's origin lies in the world, in metres, counted round and round: so the grain stays
+    // where it is on the ground when the scene comes to be measured from another spot.
+    const round = (metres) => ((metres % GROUND_ROUND) + GROUND_ROUND) % GROUND_ROUND;
+    gl.uniform2f(at.anchor, round(this.origin.lng * GROUND_METERS_EAST), round(this.origin.lat * GROUND_METERS_NORTH));
+    gl.uniform1f(at.pixel, pixelPerDepth);
+    gl.uniform1f(at.night, night);
+    gl.uniform1f(at.opacity, this.opacity);
+    // (How open the ground is: read from its own picture, where the buildings' heights are read by walls and roofs.)
+    const open = this.open.ready && this.open.target && gl.isTexture(this.open.target.picture) && this.heights.ready;
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, open ? this.open.target.picture : this.blank);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(at.open, 2);
+    if (open) {
+      const { box } = this.heights.using;
+      gl.uniform4f(at.heightsBox, box[0], box[1], 1 / (box[2] - box[0]), 1 / (box[3] - box[1]));
+    } else {
+      gl.uniform4f(at.heightsBox, 0, 0, 0, 0);
+    }
+    if (!this.groundBuffer) {
+      this.groundBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.groundBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]), gl.STATIC_DRAW);
+    } else {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.groundBuffer);
+    }
+    gl.enableVertexAttribArray(at.pos);
+    gl.vertexAttribPointer(at.pos, 2, gl.FLOAT, false, 0, 0);
+    gl.depthMask(false);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.depthMask(true);
+    gl.disableVertexAttribArray(at.pos);
+  }
+
   render(gl, args) {
     // A phone may take the graphics memory away while the app is in the background, and hand back an empty
     // one. What the scene had built there is then gone: it is built again.
@@ -1219,6 +1645,7 @@ export class SceneLayer {
       gl.uniform1f(this.at.sky, 0);
       gl.uniform3f(this.at.shift, 0, 0, 0);
       gl.uniform1f(this.at.cloud, 0);
+      gl.uniform1f(this.at.halo, 0);
       this.shadowsFor(gl, this.at);
       gl.colorMask(false, false, false, false);
       gl.enable(gl.POLYGON_OFFSET_FILL);
@@ -1243,7 +1670,17 @@ export class SceneLayer {
       gl.colorMask(true, true, true, true);
     }
 
-    // The walls first: they stand a hand's breadth outside the blocks the map has drawn, and are drawn a
+    // (The colours of the sky at this hour: they show in the glass of the models, and far things fade into them.)
+    if (this.sky.night !== night || this.sky.sunlight !== this.sunlight) {
+      const { overhead, horizon } = skyColours(night, this.sunlight);
+      const parts = (colour) => [1, 3, 5].map((from) => Number.parseInt(colour.slice(from, from + 2), 16) / 255);
+      this.sky = { night, sunlight: this.sunlight, high: parts(overhead), low: parts(horizon) };
+    }
+
+    // The veil on the ground: over what the map has painted flat, under everything the scene itself draws.
+    if (shown) this.drawGround(gl, m, pixelPerDepth, night);
+
+    // The walls: they stand a hand's breadth outside the blocks the map has drawn, and are drawn a
     // touch nearer still, so that it is they that show.
     const walls = this.walls.mesh;
     if (shown && walls && walls.count > 0) {
@@ -1264,7 +1701,10 @@ export class SceneLayer {
       gl.uniform3f(at.eye, this.eye[0], this.eye[1], this.eye[2]);
       gl.uniform1f(at.pixel, pixelPerDepth);
       gl.uniform1f(at.top, this.wallTop);
+      gl.uniform3f(at.skyHigh, this.sky.high[0], this.sky.high[1], this.sky.high[2]);
+      gl.uniform3f(at.skyLow, this.sky.low[0], this.sky.low[1], this.sky.low[2]);
       this.shadowsFor(gl, at);
+      this.heightsFor(gl, at);
       if (!this.walls.buffers) this.walls.buffers = { positions: gl.createBuffer(), surfaces: gl.createBuffer(), normals: gl.createBuffer(), tints: gl.createBuffer() };
       const buffers = this.walls.buffers;
       const send = (buffer, where, data, size, type, normalised) => {
@@ -1300,6 +1740,7 @@ export class SceneLayer {
       gl.uniform1f(at.night, night);
       gl.uniform1f(at.pixel, pixelPerDepth);
       this.shadowsFor(gl, at);
+      this.heightsFor(gl, at);
       if (!this.roofs.buffers) this.roofs.buffers = { positions: gl.createBuffer(), lays: gl.createBuffer(), tints: gl.createBuffer() };
       const buffers = this.roofs.buffers;
       const send = (buffer, where, data, size, type, normalised) => {
@@ -1318,12 +1759,6 @@ export class SceneLayer {
       gl.polygonOffset(0, 0);
     }
 
-    // (The colours of the sky at this hour: they show in the glass of the models, and far things fade into them.)
-    if (this.sky.night !== night || this.sky.sunlight !== this.sunlight) {
-      const { overhead, horizon } = skyColours(night, this.sunlight);
-      const parts = (colour) => [1, 3, 5].map((from) => Number.parseInt(colour.slice(from, from + 2), 16) / 255);
-      this.sky = { night, sunlight: this.sunlight, high: parts(overhead), low: parts(horizon) };
-    }
     // The models of the famous buildings. Each stands alone, where the map's own block was taken out for it.
     if (modelled) {
       const at = this.modelAt;
@@ -1362,6 +1797,8 @@ export class SceneLayer {
     }
     if (!shown) {
       this.drawHaze(gl, m);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, null);
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, null);
       gl.activeTexture(gl.TEXTURE0);
@@ -1385,11 +1822,13 @@ export class SceneLayer {
     this.shadowsFor(gl, this.at);
     gl.enableVertexAttribArray(this.at.pos);
     gl.enableVertexAttribArray(this.at.color);
-    const draw = (part) => {
+    const draw = (part, halo = false) => {
       const mesh = part.mesh;
       gl.uniform1f(this.at.shaded, part.shaded && !part.glow && !part.sky ? 1 : 0);
       gl.uniform1f(this.at.glow, part.glow ? 1 : 0);
-      gl.uniform1f(this.at.point, part.point);
+      gl.uniform1f(this.at.point, halo ? part.point * HALO_WIDER : part.point);
+      gl.uniform1f(this.at.halo, halo ? 1 : 0);
+      gl.uniform1f(this.at.opacity, halo ? this.opacity * HALO_FAINT : this.opacity);
       // (What is in the sky comes in the colours it was given: the hour is in them already.)
       gl.uniform1f(this.at.sky, part.sky ? 1 : 0);
       gl.uniform3f(this.at.shift, part.shift ? part.shift[0] : 0, part.shift ? part.shift[1] : 0, part.shift ? part.shift[2] : 0);
@@ -1444,9 +1883,15 @@ export class SceneLayer {
     for (const part of this.parts.values()) {
       if (part.glow && (part.sky ? part.late : lamps > 0) && part.mesh && part.mesh.count > 0) draw(part);
     }
+    // And round the lamps that are near, their glow.
+    for (const part of this.parts.values()) {
+      if (part.halo && lamps > 0 && part.mesh && part.mesh.count > 0) draw(part, true);
+    }
     gl.depthMask(true);
     gl.disableVertexAttribArray(this.at.pos);
     gl.disableVertexAttribArray(this.at.color);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);
