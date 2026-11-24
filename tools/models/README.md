@@ -42,15 +42,14 @@ how. The models themselves are in `models/`; where each stands is in
    stands it on the ground and puts its middle line at nought. `python3 cut.py
    <in.glb> <out.glb> <x from> <x until>` cuts a piece off and closes the cut
    (the Greek house is the low wing of the church).
-6. **Thin it**: `node simplify.mjs <in.glb> <out.glb> <triangles>`. A landmark
-   that stands once: thirty thousand triangles at most. A house that stands
-   hundreds of times: six hundred, which shows no worse.
+6. **Thin it**: `node simplify.mjs <in.glb> <out.glb> <triangles>`: thirty
+   thousand triangles at most for a landmark, fewer for a small thing that
+   stands many times.
 7. **Pack it**: `node pack.mjs <thing.glb> ../../models/<name>` writes
    `<name>.vmm` and `<name>.png`; save the picture again as `<name>.jpg`
    (quality 88) and delete the PNG. List the two files in `sw.js`.
-8. **Stand it**: add it to `PROPS` in `js/props.js` (a thing that stands in its
-   own place) or to `HOUSE_MODELS` there (a house that stands for every house
-   of its sort near the eye).
+8. **Stand it**: add it to `PROPS` in `js/props.js`, at its own place: where
+   the thing really stands.
 
 `simplify.mjs` and `shot.mjs` need `npm i --no-save --no-package-lock
 meshoptimizer@0.22.0 three@0.170.0` (anywhere in the project: it is not
@@ -75,18 +74,14 @@ surface to look inwards: by day the sun lit the sides turned from it. The five
 models have been turned (the tests now hold every model to it), and `pack.mjs`
 leaves the triangles as the generator wound them.
 
-## Built by measure
+## Ordinary houses are not models
 
-Not every model need come from the generator. A building of plain shape that
-was photographed straight on, from across its street, can be measured in its
-photograph and built face by face, with the photograph laid on what it shows:
-sharper than the generator's work, true in its measures, a few hundred
-triangles, and no allowance to wait for. `built/villa.py <straight.jpg>
-<corner.jpg> <above.jpg> ../../models/villa` does this for the reference villa
-(pictures the owner made with an AI image generator, not photographs)
-and says how at its head. Such a mesh may also say which of its faces are
-windows and lamps, to be lit by night (see `readProp` in `js/props.js`), and
-its faces keep their edges.
+A model made here is of one thing that really stands somewhere: a landmark.
+The ordinary houses of the map are dressed from a kit of fronts instead,
+each on its own plot: see `tools/fronts`. (A villa was once built here by
+measure from the owner's reference pictures and stood in place of every
+house near the eye. That was wrong, and is gone: the houses of a city are not
+one house.)
 
 ## Whose photographs
 
@@ -111,37 +106,27 @@ come with it.
 ## What stands where, and what is next
 
 Made so far: the pagoda, the red hall, Egypt's gate tower and the Greek
-church (with the house cut off it), all at Boulevard World, by the generator;
-and a villa built by measure (above), which stands nowhere yet.
+church (with the house cut off it), all at Boulevard World, by the generator.
 
-**No one model for all the houses.** The villa was for a day drawn in place
-of every house near the eye; the owner called that wrong, rightly. Its
-pictures are a reference for a look, not a house to be copied: each house of
-the map is to keep its own outline, size and place, as the satellite photo
-shows it, and be dressed in that look. A model of a building that really
-exists (a landmark from the owner's photographs) stands on that building.
+Next, from `inputs/` (`inputs.json` has each one's recipe), as the daily
+allowance lasts, which is shared with the pictures asked for in `tools/fronts`:
 
-Next, from `inputs/`, in this order (`inputs.json` says the same):
+1. `mosque`, then `flats`: real buildings, from small, hazy street
+   photographs.
+2. `villa-corner-above` alone, then `villa-corner-above`, `villa-corner-front`
+   and `villa-corner-left` together: the same villa from three sides, to learn
+   whether several pictures do better than one.
+3. Later: the Paris block if its cut-out is still to hand, and the two older
+   villas `villa-a` and `villa-b`.
 
-1. `villa-corner-above` alone: the corner villa whole, from above. The best
-   photograph there is of any house so far.
-2. `villa-corner-above`, `villa-corner-front` and `villa-corner-left`
-   together: the same villa from three sides, to learn whether several
-   photographs do better than one.
-3. `villa-straight`: another villa of the design, straight on.
-4. `mosque`, then `flats` (small, hazy street photographs).
-5. Later: `villa-modern-1` and `villa-modern-2` (the same design again, from
-   the street), the Paris block if its cut-out is still to hand, and the two
-   older villas `villa-a` and `villa-b`.
-
-The villa cut-outs are of the reference villa: a model the generator makes of
-them is a test of the generator against the villa built by measure, not a
-house for the map. The mosque, the flats and the two older villas are from
-street photographs of real buildings: `inputs.json` says where each stands.
-A photograph taken by day gives a model with `night: 0`. By night such a house
-catches the street lamps' light on what faces its street (the scene does
-that for any house model); lit windows it has only if its mesh says which
-faces they are, as a mesh built by measure can: for the generator's meshes
-that is still to be found a way for. The mosque and the block of
-flats need one more thing: fitting a model to the outline of any building,
-not only to a house the app laid out itself.
+The villa cut-outs are of the owner's reference villa: a model the generator
+makes of them is only a test of the generator, not a house for the map. The
+mosque, the flats and the two older villas are from street photographs of
+real buildings: `inputs.json` says where each stands, and a good model of one
+is to stand on that building, found on the satellite photo and turned as it
+is turned. That needs one more thing: fitting a model to the outline of any
+building, not only to a house the app laid out itself.
+A photograph taken by day gives a model with `night: 0`: by night it has no
+lit windows of its own yet (a mesh can say which of its corners are windows
+and lamps, see `readProp` in `js/props.js`, but the generator's meshes do
+not).

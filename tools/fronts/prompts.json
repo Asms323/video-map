@@ -1,0 +1,52 @@
+[
+ {
+  "name": "wood",
+  "seed": 7,
+  "made": true,
+  "prompt": "Perfectly frontal elevation photograph of a new two-storey modern villa in Riyadh, Saudi Arabia: smooth beige stucco walls, flat roof with parapet, a horizontal band of wood-look tiles with three windows behind beige steel grilles, a beige sectional garage door and a black metal door in a three metre boundary wall with a grey stone base. Overcast hazy daylight, no shadows, 85mm lens, orthographic view, no people, no cars, no text."
+ },
+ {
+  "name": "limestone",
+  "seed": 11,
+  "made": true,
+  "prompt": "Perfectly frontal elevation photograph of a two-storey villa in Riyadh, Saudi Arabia, clad in cream Riyadh limestone blocks, tall arched windows with brown aluminium frames, carved stone cornice along the flat roof parapet, a brown wrought-iron double gate and a brown garage door in a three metre limestone boundary wall across the whole picture. Overcast hazy daylight, no shadows, 85mm lens, orthographic view, no people, no cars, no trees, no text."
+ },
+ {
+  "name": "white",
+  "seed": 12,
+  "made": true,
+  "prompt": "Perfectly frontal elevation photograph of a new modern two-storey villa in Riyadh, Saudi Arabia: smooth white stucco, large dark grey aluminium windows, a grey stone cladding panel, flat roof with parapet, a white three metre boundary wall across the whole picture with a dark grey sectional garage door and a dark grey slatted gate, grey granite base. Overcast hazy daylight, no shadows, 85mm lens, orthographic view, no people, no cars, no trees, no text."
+ },
+ {
+  "name": "older",
+  "seed": 13,
+  "prompt": "Perfectly frontal elevation photograph of an older 1990s two-storey family villa in Riyadh, Saudi Arabia, painted light cream, small windows with white aluminium frames, window air conditioners, flat roof parapet, a plain cream three metre boundary wall across the whole picture with a closed white steel double gate with gold ornaments and a small side door. Overcast hazy daylight, no shadows, 85mm lens, orthographic view, no people, no cars, no trees, no text."
+ },
+ {
+  "name": "greige",
+  "seed": 14,
+  "prompt": "Perfectly frontal elevation photograph of a contemporary two-storey villa in Riyadh, Saudi Arabia: greige stucco, a screen of vertical dark wood slats, narrow tall windows, flat roof with parapet, a greige three metre boundary wall with horizontal grooves across the whole picture, a closed black metal garage door, a closed black gate, two wall lamps. Overcast hazy daylight, no shadows, 85mm lens, orthographic view, no people, no cars, no trees, no text."
+ },
+ {
+  "name": "najdi",
+  "seed": 15,
+  "prompt": "Perfectly frontal elevation photograph of a two-storey villa in Riyadh, Saudi Arabia, in modern Najdi style: sand-coloured plaster, small triangular openings in bands, crenellated parapet, wooden shutters, a carved wooden door, a sand-coloured three metre boundary wall across the whole picture with a closed wooden double gate. Overcast hazy daylight, no shadows, 85mm lens, orthographic view, no people, no cars, no trees, no text."
+ },
+ {
+  "name": "stone-base",
+  "seed": 16,
+  "prompt": "Perfectly frontal elevation photograph of a two-storey family villa in Riyadh, Saudi Arabia: ground floor clad in yellow Riyadh stone, upper floor in white paint, brown aluminium windows with decorative precast screens, flat roof parapet, a yellow stone three metre boundary wall across the whole picture with a closed brown steel double gate and a closed brown garage door. Overcast hazy daylight, no shadows, 85mm lens, orthographic view, no people, no cars, no trees, no text."
+ },
+ {
+  "name": "grey",
+  "seed": 17,
+  "prompt": "Perfectly frontal elevation photograph of a new minimalist two-storey villa in Riyadh, Saudi Arabia: light grey stucco, black window frames, a tall narrow window strip, flat roof with parapet, a light grey three metre boundary wall across the whole picture with a closed black sectional garage door and a closed black door. Overcast hazy daylight, no shadows, 85mm lens, orthographic view, no people, no cars, no trees, no text."
+ },
+ {
+  "name": "roof-1",
+  "seed": 21,
+  "width": 1024,
+  "height": 1024,
+  "prompt": "Top-down orthographic aerial photograph looking straight down at the flat roof of a villa in Riyadh: light beige tiled roof terrace enclosed by a low parapet wall, a small square stair room, a white cylindrical water tank, two white air conditioner outdoor units, a satellite dish. Midday light, the roof fills the whole frame edge to edge, no perspective, no people, no text."
+ }
+]

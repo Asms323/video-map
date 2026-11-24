@@ -177,51 +177,21 @@ export function propsNear(origin, props = PROPS) {
 
 // ── Ordinary houses ───────────────────────────────────────────────────────
 //
-// A landmark's model stands once, where the landmark is. A house's model
-// stands for every house of its sort: the app has laid out where each house
-// of a street stands and how large it is (see houses.js), and near the eye
-// each is drawn as one of a few models of real houses of the city, fitted to
-// its own measure and turned to its own street. Further off a house stays the
-// plain block it was: there it is too small for the difference to show.
+// A landmark's model stands once, where the landmark is. The ordinary houses
+// of a street are not models at all: each is dressed, near the eye, in a
+// front out of a kit, on its own plot and in its own measure (see fronts.js).
+// What is kept here is only which of them: the nearest to the middle of the
+// view. Further off a house stays the plain block it was: there it is too
+// small for the difference to show.
 
-/**
- * The models that houses are drawn as: { file, picture (if not its own),
- * night: 0 to 1, day (see PROPS), tone: [red, green, blue] from 0 to 1, the
- * colour of its own walls (a house painted otherwise is tinted from it),
- * plot: true for a model that has the house's wall and gate to the street
- * as well (it is fitted to the house's whole plot from the street back, and
- * the app builds no wall or gate of its own there); roof: how far up the
- * model the edge of its main roof is, where more stands on that roof (a
- * stair house, a water tank): the house's own height is given to that
- * edge, and what stands on the roof rises over it }.
- *
- * There are none, and that is meant: the houses of a city are not one
- * house. The villa in models/ (built by measure from pictures the app's
- * owner made with an AI image generator, as a reference for the look
- * wanted: see tools/models/built/villa.py) stood here for a day, on every
- * house near the eye, and that was wrong. What is here stays for a row of
- * houses that really is built to one design.
- */
-export const HOUSE_MODELS = [];
-
-/** A house is drawn as a model when it stands no further than this from the middle of the view… */
+/** A house is dressed when it stands no further than this from the middle of the view… */
 export const HOUSE_MODEL_REACH_METERS = 280;
 /** …and the map is drawn at least this large; and never more of them at once than this. */
 export const HOUSE_MODEL_MIN_ZOOM = 17;
 export const HOUSE_MODELS_MOST = 320;
-const BATCH_MOST_CORNERS = 65535;
-/** Of a house's windows that can be lit, so many are on any night. */
-const WINDOWS_LIT = 0.55;
-
-/** Which of so many models a house is drawn as: always the same for the same house. */
-export function houseModelOf(id, count) {
-  if (!(count > 0)) return -1;
-  const value = Math.sin(Number(id) * 12.9898 + 4.1414) * 43758.5453;
-  return Math.min(Math.floor((value - Math.floor(value)) * count), count - 1);
-}
 
 /**
- * Which houses are drawn as models: of those laid out with a box of their
+ * Which houses are dressed: of those laid out with a box of their
  * own (see parcelHouses in houses.js), the nearest to a place, no further
  * than the reach and no more than the most.
  *
@@ -240,122 +210,4 @@ export function housesNear(houses, centre, { reach = HOUSE_MODEL_REACH_METERS, m
   }
   near.sort((a, b) => a[0] - b[0] || a[1].id - b[1].id);
   return near.slice(0, most).map(([, house]) => house);
-}
-
-/**
- * Stand one mesh many times, each time fitted to a box on the ground, as
- * meshes the scene can draw whole (see setProps in scene.js): every corner
- * already in its place.
- *
- * mesh: as readProp gives it, one high. places: [{ at: [east, north] of the
- * box's middle, in the scene's metres; along: the way the box's width runs,
- * [east, north], one long; back: the way from its front to its back; wide,
- * deep, height in metres; tint: [red, green, blue], what its picture's
- * colours are multiplied by (1 leaves them; no more than 2); mirror: true
- * to stand it as its mirror image, left for right }]. The mesh's front, the
- * side its photograph showed, comes to stand at the box's front.
- *
- * Returns [{ corners, positions, normals, uvs, tints, indices }], each of no
- * more corners than a mesh may have. A corner's tint is four numbers: the
- * three it is coloured by, halved; and how it shows by night: up to 127,
- * how much of the street lamps' light falls on it (most on what faces the
- * street); from 128, a lamp or a lit window, and how brightly it glows.
- */
-export function standMany(mesh, places) {
-  const batches = [];
-  const each = Math.max(Math.floor(BATCH_MOST_CORNERS / mesh.corners), 1);
-  const [x0, x1, y0, y1] = mesh.foot;
-  const [middleX, middleY] = [(x0 + x1) / 2, (y0 + y1) / 2];
-  for (let start = 0; start < places.length; start += each) {
-    const some = places.slice(start, start + each);
-    const corners = some.length * mesh.corners;
-    const batch = { corners, positions: new Float32Array(corners * 3), normals: new Float32Array(corners * 3), uvs: new Float32Array(corners * 2), tints: new Uint8Array(corners * 4), indices: new Uint16Array(some.length * mesh.indices.length) };
-    some.forEach((place, n) => {
-      const first = n * mesh.corners;
-      const sx = place.wide / Math.max(x1 - x0, 1e-6);
-      const sy = place.deep / Math.max(y1 - y0, 1e-6);
-      const sz = place.height / Math.max(mesh.top, 1e-6);
-      const [ax, ay] = place.along;
-      const [bx, by] = place.back;
-      const tint = place.tint ?? [1, 1, 1];
-      const bytes = tint.map((part) => Math.round(Math.min(Math.max(part / 2, 0), 1) * 255));
-      // (Which of this house's windows are lit tonight: its own choice, the same every night.)
-      const chance = (group) => {
-        const value = Math.sin(place.at[0] * 12.9898 + place.at[1] * 78.233 + group * 37.719) * 43758.5453;
-        return value - Math.floor(value);
-      };
-      // (Every other house is its neighbour's mirror image, left for right, as houses built in pairs are.)
-      const flip = place.mirror ? -1 : 1;
-      for (let i = 0; i < mesh.corners; i += 1) {
-        const u = (mesh.positions[i * 3] - middleX) * sx * flip;
-        const v = (mesh.positions[i * 3 + 1] - middleY) * sy;
-        const at = (first + i) * 3;
-        batch.positions[at] = place.at[0] + ax * u + bx * v;
-        batch.positions[at + 1] = place.at[1] + ay * u + by * v;
-        batch.positions[at + 2] = mesh.positions[i * 3 + 2] * sz;
-        // (A surface stretched one way looks less that way: which way it looks is squeezed as its place is stretched.)
-        const nu = (mesh.normals[i * 3] / sx) * flip;
-        const nv = mesh.normals[i * 3 + 1] / sy;
-        const nx = ax * nu + bx * nv;
-        const ny = ay * nu + by * nv;
-        const nz = mesh.normals[i * 3 + 2] / sz;
-        const size = Math.hypot(nx, ny, nz) || 1;
-        batch.normals[at] = nx / size;
-        batch.normals[at + 1] = ny / size;
-        batch.normals[at + 2] = nz / size;
-        batch.uvs[(first + i) * 2] = mesh.uvs[i * 2];
-        batch.uvs[(first + i) * 2 + 1] = mesh.uvs[i * 2 + 1];
-        // By night (see the scene): a lamp or a lit window glows; everything else catches the light of the street
-        // lamps, by how squarely it is turned to the street, and what looks up catches the less of it.
-        const lamp = mesh.lamps ? mesh.lamps[i] : 0;
-        let night;
-        if (lamp === 255 || (lamp > 0 && chance(lamp) < WINDOWS_LIT)) night = lamp === 255 ? 255 : 230;
-        else {
-          const toStreet = -(bx * (nx / size) + by * (ny / size));
-          const share = (toStreet >= 0 ? 0.3 + 0.7 * toStreet : 0.3 + 0.18 * toStreet) * (1 - 0.5 * Math.max(nz / size, 0));
-          night = Math.round(Math.min(Math.max(share, 0), 1) * 127);
-        }
-        batch.tints.set([bytes[0], bytes[1], bytes[2], night], (first + i) * 4);
-      }
-      // (A mirror image's triangles are named the other way round, so that they stay wound anticlockwise from outside.)
-      const from = n * mesh.indices.length;
-      for (let i = 0; i < mesh.indices.length; i += 1) batch.indices[from + i] = first + mesh.indices[place.mirror && i % 3 !== 0 ? i + (i % 3 === 1 ? 1 : -1) : i];
-    });
-    batches.push(batch);
-  }
-  return batches;
-}
-
-/**
- * Where a house's model stands and how large: the box the house was laid
- * out in (see parcelHouses), from the scene's origin. Its height is that of
- * its tallest part, and a parapet's height more.
- *
- * house: as parcelHouses gives it. origin: { lng, lat }. tone: the colour
- * of the model's own walls, [red, green, blue] from 0 to 1, or null to leave
- * its colours as they are. plot: true for a model that has the house's wall
- * to the street as well: its box is then the house's plot, from the line of
- * the wall at the street back to the back of the house, and from the middle
- * of the gap to one neighbour to the middle of the gap to the other. roof:
- * how far up the model the edge of its main roof is (1: its very top): the
- * house's main part, with its parapet, is as tall as that.
- */
-export function housePlace(house, origin, tone = null, plot = false, roof = 1) {
-  const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * 111320;
-  // (In the house's own measure: along its front from its left corner, and back from its front.)
-  const [a0, a1] = plot ? [-house.plot.left, house.wide + house.plot.right] : [0, house.wide];
-  const [b0, b1] = plot ? [-house.plot.front, house.deep] : [0, house.deep];
-  const east = (house.at[0] - origin.lng) * squeeze + house.along[0] * ((a0 + a1) / 2) + house.back[0] * ((b0 + b1) / 2);
-  const north = (house.at[1] - origin.lat) * 111320 + house.along[1] * ((a0 + a1) / 2) + house.back[1] * ((b0 + b1) / 2);
-  // (A model with a room of its own on its roof: the house's main part is measured, not what the app would have put on it.)
-  const mains = roof < 1 ? house.parts.filter((part) => part.part === 'main') : [];
-  const tallest = Math.max(...(mains.length > 0 ? mains : house.parts).map((part) => part.height));
-  let tint = null;
-  if (tone && typeof house.paint === 'string') {
-    // The house's own paint over the model's: but never so far from the model's that its picture is washed out.
-    const paint = [1, 3, 5].map((at) => Number.parseInt(house.paint.slice(at, at + 2), 16) / 255);
-    tint = paint.map((part, k) => Math.min(Math.max(part / Math.max(tone[k], 0.05), 0.7), 1.45));
-  }
-  // (Houses stand in pairs, each the mirror image of the other: every other one along its street.)
-  return { at: [east, north], along: house.along, back: house.back, wide: a1 - a0, deep: b1 - b0, height: (tallest + 1.4) / Math.min(Math.max(roof, 0.2), 1), tint, mirror: Math.abs(Math.round(Number(house.id))) % 2 === 1 };
 }

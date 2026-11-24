@@ -200,20 +200,35 @@ map opens on the city and keeps to it, and places are looked for in it.
   The names of a restaurant and of a shop were painted out of the
   photographs first. (The tower of the Paris quarter was tried too, and
   came out a solid cone: it stays built by hand.)
-- **A reference villa (made; it stands nowhere).** The owner made six
-  pictures of a new Riyadh villa with an AI image generator, as a
-  reference for how the houses of the map should look. They are not
-  photographs of a real house. From them one villa was built by measure,
-  the pictures themselves laid on it (`tools/models/built/villa.py`): the
-  wall with the garage door and the door, the upper floor with its band
-  of wood and grilled windows standing out over the yard, a wing beside
-  it, a flat roof behind its parapet with a stair house, a water tank and
-  two cooling units; by night lamps beside its door and a lit window or
-  two. For a day it was drawn in place of every house near the eye, and
-  that was wrong: the houses of a city are not one house. It now stands
-  nowhere. What it is for is its look: its materials and its parts, to
-  dress each house of the map on that house's own outline, as the
-  satellite photo shows it.
+- **Houses dressed as real houses look, each its own.** Near the middle of
+  the view, once the map is drawn large enough, each house the app has laid
+  out is dressed from a kit of fronts instead of being drawn in plain
+  colours: its own plot, its own size, its own parts, and no two alike. A
+  front is a picture of a house taken straight on, measured: the wall to
+  the street with its gate, the face of the house over that wall, a plain
+  piece of its plaster or stone, its windows. It is never stretched over a
+  house: gate, doors and windows keep their true size, and plain wall of
+  the same stuff is laid as long as this house's own plot needs, piece
+  after piece, every other one in mirror image so that no seam shows. The
+  face goes on the house's own wall at its own size; the front's windows
+  are set in the other walls too; round the plot go its walls; every part
+  of the house has its parapet with the roof's floor behind it, and on the
+  roof a stair house, a water tank and cooling units, each where this
+  house has them. Which front a house gets leans to its own paint and is
+  otherwise its own chance, the same every time; its paint is laid over
+  it. By night the street wall catches the street lamps' light, gate lamps
+  are lit, and some windows.
+  What is true of the house and what is made up: its place, its plot and
+  its size are the map's (where the map gives a row of houses as one
+  block, the app has divided it by rule: see above). Its front is not that
+  house's front: no satellite photo shows a front, so each is a likely one.
+  What stands on its roof is placed by rule, not read from the photo.
+  The kit has four fronts so far: one from pictures of a new villa that
+  the owner made with an AI image generator as a reference for the look
+  wanted, and three made for it with an image generator run on Hugging
+  Face (a villa with a band of wood and a balcony, a white modern one, one
+  clad in Riyadh's cream limestone with arched windows). More are to
+  follow, a few a day (`tools/fronts`).
 - **Painted roads.** Main roads have their lanes: a broken line between lanes,
   a line along each edge, a yellow line down the middle where traffic runs
   both ways. A side street has a zebra crossing where it meets a main road,
@@ -404,7 +419,7 @@ Everything is free and needs no account or key.
 | What Riyadh's houses and house streets look like | [OpenStreetView-5M](https://huggingface.co/datasets/osv5m/osv5m) (Astruc and others, CVPR 2024): street photographs by Mapillary contributors, CC BY-SA 4.0 | Studied, not shown: the 1,629 photographs taken inside Riyadh were looked through and the houses are built by rules drawn from them. No photograph is in the app or fetched by it |
 | What stands at Boulevard World, and where | The satellite photo above (Esri World Imagery, taken in September 2025): the lagoon's shore was traced from it and every thing's place measured on it. Sixteen photographs of the place by night and the fairground's own booklet for the 2026-27 season, both sent by the app's owner | Studied, not shown: the models are built by hand from them. No photograph and no page of the booklet is in the app or fetched by it |
 | The models in `models/` (pagoda, hall, pylon, church, house) | Each made from one photograph out of those the app's owner sent, by [TRELLIS](https://github.com/microsoft/TRELLIS) (Microsoft Research, MIT licence), run on Hugging Face under the owner's account; then cleaned of what stood beside the thing in the photograph, thinned to at most thirty thousand triangles, and packed with `tools/models/pack.mjs` | In the app as those files. Their pictures are made out of the photographs. Who took each photograph is not recorded here: if it was not the owner, the photographer's rights in it remain, and that is to be settled before the app is published to others |
-| The villa in `models/` (`villa.vmm`, `villa.jpg`) | Built by measure (`tools/models/built/villa.py`) from three pictures of a villa that the app's owner made with an AI image generator as a reference for the look wanted: not photographs of a real house. Its picture is made out of those pictures, the street tree taken out | Kept as those files; drawn nowhere for now |
+| The fronts the houses are dressed from (`models/fronts.jpg`, `js/kit.js`) | Two pictures of a new Riyadh villa that the app's owner made with an AI image generator as a reference (not photographs of a real house); and three pictures made for this by [FLUX.1 Krea dev](https://huggingface.co/black-forest-labs/FLUX.1-Krea-dev) (Black Forest Labs and Krea), run on Hugging Face on the owner's account. Each measured by hand (`tools/fronts/fronts.json`): a street tree, an open gate and a plate with writing were painted over | In the app as that one picture. None of them shows a real house: every front in the map is a likely one, not that house's own |
 | One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
 | Detailed map picture | OpenStreetMap tile servers | [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
 | Place details, speed limits, where the traffic signals stand | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits; and one for all of Riyadh's traffic signals, the same whoever asks it (so nothing of where you are goes with it), whose answer is kept on the phone for a week |
@@ -817,11 +832,13 @@ js/models.js            the famous buildings built as true models, face by face
 js/solids.js            plain solids for the models: blocks, tapers, things turned
                         on a lathe, beams, sweeping roofs, panes
 js/boulevard.js         Boulevard World: its lagoon and what stands round it
+js/fronts.js            houses dressed as real houses look: a front out of the kit on each one's own plot
+js/kit.js               the kit: where in models/fronts.jpg each front lies, and its measures (written by tools/fronts)
 js/props.js             models that carry a picture, each made from a photograph:
                         where each stands, and the reading of their meshes
 models/                 those models: name.vmm (the mesh), name.jpg (its picture)
 tools/models/           how such a model is made: see its README
-tools/models/built/     a model built by measure, with its pictures laid on it: the reference villa
+tools/fronts/           the kit the houses are dressed from: its pictures, their measures, how it is built
 js/districts.js         the city's districts and what each is like
 js/districts-data.js    where each district lies
 js/plots.js             the walls and gates round the houses the map gives singly
@@ -903,9 +920,16 @@ phones drop their saved copy.
   OpenStreetView-5M: CC BY-SA 4.0 (`tools/models/inputs/inputs.json` names
   each photograph). `villa-corner-above.png`, `villa-corner-front.png`,
   `villa-corner-left.png`, `villa-straight.png`, `villa-modern-1.png` and
-  `villa-modern-2.png` are cut out of pictures the app's owner made with an
-  AI image generator (a reference; not photographs of a real house). None
+  `villa-modern-2.png`, and `tools/fronts/pictures/reference.jpg` and
+  `above.jpg`, are pictures the app's owner made with an AI image generator
+  (a reference; not photographs of a real house), or cut out of them. None
   of these is part of the app.
+- `tools/fronts/pictures/wood.webp`, `limestone.webp` and `white.webp`, and
+  what `models/fronts.jpg` holds of them, were made with FLUX.1 Krea dev
+  (Black Forest Labs and Krea; the model is under the FLUX [dev]
+  Non-Commercial License, which in the version read claims no ownership of
+  the pictures made and allows their use: read its current text before the
+  app is put to commercial use).
 - `tests/fixtures/map.har` holds map data © OpenStreetMap contributors (ODbL),
   as served by OpenFreeMap (© OpenMapTiles).
 - `tests/fixtures/buildings.json` holds building outlines from Overture Maps

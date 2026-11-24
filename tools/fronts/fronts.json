@@ -1,0 +1,665 @@
+{
+  "about": "Fronts of houses, each measured in a picture of it taken straight on: see README.md. All places are in the picture's own spots, across then down.",
+  "fronts": [
+    {
+      "name": "band",
+      "picture": "reference.jpg",
+      "from": "a picture of a new Riyadh villa that the app's owner made with an AI image generator as a reference for the look wanted (IMG_9733); not kept here: see README.md",
+      "scale": 0.6,
+      "crop": [
+        66,
+        477,
+        1726,
+        1478
+      ],
+      "edits": [
+        {
+          "copy": [
+            668,
+            1096,
+            924,
+            1484
+          ],
+          "to": [
+            930,
+            1096
+          ]
+        },
+        {
+          "copy": [
+            1222,
+            1140,
+            1254,
+            1345
+          ],
+          "to": [
+            1186,
+            1140
+          ]
+        },
+        {
+          "copy": [
+            1345,
+            1104,
+            1726,
+            1136
+          ],
+          "to": [
+            1345,
+            1068
+          ]
+        },
+        {
+          "copy": [
+            995,
+            1068,
+            1170,
+            1100
+          ],
+          "to": [
+            1170,
+            1068
+          ]
+        }
+      ],
+      "wall": {
+        "rows": [
+          1068,
+          1478
+        ],
+        "height": 3.2,
+        "pieces": [
+          [
+            66,
+            100,
+            "plain"
+          ],
+          [
+            100,
+            565,
+            "fixed"
+          ],
+          [
+            565,
+            1170,
+            "plain"
+          ],
+          [
+            1170,
+            1345,
+            "fixed"
+          ],
+          [
+            1345,
+            1726,
+            "plain"
+          ]
+        ],
+        "lamps": [
+          [
+            1326,
+            1188,
+            1338,
+            1210
+          ]
+        ]
+      },
+      "house": {
+        "perMetre": 111,
+        "rects": [
+          [
+            576,
+            477,
+            1457,
+            1068
+          ],
+          [
+            423,
+            573,
+            576,
+            1068
+          ]
+        ],
+        "plain": [
+          600,
+          962,
+          900,
+          1052
+        ],
+        "plainScale": 3,
+        "panes": [
+          [
+            616,
+            766,
+            668,
+            854
+          ],
+          [
+            949,
+            770,
+            1089,
+            933
+          ],
+          [
+            1199,
+            770,
+            1338,
+            933
+          ]
+        ]
+      }
+    },
+    {
+      "name": "wood",
+      "picture": "wood.webp",
+      "from": "FLUX.1 Krea dev (Black Forest Labs and Krea), run on Hugging Face (mcp-tools/FLUX.1-Krea-dev) on the owner's account, seed 7",
+      "scale": 1,
+      "crop": [
+        0,
+        57,
+        925,
+        718
+      ],
+      "edits": [
+        {
+          "copy": [
+            668,
+            480,
+            745,
+            716
+          ],
+          "to": [
+            745,
+            480
+          ]
+        }
+      ],
+      "wall": {
+        "rows": [
+          472,
+          718
+        ],
+        "height": 3.0,
+        "pieces": [
+          [
+            0,
+            160,
+            "plain"
+          ],
+          [
+            160,
+            228,
+            "optional"
+          ],
+          [
+            228,
+            333,
+            "plain"
+          ],
+          [
+            333,
+            400,
+            "optional"
+          ],
+          [
+            400,
+            505,
+            "plain"
+          ],
+          [
+            505,
+            572,
+            "optional"
+          ],
+          [
+            572,
+            655,
+            "plain"
+          ],
+          [
+            655,
+            925,
+            "fixed"
+          ]
+        ],
+        "lamps": []
+      },
+      "house": {
+        "perMetre": 75,
+        "rects": [
+          [
+            135,
+            330,
+            845,
+            472
+          ],
+          [
+            225,
+            57,
+            582,
+            330
+          ],
+          [
+            582,
+            103,
+            785,
+            330
+          ],
+          [
+            582,
+            103,
+            845,
+            150
+          ]
+        ],
+        "plain": [
+          200,
+          346,
+          560,
+          408
+        ],
+        "plainScale": 2,
+        "panes": [
+          [
+            307,
+            193,
+            348,
+            307
+          ],
+          [
+            362,
+            193,
+            404,
+            307
+          ],
+          [
+            417,
+            193,
+            459,
+            307
+          ],
+          [
+            652,
+            221,
+            688,
+            324
+          ]
+        ]
+      }
+    },
+    {
+      "name": "white",
+      "picture": "white.webp",
+      "from": "FLUX.1 Krea dev (Black Forest Labs and Krea), run on Hugging Face (mcp-tools/FLUX.1-Krea-dev) on the owner's account, seed 12",
+      "scale": 1,
+      "crop": [
+        0,
+        112,
+        1006,
+        650
+      ],
+      "edits": [
+        {
+          "copy": [
+            97,
+            486,
+            428,
+            498
+          ],
+          "to": [
+            97,
+            473
+          ]
+        },
+        {
+          "copy": [
+            800,
+            486,
+            921,
+            498
+          ],
+          "to": [
+            800,
+            473
+          ]
+        },
+        {
+          "stretch": [
+            38,
+            488,
+            54,
+            504
+          ],
+          "to": [
+            10,
+            488,
+            36,
+            504
+          ]
+        }
+      ],
+      "wall": {
+        "rows": [
+          473,
+          650
+        ],
+        "height": 2.7,
+        "pieces": [
+          [
+            0,
+            93,
+            "fixed"
+          ],
+          [
+            93,
+            432,
+            "fixed"
+          ],
+          [
+            432,
+            470,
+            "fixed"
+          ],
+          [
+            470,
+            795,
+            "plain"
+          ],
+          [
+            795,
+            925,
+            "fixed"
+          ],
+          [
+            925,
+            1006,
+            "plain"
+          ]
+        ],
+        "lamps": [
+          [
+            57,
+            500,
+            67,
+            512
+          ],
+          [
+            448,
+            500,
+            455,
+            512
+          ]
+        ]
+      },
+      "house": {
+        "perMetre": 60,
+        "rects": [
+          [
+            138,
+            345,
+            476,
+            473
+          ],
+          [
+            261,
+            201,
+            414,
+            345
+          ],
+          [
+            203,
+            149,
+            559,
+            201
+          ],
+          [
+            414,
+            201,
+            559,
+            473
+          ],
+          [
+            559,
+            112,
+            826,
+            473
+          ]
+        ],
+        "plain": [
+          566,
+          122,
+          636,
+          420
+        ],
+        "plainScale": 3,
+        "panes": [
+          [
+            297,
+            239,
+            400,
+            344
+          ],
+          [
+            641,
+            204,
+            750,
+            359
+          ],
+          [
+            641,
+            435,
+            750,
+            473
+          ]
+        ]
+      }
+    },
+    {
+      "name": "limestone",
+      "picture": "limestone.webp",
+      "from": "FLUX.1 Krea dev (Black Forest Labs and Krea), run on Hugging Face (mcp-tools/FLUX.1-Krea-dev) on the owner's account, seed 11",
+      "scale": 1,
+      "crop": [
+        0,
+        165,
+        862,
+        718
+      ],
+      "edits": [
+        {
+          "stretch": [
+            696,
+            540,
+            768,
+            664
+          ],
+          "to": [
+            598,
+            572,
+            788,
+            718
+          ]
+        },
+        {
+          "copy": [
+            2,
+            552,
+            192,
+            574
+          ],
+          "to": [
+            598,
+            550
+          ]
+        },
+        {
+          "copy": [
+            545,
+            550,
+            598,
+            718
+          ],
+          "to": [
+            788,
+            550
+          ],
+          "mirror": true
+        }
+      ],
+      "wall": {
+        "rows": [
+          550,
+          718
+        ],
+        "height": 3.0,
+        "pieces": [
+          [
+            0,
+            545,
+            "plain"
+          ],
+          [
+            545,
+            841,
+            "fixed"
+          ]
+        ],
+        "lamps": []
+      },
+      "house": {
+        "perMetre": 50,
+        "rects": [
+          [
+            198,
+            225,
+            822,
+            550
+          ],
+          [
+            165,
+            165,
+            855,
+            225
+          ]
+        ],
+        "plain": [
+          4,
+          554,
+          541,
+          714
+        ],
+        "plainPerMetre": 56,
+        "plainScale": 1,
+        "panes": [
+          [
+            270,
+            286,
+            323,
+            400
+          ],
+          [
+            339,
+            286,
+            392,
+            400
+          ],
+          [
+            481,
+            286,
+            534,
+            400
+          ],
+          [
+            628,
+            286,
+            679,
+            400
+          ],
+          [
+            697,
+            286,
+            748,
+            400
+          ],
+          [
+            272,
+            500,
+            322,
+            550
+          ],
+          [
+            342,
+            500,
+            392,
+            550
+          ]
+        ]
+      }
+    }
+  ],
+  "stuff": {
+    "floor": {
+      "picture": "above.jpg",
+      "from": "the owner's reference picture from above (IMG_9729)",
+      "box": [
+        560,
+        962,
+        700,
+        1002
+      ],
+      "calm": 0.72,
+      "light": 206
+    },
+    "paving": {
+      "picture": "above.jpg",
+      "box": [
+        600,
+        1492,
+        800,
+        1540
+      ]
+    },
+    "white": {
+      "picture": "above.jpg",
+      "box": [
+        425,
+        733,
+        465,
+        752
+      ],
+      "gain": 1.22
+    },
+    "unit": {
+      "picture": "above.jpg",
+      "box": [
+        318,
+        926,
+        384,
+        986
+      ],
+      "edits": [
+        {
+          "copy": [
+            360,
+            935,
+            374,
+            943
+          ],
+          "to": [
+            346,
+            935
+          ]
+        }
+      ]
+    },
+    "dark": {
+      "picture": "reference.jpg",
+      "box": [
+        1230,
+        1200,
+        1300,
+        1420
+      ]
+    }
+  }
+}
