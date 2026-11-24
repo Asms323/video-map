@@ -200,31 +200,27 @@ map opens on the city and keeps to it, and places are looked for in it.
   The names of a restaurant and of a shop were painted out of the
   photographs first. (The tower of the Paris quarter was tried too, and
   came out a solid cone: it stays built by hand.)
-- **Houses as models of real houses.** Near the middle of the view, once
-  the map is drawn large enough, each house the app has laid out is drawn
-  as a model of a real house of Riyadh, fitted to its own plot, turned to
-  its own street and tinted with its own paint; the plain blocks come back
-  further off. The first such model is a new villa of two storeys behind
-  its street wall, from photographs the owner sent of villas of that
-  design. It is not the generator's work but built by measure: the villa
-  was photographed straight on from across its street, so the photograph
-  is nearly a drawing of its front, and from the height of the eye and of
-  a door everything in it can be measured. Its shape is plain (the wall
-  with the garage door and the door, the upper floor standing out over
-  the yard, a wing beside it, a flat roof behind its parapet with a stair
-  house, a water tank and two cooling units), and on every face the
-  photograph shows, the photograph itself is laid. The side with two
-  shuttered windows is from a second photograph, what lies on the roof is
-  as a third shows it from above; the back and what the street wall hides
-  are plain plaster, and their measures are estimates. The street tree
-  was taken out of the wall first. The model has the house's own wall and
-  garage, so it stands on the whole plot and the app builds no wall of
-  its own there. By night its street wall catches the street lamps' light
-  like any other wall, the lamps beside its door are lit, and in about
-  half the houses a window or two of the upper floor. Every such house is
-  the same villa for now, in its own paint: more models, the generator's
-  among them (about five a day), are to follow from the cut-outs waiting
-  in `tools/models/inputs/`.
+- **A model of a real house, for that house (made, not yet placed).** A
+  model made from photographs of a real building belongs on that building
+  and on no other. The first is a new villa of two storeys behind its
+  street wall, from photographs the owner sent. It is not the generator's
+  work but built by measure: the villa was photographed straight on from
+  across its street, so the photograph is nearly a drawing of its front,
+  and from the height of the eye and of a door everything in it can be
+  measured. Its shape is plain (the wall with the garage door and the
+  door, the upper floor standing out over the yard, a wing beside it, a
+  flat roof behind its parapet with a stair house, a water tank and two
+  cooling units), and on every face the photograph shows, the photograph
+  itself is laid. The side with two shuttered windows is from a second
+  photograph, what lies on the roof is as a third shows it from above;
+  the back and what the street wall hides are plain plaster, and their
+  measures are estimates. By night its street wall catches the street
+  lamps' light, the lamps beside its door are lit, and a window or two of
+  its upper floor. For a day it was drawn in place of every house near
+  the eye, which was wrong: now it stands nowhere, and waits for its own
+  place (where the villa really is, to be found on the satellite photo).
+  The app can still draw the houses of one row as one model, mirrored in
+  pairs, for rows that really are built to one design.
 - **Painted roads.** Main roads have their lanes: a broken line between lanes,
   a line along each edge, a yellow line down the middle where traffic runs
   both ways. A side street has a zebra crossing where it meets a main road,

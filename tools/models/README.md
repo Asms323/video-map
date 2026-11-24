@@ -113,8 +113,15 @@ come with it.
 
 Made so far: the pagoda, the red hall, Egypt's gate tower and the Greek
 church (with the house cut off it), all at Boulevard World, by the generator;
-and the villa that the city's houses are drawn as near the eye, built by
-measure (above).
+and a villa built by measure (above), which stands nowhere yet.
+
+**A model of a real building stands on that building and on no other.** The
+villa was for a day drawn in place of every house near the eye; the owner
+called that wrong, rightly. It is to stand where the villa really is: the
+owner names the place, the building is found on the satellite photo, and the
+model is stood on its outline, turned as it is turned (a `PROPS` entry, or
+`HOUSE_MODELS` for the row of the same design it stands in, and for no other
+house).
 
 Next, from `inputs/`, in this order (`inputs.json` says the same):
 
@@ -129,12 +136,9 @@ Next, from `inputs/`, in this order (`inputs.json` says the same):
    the street), the Paris block if its cut-out is still to hand, and the two
    older villas `villa-a` and `villa-b`.
 
-Each villa has its own wall and garage or door to the street, so it goes into
-`HOUSE_MODELS` with `plot: true`, beside the villa built by measure that is
-there already: the houses near the middle of the view are then drawn as one
-or the other (`pickHouseModels` in `js/map.js`, `standMany` and `housePlace`
-in `js/props.js`). Keep a generated villa only if it stands comparison with
-the built one.
+Each of these is a model of one real building: it is to stand on that
+building (see above), so each needs its place. Keep a generated villa only if
+it stands comparison with the one built by measure.
 A photograph taken by day gives a model with `night: 0`. By night such a house
 catches the street lamps' light on what faces its street (the scene does
 that for any house model); lit windows it has only if its mesh says which

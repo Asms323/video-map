@@ -282,7 +282,8 @@ test('a mesh built by hand may have lamps and windows that are lit by night', ()
 });
 
 test('the villa: a house of Riyadh built by measure, with its photographs laid on it', () => {
-  assert.deepEqual(HOUSE_MODELS, [{ file: 'villa', night: 0, tone: [0.674, 0.571, 0.488], plot: true, roof: 0.757 }]);
+  // (It stands for no house but its own: no house of the city is drawn as it until its own place is known.)
+  assert.deepEqual(HOUSE_MODELS, []);
   const villa = readProp(bytesOf('villa.vmm'));
   assert.ok(villa && villa.corners > 250 && villa.corners < 600 && villa.indices.length / 3 > 120 && villa.indices.length / 3 < 400, `${villa?.corners} corners`);
   // One high to the top of its water tank; its plot 12.9 m along the street and 14.2 m back for 11.73 m of height.
