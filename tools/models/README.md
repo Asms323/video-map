@@ -54,6 +54,10 @@ come with it.
   Mapillary contributors, **CC BY-SA 4.0**. A model made from one is to be
   credited to its photographer in the app's README and shared on the same
   terms.
+- `inputs/villa-modern-1.png` and `villa-modern-2.png` are cut from a
+  photograph the app's owner sent for this purpose, a house number painted
+  out. They are kept here so that the work can go on from a fresh copy of the
+  project.
 - The models of Boulevard World in `models/` were made from photographs the
   app's owner sent. Who took each is not recorded: see the app's README.
 
@@ -62,10 +66,15 @@ come with it.
 Made so far: the pagoda, the red hall, Egypt's gate tower and the Greek
 church (with the house cut off it), all at Boulevard World.
 
-Next, from `inputs/`: two villas, a neighbourhood mosque and a block of flats
-of Riyadh. With the first villa in `HOUSE_MODELS`, the houses near the middle
-of the view are drawn as it instead of as plain blocks; the app already does
-the rest (`pickHouseModels` in `js/map.js`, `standMany` in `js/props.js`).
+Next, from `inputs/`, in this order: `villa-modern-1` and `villa-modern-2`
+(sharp, from a photograph the owner sent of a street of new villas; each has
+its own wall and garage or door to the street, so it goes into `HOUSE_MODELS`
+with `plot: true`), then `mosque`, `flats`, the Paris block if its cut-out is
+still to hand, and last the two older villas `villa-a` and `villa-b` (from
+small, hazy street photographs). With the first villa in `HOUSE_MODELS`, the
+houses near the middle of the view are drawn as it instead of as plain
+blocks; the app already does the rest (`pickHouseModels` in `js/map.js`,
+`standMany` and `housePlace` in `js/props.js`).
 A photograph taken by day gives a model with `night: 0`: how such a house
 shows its lamps by night is still to be written. The mosque and the block of
 flats need one more thing: fitting a model to the outline of any building,

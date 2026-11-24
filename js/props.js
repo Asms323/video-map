@@ -176,7 +176,10 @@ export function propsNear(origin, props = PROPS) {
 /**
  * The models that houses are drawn as: { file, picture (if not its own),
  * night: 0 to 1, day (see PROPS), tone: [red, green, blue] from 0 to 1, the
- * colour of its own walls (a house painted otherwise is tinted from it) }.
+ * colour of its own walls (a house painted otherwise is tinted from it),
+ * plot: true for a model that has the house's wall and gate to the street
+ * as well (it is fitted to the house's whole plot from the street back, and
+ * the app builds no wall or gate of its own there) }.
  * There are none yet: until the first is made from a photograph of a house
  * of Riyadh, every house stays as houses.js builds it.
  */
@@ -287,12 +290,18 @@ export function standMany(mesh, places) {
  *
  * house: as parcelHouses gives it. origin: { lng, lat }. tone: the colour
  * of the model's own walls, [red, green, blue] from 0 to 1, or null to leave
- * its colours as they are.
+ * its colours as they are. plot: true for a model that has the house's wall
+ * to the street as well: its box is then the house's plot, from the line of
+ * the wall at the street back to the back of the house, and from the middle
+ * of the gap to one neighbour to the middle of the gap to the other.
  */
-export function housePlace(house, origin, tone = null) {
+export function housePlace(house, origin, tone = null, plot = false) {
   const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * 111320;
-  const east = (house.at[0] - origin.lng) * squeeze + house.along[0] * (house.wide / 2) + house.back[0] * (house.deep / 2);
-  const north = (house.at[1] - origin.lat) * 111320 + house.along[1] * (house.wide / 2) + house.back[1] * (house.deep / 2);
+  // (In the house's own measure: along its front from its left corner, and back from its front.)
+  const [a0, a1] = plot ? [-house.plot.left, house.wide + house.plot.right] : [0, house.wide];
+  const [b0, b1] = plot ? [-house.plot.front, house.deep] : [0, house.deep];
+  const east = (house.at[0] - origin.lng) * squeeze + house.along[0] * ((a0 + a1) / 2) + house.back[0] * ((b0 + b1) / 2);
+  const north = (house.at[1] - origin.lat) * 111320 + house.along[1] * ((a0 + a1) / 2) + house.back[1] * ((b0 + b1) / 2);
   const tallest = Math.max(...house.parts.map((part) => part.height));
   let tint = null;
   if (tone && typeof house.paint === 'string') {
@@ -300,5 +309,5 @@ export function housePlace(house, origin, tone = null) {
     const paint = [1, 3, 5].map((at) => Number.parseInt(house.paint.slice(at, at + 2), 16) / 255);
     tint = paint.map((part, k) => Math.min(Math.max(part / Math.max(tone[k], 0.05), 0.7), 1.45));
   }
-  return { at: [east, north], along: house.along, back: house.back, wide: house.wide, deep: house.deep, height: tallest + 1.4, tint };
+  return { at: [east, north], along: house.along, back: house.back, wide: a1 - a0, deep: b1 - b0, height: tallest + 1.4, tint };
 }

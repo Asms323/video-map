@@ -1454,7 +1454,7 @@ export class MapView {
     if (this.houseModelsMade && this.houseModelsMade.ids.size > 0) {
       HOUSE_MODELS.forEach((model, n) => {
         const kept = this.propFiles.get(model.file);
-        const places = this.houses.filter((house) => house.modelled === n).map((house) => housePlace(house, origin, model.tone ?? null));
+        const places = this.houses.filter((house) => house.modelled === n).map((house) => housePlace(house, origin, model.tone ?? null, Boolean(model.plot)));
         if (!kept?.mesh || places.length === 0) return;
         for (const mesh of standMany(kept.mesh, places)) this.houseBatches.push({ mesh, picture: kept.picture, at: [0, 0, 0], turn: 0, tall: 1, lit: model.night ?? 0, gain: model.day?.gain, plain: model.day?.plain });
       });
@@ -2320,6 +2320,7 @@ export class MapView {
       for (const house of made.houses) {
         if (house.modelled === undefined) continue;
         house.modelled = undefined;
+        house.walled = false;
         for (const piece of house.pieces) piece.replaced = false;
       }
       return made.houses === this.houses;
@@ -2337,6 +2338,8 @@ export class MapView {
       const model = ids.has(house.id) ? houseModelOf(house.id, HOUSE_MODELS.length) : undefined;
       if (house.modelled === model) continue;
       house.modelled = model;
+      // (A model that has the house's wall and gate to the street: the app builds none of its own there.)
+      house.walled = model !== undefined && Boolean(HOUSE_MODELS[model].plot);
       for (const piece of house.pieces) piece.replaced = model !== undefined;
     }
     return true;

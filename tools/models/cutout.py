@@ -4,7 +4,8 @@
 Usage: cutout.py <photo> <out.png> --outline "x,y x,y …" [--paint "x0,y0,x1,y1" …] [--scale 2] [--lift]
 
   --outline  the corners of a line drawn round the thing, in the photograph's own spots
-  --paint    a box to paint over first in the colour beside it (a shop's name, a number plate, a face)
+  --paint    a box to paint over first in the colour beside it (a shop's name, a number plate, a face);
+             a fifth field, l or r, takes the colour from the left or the right of the box alone
   --scale    how many times to enlarge the piece (the generator works at about 500 spots a side)
   --lift     stretch the piece's light and dark to the full range first (for a hazy photograph)
 """
@@ -27,10 +28,17 @@ def main():
     image = Image.open(args.photo).convert('RGB')
     spots = np.asarray(image).copy()
     for box in args.paint:
-        x0, y0, x1, y1 = (int(v) for v in box.split(','))
+        fields = box.split(',')
+        x0, y0, x1, y1 = (int(v) for v in fields[:4])
+        side = fields[4] if len(fields) > 4 else ''
         for y in range(y0, y1):
             left = spots[y, max(x0 - 8, 0):x0].astype(np.float32).mean(axis=0)
             right = spots[y, x1:x1 + 8].astype(np.float32).mean(axis=0) if x1 + 2 < spots.shape[1] else left
+            # (Something else stands hard beside the box on one side: the colour is taken from the other side alone.)
+            if side == 'r':
+                left = right
+            elif side == 'l':
+                right = left
             for x in range(x0, x1):
                 t = (x - x0) / max(x1 - x0 - 1, 1)
                 spots[y, x] = (left * (1 - t) + right * t).astype(np.uint8)

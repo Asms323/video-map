@@ -229,6 +229,10 @@ test('the houses drawn as models are the nearest to the middle of the view; each
   // Where a house's model stands: over the middle of its box, as tall as its tallest part and a parapet more.
   const where = housePlace(houses[2], origin);
   assert.ok(near(where.at[0], 40, 0.01) && near(where.at[1], 17, 0.01) && where.wide === 12 && where.deep === 14 && near(where.height, 9.6) && where.tint === null);
+  // A model that has the house's wall to the street as well stands on the whole plot: from the wall's line at the
+  // street (2 m before the house) to the house's back, and from half the gap to one neighbour to half the gap to the other.
+  const plotted = housePlace({ ...houses[2], plot: { front: 2, left: 1, right: 0.8, behind: 1.2 } }, origin, null, true);
+  assert.ok(near(plotted.wide, 13.8) && near(plotted.deep, 16) && near(plotted.at[0], 39.9, 0.01) && near(plotted.at[1], 16, 0.01) && near(plotted.height, 9.6));
   // Painted its own colour over a model whose own walls are paler: darker, but never so far off that the picture goes.
   const tinted = housePlace(houses[2], origin, [0.95, 0.9, 0.82]).tint;
   assert.ok(near(tinted[0], 0.847 / 0.95, 0.01) && near(tinted[2], 0.659 / 0.82, 0.01));

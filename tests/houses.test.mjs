@@ -169,6 +169,10 @@ test('dressHouses stands a wall round each plot, with a gate in its front, and t
   // The front wall stands 2.4 m before the houses, as tall as a plot's wall is.
   const frontWall = all.filter(([, y, z]) => Math.abs(y - (9.25 - 2.4)) < 0.2 && z > 2.5);
   assert.ok(frontWall.length > 20);
+  // A house that is drawn as a model with a wall and gate of its own gets none from here: only its neighbour is dressed.
+  const walled = new Mesh();
+  const one = dressHouses(walled, [{ ...made.houses[0], walled: true }, made.houses[1]], ORIGIN);
+  assert.ok(one.houses === 1 && one.gates === 1 && walled.count > 300 && walled.count < mesh.count);
   // Nothing without an origin; and the same houses dress the same way.
   assert.equal(dressHouses(new Mesh(), made.houses, null).houses, 0);
   const again = new Mesh();

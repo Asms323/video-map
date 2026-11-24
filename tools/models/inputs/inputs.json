@@ -1,4 +1,26 @@
 {
+  "villa-modern-1": {
+    "photo": "a photograph the app's owner sent on 24 November 2026 for this purpose: a street of new villas of Riyadh by day (896 x 1190; the photograph itself is not kept in this repository)",
+    "what": "the nearest villa: a wall to the street with a wide garage door and a street tree, two storeys of plain blocks behind it, windows with wooden shutters",
+    "scale": 1.4,
+    "lift": false,
+    "paint": [],
+    "outline": "0,783 0,242 89,226 116,241 180,230 327,325 327,361 340,369 429,420 429,600 441,605 443,640 462,660 462,730 443,745 441,770 300,783",
+    "licence": "the owner's: see the README",
+    "first": true
+  },
+  "villa-modern-2": {
+    "photo": "a photograph the app's owner sent on 24 November 2026 for this purpose: a street of new villas of Riyadh by day (896 x 1190; the photograph itself is not kept in this repository)",
+    "what": "the second villa: its wall with a door and a meter box, one tall block above with a window set in stone",
+    "scale": 2.6,
+    "lift": false,
+    "paint": [
+      "462,664,490,686,r"
+    ],
+    "outline": "443,768 443,622 426,600 426,464 495,458 560,500 560,642 604,652 604,760",
+    "licence": "the owner's: see the README",
+    "first": true
+  },
   "villa-a": {
     "photo": "1131787670634909",
     "what": "a cream villa of two storeys with a stepped parapet, north Riyadh",

@@ -201,10 +201,13 @@ map opens on the city and keeps to it, and places are looked for in it.
   app has laid out is drawn as one of a few models made from photographs
   of real Riyadh houses, fitted to its own box, turned to its own street
   and tinted with its own paint; the plain blocks come back further off.
-  The app does this already, but there is no such model yet (the generator
-  gives about five a day): the first cut-outs, of two villas, a
-  neighbourhood mosque and a block of flats, wait in `tools/models/inputs/`.
-  Until then every house stays as described above.
+  A model that has the house's own wall and garage to the street stands
+  on the whole plot, and the app builds no wall of its own there. The app
+  does all this already, but there is no such model yet (the generator
+  gives about five a day): the first cut-outs wait in
+  `tools/models/inputs/`: two new villas from a photograph the owner sent,
+  and two older villas, a neighbourhood mosque and a block of flats from
+  open street photographs. Until then every house stays as described above.
 - **Painted roads.** Main roads have their lanes: a broken line between lanes,
   a line along each edge, a yellow line down the middle where traffic runs
   both ways. A side street has a zebra crossing where it meets a main road,
@@ -886,10 +889,12 @@ phones drop their saved copy.
   Frohn, BSD 3-Clause (`vendor/d3-celestial/LICENSE.txt`): the 483 brightest
   stars that rise over Riyadh, out of the XHIP catalogue of Anderson and
   Francis (2012).
-- `tools/models/inputs/*.png` are pieces cut out of street photographs by
-  the Mapillary contributor mjoodealtamimi, taken in Riyadh in 2020, as
-  published in OpenStreetView-5M: CC BY-SA 4.0 (`tools/models/inputs/inputs.json`
-  names each photograph). They are not part of the app.
+- `tools/models/inputs/villa-a.png`, `villa-b.png`, `mosque.png` and
+  `flats.png` are pieces cut out of street photographs by the Mapillary
+  contributor mjoodealtamimi, taken in Riyadh in 2020, as published in
+  OpenStreetView-5M: CC BY-SA 4.0 (`tools/models/inputs/inputs.json` names
+  each photograph). `villa-modern-1.png` and `villa-modern-2.png` are cut out
+  of a photograph the app's owner sent. None of these is part of the app.
 - `tests/fixtures/map.har` holds map data © OpenStreetMap contributors (ODbL),
   as served by OpenFreeMap (© OpenMapTiles).
 - `tests/fixtures/buildings.json` holds building outlines from Overture Maps

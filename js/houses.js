@@ -452,6 +452,8 @@ export function dressHouses(mesh, houses, origin, lit = () => 1) {
   if (!origin) return made;
   const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
   for (const house of houses) {
+    // (A house drawn as a model that has its own wall and gate to the street needs none from here: see props.js.)
+    if (house.walled) continue;
     const base = [(house.at[0] - origin.lng) * squeeze, (house.at[1] - origin.lat) * METERS_PER_DEGREE];
     const { along, back, wide, deep, plot } = house;
     const chance = (n) => unitFrom(`${house.id}:dress:${n}`);
