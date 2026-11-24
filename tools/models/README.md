@@ -82,7 +82,8 @@ was photographed straight on, from across its street, can be measured in its
 photograph and built face by face, with the photograph laid on what it shows:
 sharper than the generator's work, true in its measures, a few hundred
 triangles, and no allowance to wait for. `built/villa.py <straight.jpg>
-<corner.jpg> <above.jpg> ../../models/villa` does this for the owner's villa
+<corner.jpg> <above.jpg> ../../models/villa` does this for the reference villa
+(pictures the owner made with an AI image generator, not photographs)
 and says how at its head. Such a mesh may also say which of its faces are
 windows and lamps, to be lit by night (see `readProp` in `js/props.js`), and
 its faces keep their edges.
@@ -100,12 +101,10 @@ come with it.
   terms.
 - `inputs/villa-corner-above.png`, `villa-corner-front.png`,
   `villa-corner-left.png`, `villa-straight.png`, `villa-modern-1.png` and
-  `villa-modern-2.png` are cut from five of the six photographs the app's
-  owner sent for this purpose, all of new villas of one design: a house
-  number, a plate by a door, a meter's label and the makers' badges on two
-  cooling units painted out. (The sixth, a close view of the upper floor, is
-  for checking a model's detail against.) The cut-outs are kept here so that
-  the work can go on from a fresh copy of the project.
+  `villa-modern-2.png` are cut from five of six pictures of a new Riyadh
+  villa that the app's owner made with an AI image generator, as a reference
+  for the look wanted. They are not photographs: there is no such house, and
+  no place where it stands.
 - The models of Boulevard World in `models/` were made from photographs the
   app's owner sent. Who took each is not recorded: see the app's README.
 
@@ -115,13 +114,12 @@ Made so far: the pagoda, the red hall, Egypt's gate tower and the Greek
 church (with the house cut off it), all at Boulevard World, by the generator;
 and a villa built by measure (above), which stands nowhere yet.
 
-**A model of a real building stands on that building and on no other.** The
-villa was for a day drawn in place of every house near the eye; the owner
-called that wrong, rightly. It is to stand where the villa really is: the
-owner names the place, the building is found on the satellite photo, and the
-model is stood on its outline, turned as it is turned (a `PROPS` entry, or
-`HOUSE_MODELS` for the row of the same design it stands in, and for no other
-house).
+**No one model for all the houses.** The villa was for a day drawn in place
+of every house near the eye; the owner called that wrong, rightly. Its
+pictures are a reference for a look, not a house to be copied: each house of
+the map is to keep its own outline, size and place, as the satellite photo
+shows it, and be dressed in that look. A model of a building that really
+exists (a landmark from the owner's photographs) stands on that building.
 
 Next, from `inputs/`, in this order (`inputs.json` says the same):
 
@@ -136,9 +134,10 @@ Next, from `inputs/`, in this order (`inputs.json` says the same):
    the street), the Paris block if its cut-out is still to hand, and the two
    older villas `villa-a` and `villa-b`.
 
-Each of these is a model of one real building: it is to stand on that
-building (see above), so each needs its place. Keep a generated villa only if
-it stands comparison with the one built by measure.
+The villa cut-outs are of the reference villa: a model the generator makes of
+them is a test of the generator against the villa built by measure, not a
+house for the map. The mosque, the flats and the two older villas are from
+street photographs of real buildings: `inputs.json` says where each stands.
 A photograph taken by day gives a model with `night: 0`. By night such a house
 catches the street lamps' light on what faces its street (the scene does
 that for any house model); lit windows it has only if its mesh says which

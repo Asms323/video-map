@@ -281,7 +281,7 @@ test('a mesh built by hand may have lamps and windows that are lit by night', ()
   assert.deepEqual(Array.from(standMany(mesh, places)[0].tints), Array.from(batch.tints));
 });
 
-test('the villa: a house of Riyadh built by measure, with its photographs laid on it', () => {
+test('the reference villa: built by measure from the owner\'s pictures, and drawn in place of no house', () => {
   // (It stands for no house but its own: no house of the city is drawn as it until its own place is known.)
   assert.deepEqual(HOUSE_MODELS, []);
   const villa = readProp(bytesOf('villa.vmm'));

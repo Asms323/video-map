@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""A house of Riyadh built by measure, with its own photographs laid on it: a new villa of two storeys behind its
-street wall, as five photographs the app's owner sent show it.
+"""A villa built by measure, with its own pictures laid on it: a new Riyadh villa of two storeys behind its street
+wall, as pictures show it that the app's owner made with an AI image generator, as a reference for the look wanted.
+They are not photographs of a real house; they are measured here as photographs are, and are called so below.
 
 Usage: villa.py <straight.jpg> <corner.jpg> <above.jpg> <models/villa>
 

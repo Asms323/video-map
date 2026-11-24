@@ -195,13 +195,12 @@ export function propsNear(origin, props = PROPS) {
  * stair house, a water tank): the house's own height is given to that
  * edge, and what stands on the roof rises over it }.
  *
- * There are none, and that is meant: a model of a real house belongs on
- * that house and on no other. The villa in models/ (built by measure from
- * photographs the app's owner sent: see tools/models/built/villa.py) stood
- * here for a day, on every house near the eye, and that was wrong: it is
- * kept for its own place, the building it was photographed at, once that
- * place is known. What is here stays for houses that really are of one
- * design, in the row they stand in.
+ * There are none, and that is meant: the houses of a city are not one
+ * house. The villa in models/ (built by measure from pictures the app's
+ * owner made with an AI image generator, as a reference for the look
+ * wanted: see tools/models/built/villa.py) stood here for a day, on every
+ * house near the eye, and that was wrong. What is here stays for a row of
+ * houses that really is built to one design.
  */
 export const HOUSE_MODELS = [];
 
