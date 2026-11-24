@@ -3,3 +3,5 @@ tests/output/
 .DS_Store
 firebase-debug.log
 .firebase/
+tools/models/node_modules/
+tools/models/.shot.glb

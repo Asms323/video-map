@@ -47,7 +47,7 @@ import { STAYED_BRIDGES, landmarkBeacons, landmarkModels, landmarkRoofs, landmar
 import { drawFarLights, drawLamps, drawRoofLights, drawTrafficLights, lightPoints, shopSpill } from './lights.js';
 import { buildNetwork, drawBridges, drawMarks, drawParkedNear, drawRoofs, drawStreet, drawTraffic, drawTrees, faceLight, lightFrom, Mesh, stayedHere, streetDirection, streetNear, Traffic, trafficLevel } from './life.js';
 import { ModelMesh } from './models.js';
-import { propsNear, readProp } from './props.js';
+import { HOUSE_MODELS, HOUSE_MODEL_MIN_ZOOM, houseModelOf, housePlace, housesNear, propsNear, readProp, standMany } from './props.js';
 import { plotWalls } from './plots.js';
 import { drawFootbridges, drawRoadside, drawSigns, medianPalms } from './roadside.js';
 import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
@@ -154,6 +154,7 @@ const METERS_PER_DEGREE = 111320;
 const LIFE_LAYER = 'city-life';
 const LIFE_MIN_ZOOM = 15;
 const MODEL_MIN_ZOOM = 10.5; // the models of the famous buildings show from much further off
+const HOUSE_MODEL_STEP_METERS = 90; // the houses drawn as models are picked afresh when the view has moved this far
 const LIFE_MARGIN_METERS = 500;
 const LIFE_REACH_METERS = 2200;
 const LIFE_LINES = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'busway', 'service', 'rail', 'transit']);
@@ -544,6 +545,8 @@ export class MapView {
     this.modelsMade = null;
     this.propFiles = new Map(); // the models that carry a picture, as fetched: by file, { mesh, picture } (both null while on their way)
     this.propsMade = null;
+    this.houseModelsMade = null; // which houses are drawn as models of real houses, as last picked: { houses, at: [lng, lat], ids }
+    this.houseBatches = []; // and those models, each where its house stands: meshes of many houses, for the scene
     this.roadNames = null; // the layers of names along the roads, and how strongly they are shown
     this.spillMesh = new Mesh(); // the light from shop windows on the pavement
     this.roofLightMesh = new Mesh(); // the lamps left on up on the roofs
@@ -1297,6 +1300,8 @@ export class MapView {
       this.houses = [];
       this.flatten([]);
     }
+    // (Of these houses, which are drawn as models of real ones: see pickHouseModels.)
+    this.pickHouseModels(true);
     const metersPerPixel = (EARTH_AROUND_METERS * Math.cos((centre.lat * Math.PI) / 180)) / (512 * 2 ** zoom);
     // (Landmarks the map has no building for throw a shadow too.)
     this.busy.shade += 1;
@@ -1394,6 +1399,10 @@ export class MapView {
       this.roofsMade = null;
       this.wallsMade = null;
       this.shadowsMade = null;
+      if (this.houseBatches.length > 0) {
+        this.houseBatches = [];
+        this.layProps();
+      }
       return;
     }
     // (A building that lies across the edge of a map tile comes twice over: each copy is cut to its own tile.)
@@ -1439,6 +1448,18 @@ export class MapView {
       this.housesMade = null;
     }
     this.scene.set('houses', this.houseMesh);
+    // The houses nearest the middle of the view, each as a model of a real house, fitted to its own box and
+    // turned to its own street (see props.js). The blocks they were laid out as are not drawn meanwhile.
+    this.houseBatches = [];
+    if (this.houseModelsMade && this.houseModelsMade.ids.size > 0) {
+      HOUSE_MODELS.forEach((model, n) => {
+        const kept = this.propFiles.get(model.file);
+        const places = this.houses.filter((house) => house.modelled === n).map((house) => housePlace(house, origin, model.tone ?? null));
+        if (!kept?.mesh || places.length === 0) return;
+        for (const mesh of standMany(kept.mesh, places)) this.houseBatches.push({ mesh, picture: kept.picture, at: [0, 0, 0], turn: 0, tall: 1, lit: model.night ?? 0, gain: model.day?.gain, plain: model.day?.plain });
+      });
+    }
+    this.layProps();
     // And between each house street and what is built along it: asphalt to the foot of the walls.
     if (this.detailOn && this.network) {
       const sunlight = lightFrom(this.sun);
@@ -2275,8 +2296,50 @@ export class MapView {
       if (!kept) this.fetchProp(prop.file, prop.picture ?? prop.file);
       else if (kept.mesh) shown.push({ mesh: kept.mesh, picture: kept.picture, at: [east, north, 0], turn: prop.turn ?? 0, tall: prop.height, lit: prop.night ?? 0, gain: prop.day?.gain, plain: prop.day?.plain });
     }
-    this.scene.setProps(shown);
-    this.propsMade = { origin, shown: shown.length, triangles: shown.reduce((sum, one) => sum + one.mesh.indices.length / 3, 0) };
+    for (const model of HOUSE_MODELS) if (!this.propFiles.get(model.file)) this.fetchProp(model.file, model.picture ?? model.file);
+    const all = [...shown, ...this.houseBatches];
+    this.scene.setProps(all);
+    this.propsMade = { origin, shown: shown.length, houses: this.houseModelsMade?.ids.size ?? 0, triangles: all.reduce((sum, one) => sum + one.mesh.indices.length / 3, 0) };
+  }
+
+  /**
+   * Which houses are drawn as models of real houses (see props.js): of those
+   * the app has laid out, the nearest to the middle of the view, while the
+   * map is drawn large enough for it to show. Picked afresh when the view has
+   * moved on a stretch, or when told to. The blocks a picked house was laid
+   * out as are marked not to be drawn; one left behind gets its blocks back.
+   * Returns whether anything changed: then the roofs are to be laid again.
+   */
+  pickHouseModels(afresh = false) {
+    const ready = HOUSE_MODELS.length > 0 && HOUSE_MODELS.every((model) => this.propFiles.get(model.file)?.mesh);
+    const on = ready && this.type === 'city' && this.detailOn && this.houses.length > 0 && this.map.getZoom() >= HOUSE_MODEL_MIN_ZOOM;
+    const made = this.houseModelsMade;
+    if (!on) {
+      this.houseModelsMade = null;
+      if (!made || made.ids.size === 0) return false;
+      for (const house of made.houses) {
+        if (house.modelled === undefined) continue;
+        house.modelled = undefined;
+        for (const piece of house.pieces) piece.replaced = false;
+      }
+      return made.houses === this.houses;
+    }
+    const centre = this.map.getCenter();
+    if (!afresh && made && made.houses === this.houses) {
+      const squeeze = Math.max(Math.cos((centre.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
+      if (Math.hypot((centre.lng - made.at[0]) * squeeze, (centre.lat - made.at[1]) * METERS_PER_DEGREE) < HOUSE_MODEL_STEP_METERS) return false;
+    }
+    const ids = new Set(housesNear(this.houses, [centre.lng, centre.lat]).map((house) => house.id));
+    const same = Boolean(made) && made.houses === this.houses && made.ids.size === ids.size && [...ids].every((id) => made.ids.has(id));
+    this.houseModelsMade = { houses: this.houses, at: [centre.lng, centre.lat], ids };
+    if (same) return false;
+    for (const house of this.houses) {
+      const model = ids.has(house.id) ? houseModelOf(house.id, HOUSE_MODELS.length) : undefined;
+      if (house.modelled === model) continue;
+      house.modelled = model;
+      for (const piece of house.pieces) piece.replaced = model !== undefined;
+    }
+    return true;
   }
 
   /** Fetch one such model's mesh and its picture; when both are in, it is put in its places. One that cannot be had is left out, and not asked for again. */
@@ -2298,7 +2361,9 @@ export class MapView {
         kept.mesh = made;
         kept.picture = image;
         if (this.type !== 'city' || !this.scene.origin) return;
-        this.layProps();
+        // (With the last of the houses' models in, the houses near the eye are drawn as them.)
+        if (this.pickHouseModels(true)) this.layRoofs();
+        else this.layProps();
         this.map?.triggerRepaint();
       })
       .catch(() => {});
@@ -2332,6 +2397,8 @@ export class MapView {
     }
     const from = this.scene.origin;
     this.scene.focus = from ? [(middle.lng - from.lng) * Math.max(Math.cos((from.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE, (middle.lat - from.lat) * METERS_PER_DEGREE] : [0, 0];
+    // (Has the view moved on far enough for other houses to be the nearest? Then those are the ones drawn as models.)
+    if (HOUSE_MODELS.length > 0 && this.pickHouseModels()) this.layRoofs();
     this.moveSky();
     if (!this.lifeOn || this.type !== 'city' || zoom < LIFE_MIN_ZOOM) {
       if (this.trafficMesh.count > 0) {

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 
 import { BOULEVARD_WORLD, GREEK_HOUSES, WORLD_PARTS, WORLD_SPOTS, worldPlace } from '../js/boulevard.js';
 import { landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
-import { PROPS, propNormals, propsNear, readProp } from '../js/props.js';
+import { HOUSE_MODELS, HOUSE_MODELS_MOST, HOUSE_MODEL_MIN_ZOOM, HOUSE_MODEL_REACH_METERS, PROPS, houseModelOf, housePlace, housesNear, propNormals, propsNear, readProp, standMany } from '../js/props.js';
 
 const METERS = 111320;
 const near = (a, b, by = 1e-6) => Math.abs(a - b) <= by;
@@ -13,7 +13,7 @@ const bytesOf = (file) => {
   return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
 };
 
-/** A packed mesh, as tools/pack-model.mjs writes one: corners [[east, north, up, across, down], …] and triangles. */
+/** A packed mesh, as tools/models/pack.mjs writes one: corners [[east, north, up, across, down], …] and triangles. */
 function packed(corners, triangles) {
   const min = [0, 1, 2].map((k) => Math.min(...corners.map((corner) => corner[k])));
   const max = [0, 1, 2].map((k) => Math.max(...corners.map((corner) => corner[k])));
@@ -165,4 +165,77 @@ test('the models that carry a picture are shown near them only; each has its cle
   assert.equal(landmarkShades().length, 4 + 9 + PROPS.length);
   const shade = landmarkShades().find((one) => one.height === 25);
   assert.ok(shade && shade.polygons[0][0].every(([lng, lat]) => Math.hypot((lng - prop.at[0]) * squeeze, (lat - prop.at[1]) * METERS) < 6.6));
+});
+
+test('one mesh stands many times, each fitted to its own box and turned to its own street', () => {
+  // A pyramid one high on a foot two wide (east to west) and one deep, its tip over its middle.
+  const corners = [[-1, -0.5, 0, 0, 1], [1, -0.5, 0, 1, 1], [1, 0.5, 0, 1, 0], [-1, 0.5, 0, 0, 0], [0, 0, 1, 0.5, 0.5]];
+  const mesh = readProp(packed(corners, [0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4]));
+  assert.deepEqual(mesh.foot.map((v) => Math.round(v * 1000) / 1000), [-1, 1, -0.5, 0.5]);
+  // Two boxes: one 10 m wide and 6 deep, 8 tall, square to the compass at [100, 50]; the other 12 by 12, 7 tall,
+  // at [0, 0], its width running north and its back to the west, painted darker.
+  const [batch, ...more] = standMany(mesh, [
+    { at: [100, 50], along: [1, 0], back: [0, 1], wide: 10, deep: 6, height: 8 },
+    { at: [0, 0], along: [0, 1], back: [-1, 0], wide: 12, deep: 12, height: 7, tint: [0.8, 0.6, 1.4] },
+  ]);
+  assert.equal(more.length, 0);
+  assert.equal(batch.corners, 10);
+  assert.equal(batch.indices.length, 24);
+  const place = (i) => Array.from(batch.positions.subarray(i * 3, i * 3 + 3)).map((v) => Math.round(v * 1000) / 1000 + 0); // (+ 0: no minus nought)
+  // The first: its front left corner, its back right corner, its tip.
+  assert.deepEqual([place(0), place(2), place(4)], [[95, 47, 0], [105, 53, 0], [100, 50, 8]]);
+  // The second: what was its east is north, what was its north is west.
+  assert.deepEqual([place(5), place(7), place(9)], [[6, -6, 0], [-6, 6, 0], [0, 0, 7]]);
+  // The triangles of the second name the second's corners.
+  assert.deepEqual(Array.from(batch.indices.subarray(12, 15)), [5, 6, 9]);
+  // Each corner keeps its place on the picture, and has its tint (halved, so that 1 is 128 of 255).
+  assert.ok(near(batch.uvs[8], 0.5, 1e-4) && near(batch.uvs[18], 0.5, 1e-4));
+  assert.deepEqual([Array.from(batch.tints.subarray(0, 4)), Array.from(batch.tints.subarray(20, 24))], [[128, 128, 128, 255], [102, 77, 179, 255]]);
+  // Which way the surface looks is turned with the box, and stays one long: the tip of each looks straight up.
+  for (let i = 0; i < 10; i += 1) assert.ok(near(Math.hypot(batch.normals[i * 3], batch.normals[i * 3 + 1], batch.normals[i * 3 + 2]), 1, 1e-5));
+  assert.ok(near(batch.normals[14], 1, 1e-5) && near(batch.normals[29], 1, 1e-5));
+  // The first's front left corner looks south and west and up; the second's (turned) looks east and south and up.
+  assert.ok(batch.normals[0] < -0.1 && batch.normals[1] < -0.1 && batch.normals[2] > 0.1);
+  assert.ok(batch.normals[15] > 0.1 && batch.normals[16] < -0.1 && batch.normals[17] > 0.1);
+  // More houses than one mesh may hold corners for are laid in several.
+  const many = standMany(mesh, Array.from({ length: 30000 }, (_, n) => ({ at: [n, 0], along: [1, 0], back: [0, 1], wide: 4, deep: 4, height: 4 })));
+  assert.equal(many.length, 3);
+  assert.deepEqual(many.map((one) => one.corners), [65535, 65535, 18930]);
+  assert.ok(many.every((one) => one.indices.every((corner) => corner < one.corners)));
+});
+
+test('the houses drawn as models are the nearest to the middle of the view; each always as the same model', () => {
+  // No model of a house of Riyadh is made yet: every house stays as it was laid out.
+  assert.deepEqual(HOUSE_MODELS, []);
+  assert.ok(HOUSE_MODEL_REACH_METERS === 280 && HOUSE_MODEL_MIN_ZOOM === 17 && HOUSE_MODELS_MOST === 320);
+  // Houses along a street running east, one every 20 m, each 12 m wide and 14 deep with two parts.
+  const origin = { lng: 46.7, lat: 24.75 };
+  const squeeze = METERS * Math.cos((origin.lat * Math.PI) / 180);
+  const houses = Array.from({ length: 40 }, (_, n) => ({
+    id: 1000 + n,
+    at: [origin.lng + (n * 20 - 6) / squeeze, origin.lat + 10 / METERS],
+    along: [1, 0],
+    back: [0, 1],
+    wide: 12,
+    deep: 14,
+    paint: '#d8c8a8',
+    parts: n === 3 ? null : [{ height: 8.2 }, { height: 4.4 }],
+  }));
+  const picked = housesNear(houses, [origin.lng, origin.lat]);
+  // Within 280 m: the first fifteen (the middle of the fifteenth is 280.5 m off), but for the one that has no box of its own.
+  assert.deepEqual(picked.map((house) => house.id), [1000, 1001, 1002, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013]);
+  assert.deepEqual(housesNear(houses, [origin.lng, origin.lat], { most: 3 }).map((house) => house.id), [1000, 1001, 1002]);
+  assert.equal(housesNear(houses, [origin.lng, origin.lat + 0.01]).length, 0);
+  // Where a house's model stands: over the middle of its box, as tall as its tallest part and a parapet more.
+  const where = housePlace(houses[2], origin);
+  assert.ok(near(where.at[0], 40, 0.01) && near(where.at[1], 17, 0.01) && where.wide === 12 && where.deep === 14 && near(where.height, 9.6) && where.tint === null);
+  // Painted its own colour over a model whose own walls are paler: darker, but never so far off that the picture goes.
+  const tinted = housePlace(houses[2], origin, [0.95, 0.9, 0.82]).tint;
+  assert.ok(near(tinted[0], 0.847 / 0.95, 0.01) && near(tinted[2], 0.659 / 0.82, 0.01));
+  assert.deepEqual(housePlace(houses[2], origin, [0.2, 0.2, 2]).tint, [1.45, 1.45, 0.7]);
+  // Which model: always the same for the same house, and all of them come up.
+  assert.equal(houseModelOf(1000, 0), -1);
+  const chosen = houses.map((house) => houseModelOf(house.id, 4));
+  assert.deepEqual(chosen, houses.map((house) => houseModelOf(house.id, 4)));
+  assert.ok(chosen.every((n) => n >= 0 && n < 4) && new Set(chosen).size === 4);
 });

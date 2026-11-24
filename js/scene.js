@@ -798,6 +798,7 @@ const PROP_VERTEX = `
 attribute vec3 a_pos;
 attribute vec3 a_normal;
 attribute vec2 a_uv;
+attribute vec4 a_tint;  // what its picture's colours are multiplied by, halved (so that it may brighten as well as darken)
 uniform mat4 u_matrix;
 uniform vec3 u_at;      // where its foot stands, in the scene's metres
 uniform vec2 u_turn;    // the cosine and the sine of how far it is turned, clockwise
@@ -805,11 +806,13 @@ uniform float u_tall;   // how tall it stands, in metres: the mesh itself is one
 varying vec3 v_world;
 varying vec3 v_normal;
 varying vec2 v_uv;
+varying vec3 v_paint;
 void main() {
   vec3 place = vec3(a_pos.x * u_turn.x + a_pos.y * u_turn.y, a_pos.y * u_turn.x - a_pos.x * u_turn.y, a_pos.z) * u_tall;
   v_world = u_at + place;
   v_normal = vec3(a_normal.x * u_turn.x + a_normal.y * u_turn.y, a_normal.y * u_turn.x - a_normal.x * u_turn.y, a_normal.z);
   v_uv = a_uv;
+  v_paint = a_tint.rgb * 2.0;
   gl_Position = u_matrix * vec4(v_world, 1.0);
 }`;
 
@@ -826,10 +829,11 @@ uniform float u_opacity;
 varying vec3 v_world;
 varying vec3 v_normal;
 varying vec2 v_uv;
+varying vec3 v_paint;
 
 void main() {
   vec3 normal = normalize(v_normal);
-  vec3 picture = texture2D(u_picture, v_uv).rgb;
+  vec3 picture = min(texture2D(u_picture, v_uv).rgb * v_paint, vec3(1.0));
   // The light: the sky from all round, and the sun by how squarely the surface is turned to it, unless
   // something stands in its way. (The mesh is fine and full of hollows: it is lit as one that is seen from
   // both sides, and never wholly dark where it turns from the sun.)
@@ -1022,6 +1026,9 @@ function link(gl, vertex, fragment) {
   const program = gl.createProgram();
   gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertex));
   gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragment));
+  // (Every program's first attribute is its place: an attribute given one value for a whole mesh, with no
+  // array of its own, must never be the first.)
+  gl.bindAttribLocation(program, 0, 'a_pos');
   gl.linkProgram(program);
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) || 'program did not link');
   return program;
@@ -1138,7 +1145,7 @@ export class SceneLayer {
     this.modelProgram = link(gl, MODEL_VERTEX, MODEL_FRAGMENT);
     this.modelAt = places(gl, this.modelProgram, ['pos', 'normal', 'surf', 'edge', 'tint', 'light', 'more'], ['matrix', 'opacity', 'sun', 'day', 'night', 'lamps', 'eye', 'pixel', 'skyHigh', 'skyLow', 'time', ...SHADOW_UNIFORMS]);
     this.propProgram = link(gl, PROP_VERTEX, PROP_FRAGMENT);
-    this.propAt = places(gl, this.propProgram, ['pos', 'normal', 'uv'], ['matrix', 'opacity', 'sun', 'day', 'night', 'at', 'turn', 'tall', 'picture', 'lit', 'byDay', ...SHADOW_UNIFORMS]);
+    this.propAt = places(gl, this.propProgram, ['pos', 'normal', 'uv', 'tint'], ['matrix', 'opacity', 'sun', 'day', 'night', 'at', 'turn', 'tall', 'picture', 'lit', 'byDay', ...SHADOW_UNIFORMS]);
     this.hazeProgram = link(gl, HAZE_VERTEX, HAZE_FRAGMENT);
     this.hazeAt = places(gl, this.hazeProgram, ['pos', 'thick'], ['matrix', 'haze']);
     this.hazeBuffer = null;
@@ -1915,8 +1922,18 @@ export class SceneLayer {
         let kept = this.propStore.get(prop.mesh);
         const fresh = !kept;
         if (fresh) {
-          kept = { buffers: { positions: gl.createBuffer(), normals: gl.createBuffer(), uvs: gl.createBuffer(), indices: gl.createBuffer() }, texture: gl.createTexture() };
+          kept = { buffers: { positions: gl.createBuffer(), normals: gl.createBuffer(), uvs: gl.createBuffer(), indices: gl.createBuffer(), ...(prop.mesh.tints ? { tints: gl.createBuffer() } : {}) }, texture: gl.createTexture() };
           this.propStore.set(prop.mesh, kept);
+        }
+        // Its tints: a mesh of many houses has one at every corner; a model that stands alone has none, and is left as it is.
+        if (prop.mesh.tints) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, kept.buffers.tints);
+          if (fresh) gl.bufferData(gl.ARRAY_BUFFER, prop.mesh.tints, gl.STATIC_DRAW);
+          gl.enableVertexAttribArray(at.tint);
+          gl.vertexAttribPointer(at.tint, 4, gl.UNSIGNED_BYTE, true, 0, 0);
+        } else {
+          gl.disableVertexAttribArray(at.tint);
+          gl.vertexAttrib4f(at.tint, 0.5, 0.5, 0.5, 1);
         }
         const send = (buffer, where, data, size) => {
           gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -1950,7 +1967,7 @@ export class SceneLayer {
         gl.uniform2f(at.byDay, prop.gain, prop.plain);
         gl.drawElements(gl.TRIANGLES, prop.mesh.indices.length, gl.UNSIGNED_SHORT, 0);
       }
-      for (const where of [at.pos, at.normal, at.uv]) gl.disableVertexAttribArray(where);
+      for (const where of [at.pos, at.normal, at.uv, at.tint]) gl.disableVertexAttribArray(where);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
       gl.bindTexture(gl.TEXTURE_2D, null);
       gl.activeTexture(gl.TEXTURE0);

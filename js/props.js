@@ -11,7 +11,7 @@
 // thing as it is; the sides it could not see are its guess.
 //
 // Each is a pair of files in models/: name.vmm, the mesh, packed by
-// tools/pack-model.mjs; and name.jpg, its picture. Here is the list of them
+// tools/models/pack.mjs; and name.jpg, its picture. Here is the list of them
 // (where each stands, how tall, which way it is turned), and the reading of
 // the mesh. Nothing here touches the browser: the fetching is done by the
 // map, the drawing by the scene.
@@ -98,7 +98,9 @@ export function readProp(bytes, height = 1) {
     indices[i] = data.getUint16(indicesAt + i * 2, true);
     if (indices[i] >= corners) return null;
   }
-  return { corners, positions, uvs, indices, normals: propNormals(positions, indices), reach, top: box[5] * height };
+  // (Its footprint: how far it reaches east and west, south and north of its middle line.)
+  const foot = [box[0] * height, box[3] * height, box[1] * height, box[4] * height];
+  return { corners, positions, uvs, indices, normals: propNormals(positions, indices), reach, top: box[5] * height, foot };
 }
 
 /**
@@ -160,4 +162,143 @@ export function propsNear(origin, props = PROPS) {
     near.push({ prop, east, north });
   }
   return near;
+}
+
+// ── Ordinary houses ───────────────────────────────────────────────────────
+//
+// A landmark's model stands once, where the landmark is. A house's model
+// stands for every house of its sort: the app has laid out where each house
+// of a street stands and how large it is (see houses.js), and near the eye
+// each is drawn as one of a few models of real houses of the city, fitted to
+// its own measure and turned to its own street. Further off a house stays the
+// plain block it was: there it is too small for the difference to show.
+
+/**
+ * The models that houses are drawn as: { file, picture (if not its own),
+ * night: 0 to 1, day (see PROPS), tone: [red, green, blue] from 0 to 1, the
+ * colour of its own walls (a house painted otherwise is tinted from it) }.
+ * There are none yet: until the first is made from a photograph of a house
+ * of Riyadh, every house stays as houses.js builds it.
+ */
+export const HOUSE_MODELS = [];
+
+/** A house is drawn as a model when it stands no further than this from the middle of the view… */
+export const HOUSE_MODEL_REACH_METERS = 280;
+/** …and the map is drawn at least this large; and never more of them at once than this. */
+export const HOUSE_MODEL_MIN_ZOOM = 17;
+export const HOUSE_MODELS_MOST = 320;
+const BATCH_MOST_CORNERS = 65535;
+
+/** Which of so many models a house is drawn as: always the same for the same house. */
+export function houseModelOf(id, count) {
+  if (!(count > 0)) return -1;
+  const value = Math.sin(Number(id) * 12.9898 + 4.1414) * 43758.5453;
+  return Math.min(Math.floor((value - Math.floor(value)) * count), count - 1);
+}
+
+/**
+ * Which houses are drawn as models: of those laid out with a box of their
+ * own (see parcelHouses in houses.js), the nearest to a place, no further
+ * than the reach and no more than the most.
+ *
+ * houses: as parcelHouses gives them. centre: [lng, lat]. Returns them
+ * nearest first.
+ */
+export function housesNear(houses, centre, { reach = HOUSE_MODEL_REACH_METERS, most = HOUSE_MODELS_MOST } = {}) {
+  const squeeze = Math.max(Math.cos((centre[1] * Math.PI) / 180), 0.01) * 111320;
+  const near = [];
+  for (const house of houses) {
+    if (!house.parts) continue; // one left as the map has it: no box to fit a model to
+    const east = (house.at[0] - centre[0]) * squeeze + house.along[0] * (house.wide / 2) + house.back[0] * (house.deep / 2);
+    const north = (house.at[1] - centre[1]) * 111320 + house.along[1] * (house.wide / 2) + house.back[1] * (house.deep / 2);
+    const far = Math.hypot(east, north);
+    if (far <= reach) near.push([far, house]);
+  }
+  near.sort((a, b) => a[0] - b[0] || a[1].id - b[1].id);
+  return near.slice(0, most).map(([, house]) => house);
+}
+
+/**
+ * Stand one mesh many times, each time fitted to a box on the ground, as
+ * meshes the scene can draw whole (see setProps in scene.js): every corner
+ * already in its place.
+ *
+ * mesh: as readProp gives it, one high. places: [{ at: [east, north] of the
+ * box's middle, in the scene's metres; along: the way the box's width runs,
+ * [east, north], one long; back: the way from its front to its back; wide,
+ * deep, height in metres; tint: [red, green, blue], what its picture's
+ * colours are multiplied by (1 leaves them; no more than 2) }]. The mesh's
+ * front, the side its photograph showed, comes to stand at the box's front.
+ *
+ * Returns [{ corners, positions, normals, uvs, tints, indices }], each of no
+ * more corners than a mesh may have.
+ */
+export function standMany(mesh, places) {
+  const batches = [];
+  const each = Math.max(Math.floor(BATCH_MOST_CORNERS / mesh.corners), 1);
+  const [x0, x1, y0, y1] = mesh.foot;
+  const [middleX, middleY] = [(x0 + x1) / 2, (y0 + y1) / 2];
+  for (let start = 0; start < places.length; start += each) {
+    const some = places.slice(start, start + each);
+    const corners = some.length * mesh.corners;
+    const batch = { corners, positions: new Float32Array(corners * 3), normals: new Float32Array(corners * 3), uvs: new Float32Array(corners * 2), tints: new Uint8Array(corners * 4), indices: new Uint16Array(some.length * mesh.indices.length) };
+    some.forEach((place, n) => {
+      const first = n * mesh.corners;
+      const sx = place.wide / Math.max(x1 - x0, 1e-6);
+      const sy = place.deep / Math.max(y1 - y0, 1e-6);
+      const sz = place.height / Math.max(mesh.top, 1e-6);
+      const [ax, ay] = place.along;
+      const [bx, by] = place.back;
+      const tint = place.tint ?? [1, 1, 1];
+      const bytes = tint.map((part) => Math.round(Math.min(Math.max(part / 2, 0), 1) * 255));
+      for (let i = 0; i < mesh.corners; i += 1) {
+        const u = (mesh.positions[i * 3] - middleX) * sx;
+        const v = (mesh.positions[i * 3 + 1] - middleY) * sy;
+        const at = (first + i) * 3;
+        batch.positions[at] = place.at[0] + ax * u + bx * v;
+        batch.positions[at + 1] = place.at[1] + ay * u + by * v;
+        batch.positions[at + 2] = mesh.positions[i * 3 + 2] * sz;
+        // (A surface stretched one way looks less that way: which way it looks is squeezed as its place is stretched.)
+        const nu = mesh.normals[i * 3] / sx;
+        const nv = mesh.normals[i * 3 + 1] / sy;
+        const nx = ax * nu + bx * nv;
+        const ny = ay * nu + by * nv;
+        const nz = mesh.normals[i * 3 + 2] / sz;
+        const size = Math.hypot(nx, ny, nz) || 1;
+        batch.normals[at] = nx / size;
+        batch.normals[at + 1] = ny / size;
+        batch.normals[at + 2] = nz / size;
+        batch.uvs[(first + i) * 2] = mesh.uvs[i * 2];
+        batch.uvs[(first + i) * 2 + 1] = mesh.uvs[i * 2 + 1];
+        batch.tints.set([bytes[0], bytes[1], bytes[2], 255], (first + i) * 4);
+      }
+      const from = n * mesh.indices.length;
+      for (let i = 0; i < mesh.indices.length; i += 1) batch.indices[from + i] = first + mesh.indices[i];
+    });
+    batches.push(batch);
+  }
+  return batches;
+}
+
+/**
+ * Where a house's model stands and how large: the box the house was laid
+ * out in (see parcelHouses), from the scene's origin. Its height is that of
+ * its tallest part, and a parapet's height more.
+ *
+ * house: as parcelHouses gives it. origin: { lng, lat }. tone: the colour
+ * of the model's own walls, [red, green, blue] from 0 to 1, or null to leave
+ * its colours as they are.
+ */
+export function housePlace(house, origin, tone = null) {
+  const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * 111320;
+  const east = (house.at[0] - origin.lng) * squeeze + house.along[0] * (house.wide / 2) + house.back[0] * (house.deep / 2);
+  const north = (house.at[1] - origin.lat) * 111320 + house.along[1] * (house.wide / 2) + house.back[1] * (house.deep / 2);
+  const tallest = Math.max(...house.parts.map((part) => part.height));
+  let tint = null;
+  if (tone && typeof house.paint === 'string') {
+    // The house's own paint over the model's: but never so far from the model's that its picture is washed out.
+    const paint = [1, 3, 5].map((at) => Number.parseInt(house.paint.slice(at, at + 2), 16) / 255);
+    tint = paint.map((part, k) => Math.min(Math.max(part / Math.max(tone[k], 0.05), 0.7), 1.45));
+  }
+  return { at: [east, north], along: house.along, back: house.back, wide: house.wide, deep: house.deep, height: tallest + 1.4, tint };
 }

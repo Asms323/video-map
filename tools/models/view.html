@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>html, body { margin: 0; background: #20242b; } canvas { display: block; }</style>
+<script type="importmap">{ "imports": { "three": "/three/build/three.module.js", "three/addons/": "/three/examples/jsm/" } }</script>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// Served by shot.mjs: view.html?glb=<file>&views=4&elev=18&bg=20242b&unlit=0
+const query = new URLSearchParams(location.search);
+const views = Number(query.get('views') ?? 4);
+const elevation = (Number(query.get('elev') ?? 18) * Math.PI) / 180;
+const start = (Number(query.get('from') ?? 30) * Math.PI) / 180;
+const size = Number(query.get('size') ?? 700);
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(size * views, size);
+renderer.setScissorTest(true);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(`#${query.get('bg') ?? '20242b'}`);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8478, 1.5));
+const sun = new THREE.DirectionalLight(0xfff2dd, 2.2);
+sun.position.set(2, 4, 3);
+scene.add(sun);
+
+new GLTFLoader().load(query.get('glb'), (gltf) => {
+  const model = gltf.scene;
+  let triangles = 0;
+  const textures = [];
+  model.traverse((node) => {
+    if (!node.isMesh) return;
+    triangles += (node.geometry.index ? node.geometry.index.count : node.geometry.attributes.position.count) / 3;
+    const map = node.material.map;
+    if (map?.image) textures.push([map.image.width, map.image.height]);
+    if (query.get('unlit') === '1') node.material = new THREE.MeshBasicMaterial({ map, vertexColors: Boolean(node.geometry.attributes.color) && !map });
+  });
+  const box = new THREE.Box3().setFromObject(model);
+  const middle = box.getCenter(new THREE.Vector3());
+  const extent = box.getSize(new THREE.Vector3());
+  scene.add(model);
+  const radius = extent.length() / 2;
+  const camera = new THREE.PerspectiveCamera(30, 1, radius / 50, radius * 50);
+  const far = (radius / Math.sin((15 * Math.PI) / 180)) * 1.02;
+  for (let i = 0; i < views; i += 1) {
+    const angle = start + (i / views) * Math.PI * 2;
+    camera.position.set(middle.x + Math.sin(angle) * Math.cos(elevation) * far, middle.y + Math.sin(elevation) * far, middle.z + Math.cos(angle) * Math.cos(elevation) * far);
+    camera.lookAt(middle);
+    renderer.setViewport(i * size, 0, size, size);
+    renderer.setScissor(i * size, 0, size, size);
+    renderer.render(scene, camera);
+  }
+  window.__done = { triangles, textures, size: [extent.x, extent.y, extent.z] };
+}, undefined, (error) => { window.__done = { error: String(error) }; });
+</script>
+</body>
+</html>

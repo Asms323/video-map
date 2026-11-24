@@ -195,6 +195,16 @@ map opens on the city and keeps to it, and places are looked for in it.
   The names of a restaurant and of a shop were painted out of the
   photographs first. (The tower of the Paris quarter was tried too, and
   came out a solid cone: it stays built by hand.)
+- **Houses as models of real houses (made ready, not yet on).** The same
+  kind of model can stand for the ordinary houses of the city: near the
+  middle of the view, once the map is drawn large enough, each house the
+  app has laid out is drawn as one of a few models made from photographs
+  of real Riyadh houses, fitted to its own box, turned to its own street
+  and tinted with its own paint; the plain blocks come back further off.
+  The app does this already, but there is no such model yet (the generator
+  gives about five a day): the first cut-outs, of two villas, a
+  neighbourhood mosque and a block of flats, wait in `tools/models/inputs/`.
+  Until then every house stays as described above.
 - **Painted roads.** Main roads have their lanes: a broken line between lanes,
   a line along each edge, a yellow line down the middle where traffic runs
   both ways. A side street has a zebra crossing where it meets a main road,
@@ -384,7 +394,7 @@ Everything is free and needs no account or key.
 | Satellite photos | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. Shown only in the Satellite look. How sharp the photo comes differs from place to place: the service is asked, a square of tiles at a time, and only what it has is fetched. In the 3D city the photo is never shown: it is read on the phone, at one middling level of sharpness, for trees, shadows and the colours of roofs, and the service is asked once per area for the day the photo was taken |
 | What Riyadh's houses and house streets look like | [OpenStreetView-5M](https://huggingface.co/datasets/osv5m/osv5m) (Astruc and others, CVPR 2024): street photographs by Mapillary contributors, CC BY-SA 4.0 | Studied, not shown: the 1,629 photographs taken inside Riyadh were looked through and the houses are built by rules drawn from them. No photograph is in the app or fetched by it |
 | What stands at Boulevard World, and where | The satellite photo above (Esri World Imagery, taken in September 2025): the lagoon's shore was traced from it and every thing's place measured on it. Sixteen photographs of the place by night and the fairground's own booklet for the 2026-27 season, both sent by the app's owner | Studied, not shown: the models are built by hand from them. No photograph and no page of the booklet is in the app or fetched by it |
-| The models in `models/` (pagoda, hall, pylon, church, house) | Each made from one photograph out of those the app's owner sent, by [TRELLIS](https://github.com/microsoft/TRELLIS) (Microsoft Research, MIT licence), run on Hugging Face under the owner's account; then cleaned of what stood beside the thing in the photograph, thinned to at most thirty thousand triangles, and packed with `tools/pack-model.mjs` | In the app as those files. Their pictures are made out of the photographs. Who took each photograph is not recorded here: if it was not the owner, the photographer's rights in it remain, and that is to be settled before the app is published to others |
+| The models in `models/` (pagoda, hall, pylon, church, house) | Each made from one photograph out of those the app's owner sent, by [TRELLIS](https://github.com/microsoft/TRELLIS) (Microsoft Research, MIT licence), run on Hugging Face under the owner's account; then cleaned of what stood beside the thing in the photograph, thinned to at most thirty thousand triangles, and packed with `tools/models/pack.mjs` | In the app as those files. Their pictures are made out of the photographs. Who took each photograph is not recorded here: if it was not the owner, the photographer's rights in it remain, and that is to be settled before the app is published to others |
 | One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
 | Detailed map picture | OpenStreetMap tile servers | [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
 | Place details, speed limits, where the traffic signals stand | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits; and one for all of Riyadh's traffic signals, the same whoever asks it (so nothing of where you are goes with it), whose answer is kept on the phone for a week |
@@ -800,7 +810,7 @@ js/boulevard.js         Boulevard World: its lagoon and what stands round it
 js/props.js             models that carry a picture, each made from a photograph:
                         where each stands, and the reading of their meshes
 models/                 those models: name.vmm (the mesh), name.jpg (its picture)
-tools/pack-model.mjs    packs such a model for the app
+tools/models/           how such a model is made: see its README
 js/districts.js         the city's districts and what each is like
 js/districts-data.js    where each district lies
 js/plots.js             the walls and gates round the houses the map gives singly
@@ -876,6 +886,10 @@ phones drop their saved copy.
   Frohn, BSD 3-Clause (`vendor/d3-celestial/LICENSE.txt`): the 483 brightest
   stars that rise over Riyadh, out of the XHIP catalogue of Anderson and
   Francis (2012).
+- `tools/models/inputs/*.png` are pieces cut out of street photographs by
+  the Mapillary contributor mjoodealtamimi, taken in Riyadh in 2020, as
+  published in OpenStreetView-5M: CC BY-SA 4.0 (`tools/models/inputs/inputs.json`
+  names each photograph). They are not part of the app.
 - `tests/fixtures/map.har` holds map data © OpenStreetMap contributors (ODbL),
   as served by OpenFreeMap (© OpenMapTiles).
 - `tests/fixtures/buildings.json` holds building outlines from Overture Maps

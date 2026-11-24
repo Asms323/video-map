@@ -1,4 +1,4 @@
-// Pack a 3D model for the app: node tools/pack-model.mjs <in.glb> <models/name> [most corners]
+// Pack a 3D model for the app: node tools/models/pack.mjs <in.glb> <models/name>
 //
 // in.glb: a plain GLB of one mesh with texture coordinates and one picture for its colours (what the
 // generator gives, cleaned: standing on the ground, its upright middle line at 0; y up, its front towards +z).

@@ -1,0 +1,85 @@
+{
+  "villa-a": {
+    "photo": "1131787670634909",
+    "what": "a cream villa of two storeys with a stepped parapet, north Riyadh",
+    "scale": 3,
+    "lift": true,
+    "paint": [],
+    "outline": "271,222 271,70 293,68 293,44 336,44 336,68 362,70 362,82 380,84 452,88 452,222",
+    "source": "OpenStreetView-5M (https://huggingface.co/datasets/osv5m/osv5m): a street photograph from Mapillary",
+    "file": "train/25.zip : 25/1131787670634909.jpg",
+    "by": "mjoodealtamimi",
+    "taken": "1586438396924",
+    "at": [
+      46.669356605069,
+      24.799993990099
+    ],
+    "licence": "CC BY-SA 4.0"
+  },
+  "villa-b": {
+    "photo": "147954530678462",
+    "what": "a brown villa with a tiled roof and a tent-roofed porch",
+    "scale": 2.5,
+    "lift": true,
+    "paint": [
+      "437,205,478,219"
+    ],
+    "outline": "258,240 258,22 430,20 432,36 492,36 500,72 496,100 540,150 558,176 558,240",
+    "source": "OpenStreetView-5M (https://huggingface.co/datasets/osv5m/osv5m): a street photograph from Mapillary",
+    "file": "train/06.zip : 06/147954530678462.jpg",
+    "by": "mjoodealtamimi",
+    "taken": "1592137784673",
+    "at": [
+      46.76523265052,
+      24.747916263935
+    ],
+    "licence": "CC BY-SA 4.0"
+  },
+  "mosque": {
+    "photo": "1142522252827010",
+    "what": "a neighbourhood mosque: one minaret, a dome, an arched porch",
+    "scale": 2.5,
+    "lift": true,
+    "paint": [],
+    "outline": "236,252 236,150 282,148 284,136 292,134 294,100 283,98 283,82 294,80 297,40 300,22 303,40 306,80 318,82 318,98 307,100 308,134 346,134 352,122 375,116 398,122 404,134 458,136 460,154 494,156 494,252",
+    "source": "OpenStreetView-5M (https://huggingface.co/datasets/osv5m/osv5m): a street photograph from Mapillary",
+    "file": "train/32.zip : 32/1142522252827010.jpg",
+    "by": "mjoodealtamimi",
+    "taken": "1586168608815",
+    "at": [
+      46.58460420706,
+      24.786238326174
+    ],
+    "licence": "CC BY-SA 4.0"
+  },
+  "flats": {
+    "photo": "205677334705607",
+    "what": "a block of flats of four storeys",
+    "scale": 2.2,
+    "lift": true,
+    "paint": [],
+    "outline": "65,296 65,168 76,166 76,155 172,152 174,162 188,162 190,152 258,152 262,150 330,150 332,160 378,160 378,296",
+    "source": "OpenStreetView-5M (https://huggingface.co/datasets/osv5m/osv5m): a street photograph from Mapillary",
+    "file": "train/81.zip : 81/205677334705607.jpg",
+    "by": "mjoodealtamimi",
+    "taken": "1582632432783",
+    "at": [
+      46.75495162695,
+      24.73734040426
+    ],
+    "licence": "CC BY-SA 4.0"
+  },
+  "paris-block": {
+    "photo": "the owner's photograph of the Paris quarter of Boulevard World, by night (1080 x 1920; not kept in this repository)",
+    "what": "the corner of a block of the Paris quarter: stone front, arched windows lit, a dark mansard roof with dormers",
+    "scale": 1,
+    "lift": false,
+    "paint": [
+      "952,1160,1080,1206",
+      "694,1208,736,1266"
+    ],
+    "outline": "578,1262 578,778 640,722 700,668 760,622 820,578 866,540 892,500 930,478 1040,470 1079,496 1079,1228 880,1228 800,1262",
+    "licence": "not recorded: see the README",
+    "cut": "not kept here"
+  }
+}
