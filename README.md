@@ -194,7 +194,9 @@ map opens on the city and keeps to it, and places are looked for in it.
   light them, and by day their colours are only lifted out of the dark.
   (The first of these models stood too wide for their height, the pagoda
   most of all: their photographs had reached the generator stretched. They
-  have been brought back to the proportions the photographs show.)
+  have been brought back to the proportions the photographs show. They
+  were also packed inside out, so that by day the sun lit their wrong
+  sides: that is mended too.)
   The names of a restaurant and of a shop were painted out of the
   photographs first. (The tower of the Paris quarter was tried too, and
   came out a solid cone: it stays built by hand.)

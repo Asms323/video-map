@@ -70,6 +70,11 @@ width over its height>`), and `generate.py` now sends every picture ready
 made, exactly as the generator's own page prepares an upload (the two were
 compared, spot for spot).
 
+And `pack.mjs` wrote every triangle the wrong way round, so the app took each
+surface to look inwards: by day the sun lit the sides turned from it. The five
+models have been turned (the tests now hold every model to it), and `pack.mjs`
+leaves the triangles as the generator wound them.
+
 ## Whose photographs
 
 A model's picture is made out of its photograph, so the photograph's terms

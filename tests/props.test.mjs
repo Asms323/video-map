@@ -73,6 +73,15 @@ test('the models are in models/, each a mesh and its picture, small enough for a
   assert.deepEqual([...new Set(PROPS.map((one) => one.picture ?? one.file))], ['pagoda', 'hall', 'pylon', 'church']);
   const house = readProp(bytesOf('house.vmm'));
   assert.ok(house && house.corners > 2000 && house.indices.length / 3 > 3000 && near(house.top, 1, 1e-4) && house.reach < 0.7);
+  // (Its roof looks up: the surfaces at its top are turned to the sky.)
+  let roofs = 0;
+  let turned = 0;
+  for (let i = 0; i < house.corners; i += 1) {
+    if (house.positions[i * 3 + 2] < 0.9) continue;
+    roofs += 1;
+    turned += house.normals[i * 3 + 2];
+  }
+  assert.ok(roofs > 50 && turned / roofs > 0.5, `the house's roof looks ${(turned / roofs).toFixed(2)} up`);
   for (const file of new Set(PROPS.map((one) => one.picture ?? one.file))) {
     // One high as it is packed, standing on the ground; its picture a JPEG.
     const mesh = readProp(bytesOf(`${file}.vmm`));
@@ -86,6 +95,15 @@ test('the models are in models/, each a mesh and its picture, small enough for a
     }
     assert.ok(near(low, 0, 0.002) && near(high, 1, 1e-4) && near(mesh.top, 1, 1e-4), `${file}: from ${low} to ${high}`);
     assert.ok(mesh.reach > 0.25 && mesh.reach < 1.1, `${file}: reaches ${mesh.reach.toFixed(2)}`);
+    // Every triangle is wound anticlockwise seen from outside, so that each surface is known to look outwards
+    // and the sun lights the side that is turned to it: the space the mesh encloses, summed that way, is more
+    // than nothing. (The first models were packed inside out.)
+    let space = 0;
+    for (let t = 0; t < mesh.indices.length; t += 3) {
+      const [a, b, c] = [0, 1, 2].map((k) => [0, 1, 2].map((axis) => mesh.positions[mesh.indices[t + k] * 3 + axis]));
+      space += (a[0] * (b[1] * c[2] - b[2] * c[1]) + a[1] * (b[2] * c[0] - b[0] * c[2]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
+    }
+    assert.ok(space > 0.02, `${file}: encloses ${space.toFixed(3)}`);
     for (let i = 0; i < mesh.uvs.length; i += 1) assert.ok(mesh.uvs[i] >= 0 && mesh.uvs[i] <= 1);
     for (let i = 0; i < mesh.corners; i += 97) assert.ok(near(Math.hypot(mesh.normals[i * 3], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]), 1, 1e-4));
     const picture = new Uint8Array(bytesOf(`${file}.jpg`));

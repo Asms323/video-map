@@ -45,12 +45,8 @@ for (let i = 0; i < corners; i += 1) {
     max[k] = Math.max(max[k], place[k]);
   }
 }
-// (Turning it over, north for south, turns every triangle inside out: each is given the other way round.)
-for (let t = 0; t < indices.length; t += 3) {
-  const keep = indices[t + 1];
-  indices[t + 1] = indices[t + 2];
-  indices[t + 2] = keep;
-}
+// (That is a quarter turn about the line from west to east, not a mirroring: every triangle stays wound as it
+// was, anticlockwise seen from outside, which is what the app works out the lie of each surface from.)
 
 // The file: 'VMM1'; corners; corner numbers; the box it lies in (6 numbers); then every corner's place as
 // three whole numbers from 0 to 65535 across that box; its place on the picture as two; and the triangles.
