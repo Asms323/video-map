@@ -821,6 +821,7 @@ uniform vec3 u_sun;      // the way to the sun: east, north, up
 uniform float u_day;     // 1 while the sun is up, 0 once it is down
 uniform float u_night;   // 0 by day, 1 by night, in between at dusk and dawn
 uniform float u_lit;     // how far its picture shows it lit by its lamps: 1 for a photograph taken after dark
+uniform vec2 u_byDay;    // for such a picture, by day: how much brighter its colours are made, and how much of the lamps' colour is taken out of them
 uniform float u_opacity;
 varying vec3 v_world;
 varying vec3 v_normal;
@@ -840,9 +841,9 @@ void main() {
   vec3 light = mix(vec3(0.80, 0.82, 0.88), sky + sunlight * sunned, u_day);
   light = mix(light, vec3(0.16, 0.18, 0.26), u_night);
   // Its own colours. Out of a picture taken by night: what the lamps did not reach is lifted, and the cast
-  // of the lamps' own colour taken half away.
+  // of the lamps' own colour taken part away (a whitewashed wall under violet lamps is white by day).
   float grey = dot(picture, vec3(0.3, 0.59, 0.11));
-  vec3 lifted = pow(mix(picture, vec3(grey), 0.25), vec3(0.6)) * 1.08;
+  vec3 lifted = pow(mix(picture, vec3(grey), u_byDay.y), vec3(0.6)) * 1.08 * u_byDay.x;
   vec3 colour = mix(picture, lifted, u_lit) * light;
   // By night: as the picture has it, lit by its own lamps.
   vec3 glow = picture * u_lit * 1.12;
@@ -1137,7 +1138,7 @@ export class SceneLayer {
     this.modelProgram = link(gl, MODEL_VERTEX, MODEL_FRAGMENT);
     this.modelAt = places(gl, this.modelProgram, ['pos', 'normal', 'surf', 'edge', 'tint', 'light', 'more'], ['matrix', 'opacity', 'sun', 'day', 'night', 'lamps', 'eye', 'pixel', 'skyHigh', 'skyLow', 'time', ...SHADOW_UNIFORMS]);
     this.propProgram = link(gl, PROP_VERTEX, PROP_FRAGMENT);
-    this.propAt = places(gl, this.propProgram, ['pos', 'normal', 'uv'], ['matrix', 'opacity', 'sun', 'day', 'night', 'at', 'turn', 'tall', 'picture', 'lit', ...SHADOW_UNIFORMS]);
+    this.propAt = places(gl, this.propProgram, ['pos', 'normal', 'uv'], ['matrix', 'opacity', 'sun', 'day', 'night', 'at', 'turn', 'tall', 'picture', 'lit', 'byDay', ...SHADOW_UNIFORMS]);
     this.hazeProgram = link(gl, HAZE_VERTEX, HAZE_FRAGMENT);
     this.hazeAt = places(gl, this.hazeProgram, ['pos', 'thick'], ['matrix', 'haze']);
     this.hazeBuffer = null;
@@ -1311,11 +1312,13 @@ export class SceneLayer {
    * Give the scene its models that carry a picture (see props.js): [{ mesh:
    * { positions, normals, uvs, indices } (one high), picture: an image, at:
    * [east, north, up] of its foot in the scene's metres, turn: degrees
-   * clockwise, tall: its height in metres, lit: 0 to 1 }]. One mesh may
-   * stand in several places. A mesh no longer on the list is let go.
+   * clockwise, tall: its height in metres, lit: 0 to 1, gain and plain: for
+   * a picture taken by night, how much brighter it is drawn by day and how
+   * much of the lamps' colour is taken out of it }]. One mesh may stand in
+   * several places. A mesh no longer on the list is let go.
    */
   setProps(list) {
-    this.props = list.map((one) => ({ mesh: one.mesh, picture: one.picture, at: one.at, turn: one.turn ?? 0, tall: one.tall ?? 1, lit: one.lit ?? 0 }));
+    this.props = list.map((one) => ({ mesh: one.mesh, picture: one.picture, at: one.at, turn: one.turn ?? 0, tall: one.tall ?? 1, lit: one.lit ?? 0, gain: one.gain ?? 1, plain: one.plain ?? 0.25 }));
     const used = new Set(this.props.map((one) => one.mesh));
     for (const [mesh, kept] of this.propStore) {
       if (used.has(mesh)) continue;
@@ -1944,6 +1947,7 @@ export class SceneLayer {
         gl.uniform2f(at.turn, Math.cos(angle), Math.sin(angle));
         gl.uniform1f(at.tall, prop.tall);
         gl.uniform1f(at.lit, prop.lit);
+        gl.uniform2f(at.byDay, prop.gain, prop.plain);
         gl.drawElements(gl.TRIANGLES, prop.mesh.indices.length, gl.UNSIGNED_SHORT, 0);
       }
       for (const where of [at.pos, at.normal, at.uv]) gl.disableVertexAttribArray(where);

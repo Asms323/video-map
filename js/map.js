@@ -2272,15 +2272,15 @@ export class MapView {
     const shown = [];
     for (const { prop, east, north } of propsNear(origin)) {
       const kept = this.propFiles.get(prop.file);
-      if (!kept) this.fetchProp(prop.file);
-      else if (kept.mesh) shown.push({ mesh: kept.mesh, picture: kept.picture, at: [east, north, 0], turn: prop.turn ?? 0, tall: prop.height, lit: prop.night ?? 0 });
+      if (!kept) this.fetchProp(prop.file, prop.picture ?? prop.file);
+      else if (kept.mesh) shown.push({ mesh: kept.mesh, picture: kept.picture, at: [east, north, 0], turn: prop.turn ?? 0, tall: prop.height, lit: prop.night ?? 0, gain: prop.day?.gain, plain: prop.day?.plain });
     }
     this.scene.setProps(shown);
     this.propsMade = { origin, shown: shown.length, triangles: shown.reduce((sum, one) => sum + one.mesh.indices.length / 3, 0) };
   }
 
   /** Fetch one such model's mesh and its picture; when both are in, it is put in its places. One that cannot be had is left out, and not asked for again. */
-  fetchProp(file) {
+  fetchProp(file, pictured = file) {
     const kept = { mesh: null, picture: null };
     this.propFiles.set(file, kept);
     const mesh = fetch(`./models/${file}.vmm`)
@@ -2290,7 +2290,7 @@ export class MapView {
       const image = new Image();
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error('no picture'));
-      image.src = `./models/${file}.jpg`;
+      image.src = `./models/${pictured}.jpg`;
     });
     Promise.all([mesh, picture])
       .then(([made, image]) => {

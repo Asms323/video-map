@@ -97,6 +97,20 @@ const blend = (from, to, share) => {
   return hex(a[0] + (b[0] - a[0]) * share, a[1] + (b[1] - a[1]) * share, a[2] + (b[2] - a[2]) * share);
 };
 
+/**
+ * Where the models that were made from photographs stand in the fairground
+ * (see props.js): metres east and north of BOULEVARD_WORLD. What is built by
+ * hand here keeps clear of them.
+ */
+export const WORLD_SPOTS = {
+  pagoda: [57.5, -238],
+  halls: { red: [41, -234], great: [2, -191], small: [40.4, -216] },
+  // Egypt's two gate towers, each with its king seated before it: north of the temple at the water.
+  pylons: [[141.6, 85], [168, 80.6]],
+  // The churches of the Greek village: one at its west front, towards the lagoon; one at its south end.
+  churches: [[183, -9], [203, -42]],
+};
+
 // What things are made of. Plain stuff shows by night in the light trained on it; a lamp gives its own.
 const plain = (colour, light = null, glow = 1) => (light ? { kind: 'plain', colour, light, glow } : { kind: 'plain', colour });
 const lamp = (colour, light, glow = 1) => ({ kind: 'lamp', colour, light, glow });
@@ -420,9 +434,9 @@ const COURSE_LIGHT = '#ffbf5e';
 /**
  * Egypt: the three pyramids, built in courses a man's height tall, every
  * course lit from its foot by night, so that each pyramid is striped with
- * light; the temple at the water, a columned court between two wings, and
- * before it the two pylons with a seated king at the foot of each; the
- * sphinx, and an obelisk.
+ * light; the temple at the water, a columned court between two wings; the
+ * sphinx, and an obelisk. (The two gate towers before the temple are a model
+ * made from a photograph: see props.js.)
  */
 function egypt(model) {
   const riser = plain(SANDSTONE, COURSE_LIGHT, 0.95);
@@ -462,18 +476,8 @@ function egypt(model) {
   for (const side of [-1, 1]) for (let i = 0; i < 3; i += 1) lathe(model, temple, [side * 10.2, 3.6 + i * 3.4], [[0.75, 0], [0.82, 2.5], [0.7, 5.6], [1.15, 6.6], [1.15, 7]], column, { cuts: 8 });
   block(model, temple, [-11.5, 11.5, -1, 12], 0, 0.18, plain('#cdbb92', '#ffc66a', 0.35));
 
-  // The pylons: walls that lean in as they rise, under a cornice that curls out; before each, a king seated.
-  for (const at of [[-39.8, -70.7], [-13.4, -75.1]]) {
-    const to = frame(at, -16 * DEGREES);
-    taper(model, to, [-5.2, 5.2, -2.7, 2.7], [-4.5, 4.5, -2.1, 2.1], 0, 13.2, stone, { top: null });
-    cornice(to, [-4.5, 4.5, -2.1, 2.1], 13.2, 14.7);
-    // (The king sits on the side towards the water.)
-    block(model, to, [-1.9, 1.9, -6.2, -3], 0, 1.4, stone);
-    block(model, to, [-1.5, 1.5, -5.4, -3.2], 1.4, 2.9, gold);
-    taper(model, to, [-1.5, 1.5, -4.4, -3.2], [-1.2, 1.2, -4.2, -3.3], 2.9, 5.6, gold);
-    block(model, to, [-0.75, 0.75, -4.5, -3.3], 5.6, 7.1, gold);
-    taper(model, to, [-1.05, 1.05, -4.6, -3.2], [-0.5, 0.5, -4.3, -3.4], 6.3, 8, gold);
-  }
+  // (The two gate towers before the temple, each with its king seated at its foot, are not built here: they
+  // are a model made from a photograph. See props.js.)
 
   // The sphinx, looking out over the lagoon: a lion lying, with a king's head in its striped cloth. (Where
   // it lies is a judgement: the booklet shows it before the pyramids at the water.)
@@ -795,58 +799,48 @@ function china(model) {
 
 // ── Greece ────────────────────────────────────────────────────────────────
 
+const GREECE_AT = [203, -9]; // the middle of the village
 const WHITEWASH = '#f4f6f8';
-const AEGEAN = '#2a5fb0';
 
 /**
- * The Greek village: whitewashed houses crowded up a low mound, the tallest
- * in the middle, each with its blue door and shutters; three blue domes, and
- * the bell tower of a church with a fourth. North of it the theatre: half a
- * ring of white tiers.
+ * The houses of the Greek village: where each stands (metres east and north
+ * of BOULEVARD_WORLD), how tall it is, and how far it is turned (degrees
+ * clockwise). They crowd up a low mound, the taller in the middle, each
+ * turned its own way, and keep clear of the two churches. (The house itself
+ * is a model made from a photograph: see props.js. How the village is laid
+ * out house by house is made up: the satellite photo shows only that it is
+ * crowded.)
  */
-function greece(model) {
-  const white = plain(WHITEWASH, '#dfe6ff', 0.75);
-  const blue = plain(AEGEAN, '#4f8dff', 0.8);
-  const door = lamp('#2a5fb0', '#5f9dff', 0.7);
-  const warm = lamp('#c8d2e6', '#ffe6b8', 0.9);
-  const dome = (to, at, radius, foot) => {
-    lathe(model, to, at, [[radius * 1.02, foot], [radius * 1.02, foot + 0.7]], white, { cuts: 14 });
-    lathe(model, to, at, ballProfile(radius, foot + 0.7, { rings: 5, until: Math.PI / 2 }), blue, { cuts: 14 });
-  };
+export const GREEK_HOUSES = (() => {
+  const houses = [];
   let n = 0;
   for (let row = -2; row <= 2; row += 1) {
     for (let column = -2; column <= 2; column += 1) {
       n += 1;
       const far = Math.hypot(column * 9.4, row * 10.4);
       if (far > 25) continue;
-      const pick = chance(n, 1);
-      const at = [column * 9.4 + (pick - 0.5) * 3, row * 10.4 + (chance(n, 2) - 0.5) * 3];
-      const to = frame(at, (-8 + 16 * chance(n, 3)) * DEGREES);
-      const half = [3.6 + 1.6 * chance(n, 4), 3.4 + 1.4 * chance(n, 5)];
-      const tall = 5.5 + 5.5 * (1 - far / 26) + 1.5 * chance(n, 6);
-      block(model, to, [-half[0], half[0], -half[1], half[1]], 0, tall, white);
-      // (A parapet with rounded shoulders, as the houses of the islands have: a low block set back.)
-      block(model, to, [-half[0] + 0.5, half[0] - 0.5, -half[1] + 0.5, half[1] - 0.5], tall, tall + 0.5, white);
-      // An upper room on some; a dome on others.
-      if (pick > 0.62) block(model, to, [-half[0] + 0.4, half[0] * 0.2, -half[1] + 0.4, half[1] - 1], tall + 0.5, tall + 3.4, white);
-      else if (pick < 0.2) dome(to, [0, 0], Math.min(half[0], half[1]) * 0.62, tall + 0.5);
-      const floors = Math.max(Math.floor(tall / 3.2), 1);
-      const rows = Array.from({ length: floors }, (_, floor) => [floor * 3.2 + 0.2, floor * 3.2 + 2.4]);
-      for (const side of ['south', 'east', 'north', 'west']) panes(model, to, [-half[0], half[0], -half[1], half[1]], side, rows, 2, (floor, bay) => (floor === 0 && bay === 0 ? door : (floor + bay + n) % 3 === 0 ? warm : door), { share: 0.3, margin: 0.9 });
+      const at = [GREECE_AT[0] + column * 9.4 + (chance(n, 1) - 0.5) * 3, GREECE_AT[1] + row * 10.4 + (chance(n, 2) - 0.5) * 3];
+      // (No house where a church stands, nor hard up against one: a church is over 20 m long and 7 m deep.)
+      if (WORLD_SPOTS.churches.some(([east, north]) => Math.hypot(at[0] - east, at[1] - north) < 15)) continue;
+      houses.push({ at, height: Math.round((6.4 + 2.2 * (1 - far / 26) + 0.9 * chance(n, 6)) * 10) / 10, turn: Math.floor(chance(n, 3) * 4) * 90 + Math.round((chance(n, 4) - 0.5) * 16) });
     }
   }
-  // The church: a white tower, an arched opening for the bell under a blue dome.
-  const tower = frame([-10, -24]);
-  block(model, tower, [-2.1, 2.1, -2.1, 2.1], 0, 9.5, white);
-  block(model, tower, [-1.7, 1.7, -1.7, 1.7], 9.5, 12.2, white);
-  for (const side of ['south', 'east', 'north', 'west']) panes(model, tower, [-1.7, 1.7, -1.7, 1.7], side, [[10, 11.6]], 1, lamp('#3a4a66', '#ffe6b8', 0.8), { share: 0.4, margin: 0.2 });
-  dome(tower, [0, 0], 1.75, 12.2);
-  // The theatre: tiers rising to the north, the stage to the south.
+  return houses;
+})();
+
+/**
+ * The Greek village's theatre: half a ring of white tiers rising to the
+ * north, the stage to the south. (The village's houses and its two churches
+ * are models made from a photograph: see props.js.)
+ */
+function greece(model) {
+  // (By night it is washed in a soft violet-white light, as the photograph of the village shows it.)
+  const white = plain(WHITEWASH, '#b8b0e6', 0.62);
   const theatre = frame([7.8, 57]);
   const tiers = [];
   for (let i = 0; i < 8; i += 1) tiers.push([9 + i * 1.9, i * 0.75], [9 + i * 1.9, (i + 1) * 0.75]);
   tiers.push([24.5, 6], [24.5, 0]);
-  lathe(model, theatre, [0, 0], tiers, plain('#efe9dc', '#dfe6ff', 0.55), { cuts: 20, from: 0, sweep: Math.PI, smooth: false });
+  lathe(model, theatre, [0, 0], tiers, plain('#efe9dc', '#b8b0e6', 0.5), { cuts: 20, from: 0, sweep: Math.PI, smooth: false });
   block(model, theatre, [-11, 11, -9, -5], 0, 4.5, white);
   return {};
 }
@@ -1255,7 +1249,7 @@ export const WORLD_PARTS = [
   { id: 'blvd-world-rock', name: 'The rock at the entrance, Boulevard World', at: [-97, -205], height: 30, reach: 135, clear: 62, model: rock, shade: { radius: 44, height: 22 } },
   { id: 'blvd-world-entrance', name: 'The entrance, Boulevard World', at: [-136, -295], height: 21, reach: 55, clear: 52, model: entrance },
   { id: 'blvd-world-china', name: 'The Chinese quarter, Boulevard World', at: [2, -191], height: 12, reach: 82, clear: 80, model: china },
-  { id: 'blvd-world-greece', name: 'The Greek village, Boulevard World', at: [203, -9], height: 16.2, reach: 85, clear: 34, model: greece },
+  { id: 'blvd-world-greece', name: 'The Greek theatre, Boulevard World', at: GREECE_AT, height: 6, reach: 85, clear: 34, model: greece },
   { id: 'blvd-world-bridge', name: 'The white bridge, Boulevard World', at: [149, -29.3], height: 3.5, reach: 66, clear: 0, model: whiteBridge },
   { id: 'blvd-world-venice', name: 'Little Venice, Boulevard World', at: [95, -40], height: 30.5, reach: 92, clear: 62, model: venice },
   { id: 'blvd-world-paris', name: 'The Paris quarter, Boulevard World', at: [-207.9, -88.6], height: EIFFEL_TALL, reach: 84, clear: 50, model: paris },

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { BOULEVARD_WORLD } from '../js/boulevard.js';
+import { BOULEVARD_WORLD, GREEK_HOUSES, WORLD_PARTS, WORLD_SPOTS, worldPlace } from '../js/boulevard.js';
 import { landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
 import { PROPS, propNormals, propsNear, readProp } from '../js/props.js';
 
@@ -63,13 +63,21 @@ test('corners at one place share the way the surface looks there, so the light d
 });
 
 test('the models are in models/, each a mesh and its picture, small enough for a phone', () => {
-  assert.deepEqual(PROPS.map((one) => one.id), ['blvd-world-pagoda', 'blvd-world-china-hall', 'blvd-world-china-great-hall', 'blvd-world-china-small-hall']);
-  assert.deepEqual([...new Set(PROPS.map((one) => one.file))], ['pagoda', 'hall']);
-  for (const file of new Set(PROPS.map((one) => one.file))) {
+  assert.deepEqual(PROPS.map((one) => one.id), [
+    'blvd-world-pagoda', 'blvd-world-china-hall', 'blvd-world-china-great-hall', 'blvd-world-china-small-hall', 'blvd-world-pylon-1', 'blvd-world-pylon-2', 'blvd-world-church-1', 'blvd-world-church-2',
+    ...GREEK_HOUSES.map((_, n) => `blvd-world-greek-house-${n + 1}`),
+  ]);
+  assert.equal(new Set(PROPS.map((one) => one.id)).size, PROPS.length);
+  assert.deepEqual([...new Set(PROPS.map((one) => one.file))], ['pagoda', 'hall', 'pylon', 'church', 'house']);
+  // (The house is a piece cut off the church's model, and keeps the church's picture.)
+  assert.deepEqual([...new Set(PROPS.map((one) => one.picture ?? one.file))], ['pagoda', 'hall', 'pylon', 'church']);
+  const house = readProp(bytesOf('house.vmm'));
+  assert.ok(house && house.corners > 2000 && house.indices.length / 3 > 3000 && near(house.top, 1, 1e-4) && house.reach < 0.9);
+  for (const file of new Set(PROPS.map((one) => one.picture ?? one.file))) {
     // One high as it is packed, standing on the ground; its picture a JPEG.
     const mesh = readProp(bytesOf(`${file}.vmm`));
-    assert.ok(mesh && mesh.corners > 10000 && mesh.corners <= 65535, `${file}: ${mesh?.corners} corners`);
-    assert.ok(mesh.indices.length / 3 > 15000 && mesh.indices.length / 3 <= 32000, `${file}: ${mesh.indices.length / 3} triangles`);
+    assert.ok(mesh && mesh.corners > 4000 && mesh.corners <= 65535, `${file}: ${mesh?.corners} corners`);
+    assert.ok(mesh.indices.length / 3 > 6000 && mesh.indices.length / 3 <= 32000, `${file}: ${mesh.indices.length / 3} triangles`);
     let low = Infinity;
     let high = -Infinity;
     for (let i = 2; i < mesh.positions.length; i += 3) {
@@ -77,7 +85,7 @@ test('the models are in models/, each a mesh and its picture, small enough for a
       high = Math.max(high, mesh.positions[i]);
     }
     assert.ok(near(low, 0, 0.002) && near(high, 1, 1e-4) && near(mesh.top, 1, 1e-4), `${file}: from ${low} to ${high}`);
-    assert.ok(mesh.reach > 0.25 && mesh.reach < 1, `${file}: reaches ${mesh.reach.toFixed(2)}`);
+    assert.ok(mesh.reach > 0.25 && mesh.reach < 1.1, `${file}: reaches ${mesh.reach.toFixed(2)}`);
     for (let i = 0; i < mesh.uvs.length; i += 1) assert.ok(mesh.uvs[i] >= 0 && mesh.uvs[i] <= 1);
     for (let i = 0; i < mesh.corners; i += 97) assert.ok(near(Math.hypot(mesh.normals[i * 3], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]), 1, 1e-4));
     const picture = new Uint8Array(bytesOf(`${file}.jpg`));
@@ -98,6 +106,21 @@ test('the models are in models/, each a mesh and its picture, small enough for a
     deep = Math.max(deep, Math.abs(hall.positions[i + 1]));
   }
   assert.ok(near(long * 2, 21.9, 0.2) && near(deep * 2, 13.9, 0.2), `${long * 2} by ${deep * 2}`);
+  // The Greek village: fifteen houses of 6.5 to 9.5 m, each turned its own way, all within 30 m of the
+  // village's middle, and none where a church stands.
+  assert.equal(GREEK_HOUSES.length, 15);
+  const village = WORLD_PARTS.find((one) => one.id === 'blvd-world-greece').at;
+  for (const one of GREEK_HOUSES) {
+    assert.ok(one.height >= 6.4 && one.height <= 9.6 && Number.isInteger(one.turn) && one.turn >= -8 && one.turn < 280, JSON.stringify(one));
+    assert.ok(Math.hypot(one.at[0] - village[0], one.at[1] - village[1]) < 30);
+    for (const spot of WORLD_SPOTS.churches) assert.ok(Math.hypot(one.at[0] - spot[0], one.at[1] - spot[1]) >= 15, `a house stands in the church at ${spot}`);
+  }
+  assert.ok(new Set(GREEK_HOUSES.map((one) => Math.round(one.turn / 90))).size >= 3, 'turned three ways at least');
+  // And each of them stands where the list of the fairground's spots has it.
+  const placed = (id) => PROPS.find((one) => one.id === id).at;
+  assert.deepEqual(placed('blvd-world-pagoda'), worldPlace(WORLD_SPOTS.pagoda));
+  assert.deepEqual([placed('blvd-world-pylon-1'), placed('blvd-world-pylon-2')], WORLD_SPOTS.pylons.map(worldPlace));
+  assert.deepEqual([placed('blvd-world-church-1'), placed('blvd-world-church-2')], WORLD_SPOTS.churches.map(worldPlace));
 });
 
 test('the pagoda of Boulevard World: a mesh made from a photograph, and its picture', () => {
@@ -139,7 +162,7 @@ test('the models that carry a picture are shown near them only; each has its cle
   const box = (east, north, half) => [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([x, y]) => [prop.at[0] + (east + x * half) / squeeze, prop.at[1] + (north + y * half) / METERS]);
   assert.deepEqual([...replacedByLandmarks([{ id: 1, ring: box(3, -2, 8) }, { id: 2, ring: box(200, 300, 8) }])], [1]);
   // Its shadow: a footprint 13 m across, 25 m tall, where it stands.
-  assert.equal(landmarkShades().filter((one) => [25, 11, 13, 6.5].includes(one.height)).length >= 4, true);
+  assert.equal(landmarkShades().length, 4 + 9 + PROPS.length);
   const shade = landmarkShades().find((one) => one.height === 25);
   assert.ok(shade && shade.polygons[0][0].every(([lng, lat]) => Math.hypot((lng - prop.at[0]) * squeeze, (lat - prop.at[1]) * METERS) < 6.6));
 });

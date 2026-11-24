@@ -20,30 +20,48 @@
 // one high: it is given its height in metres where it is drawn, so that one
 // mesh may stand in several places, at several sizes.
 
-import { worldPlace } from './boulevard.js';
+import { GREEK_HOUSES, WORLD_SPOTS, worldPlace } from './boulevard.js';
 
 /**
- * The models, each where it stands: id; file: its name in models/ (one file
- * may stand in several places); at: [lng, lat] of the middle of its foot;
+ * The models, each where it stands: id; file: the name of its mesh in
+ * models/ (one may stand in several places); picture: the name of its
+ * picture there, where that is not the mesh's own (a piece cut off a model
+ * keeps the whole model's picture); at: [lng, lat] of the middle of its foot;
  * height in metres; turn: how far it is turned, in degrees clockwise (its
  * front, the side the photograph showed, looks south at 0); night: how far
  * its picture shows it as its lamps light it by night (1: a photograph
- * taken after dark; 0: one taken by day); within: shown only for a view
+ * taken after dark; 0: one taken by day); day: for a picture taken by night,
+ * how it is drawn by day: { gain: how much brighter, plain: how much of the
+ * lamps' colour is taken out of it, 0 to 1 }; within: shown only for a view
  * whose middle is no further off than this, in metres; clear: within this
  * many metres of its middle the map's own buildings are taken out for it;
  * shade: a footprint and a height for the shadow it throws (see
  * landmarks.js, which reads both).
  */
+// (A whitewashed wall photographed under violet lamps: by day it is drawn brighter, and with half their colour
+// taken out; more, and the blue of the domes would go with it.)
+const WHITEWASHED = { gain: 1.5, plain: 0.55 };
+
 export const PROPS = [
-  // The Chinese quarter of Boulevard World, from the owner's photographs of it by night.
-  // The pagoda:
-  { id: 'blvd-world-pagoda', name: 'The pagoda, Boulevard World', file: 'pagoda', at: worldPlace([57.5, -238]), height: 31, turn: 90, night: 1, within: 4000, clear: 16, shade: { radius: 6.5, height: 25 } },
+  // Boulevard World, from the photographs of it by night that the app's owner sent. All within the fairground.
+  // The Chinese quarter. The pagoda:
+  { id: 'blvd-world-pagoda', name: 'The pagoda, Boulevard World', file: 'pagoda', at: worldPlace(WORLD_SPOTS.pagoda), height: 31, turn: 90, night: 1, within: 4000, clear: 16, shade: { radius: 6.5, height: 25 } },
   // The red hall beside it: two storeys, 22 m long, its shop front to the west.
-  { id: 'blvd-world-china-hall', name: 'The red hall, Boulevard World', file: 'hall', at: worldPlace([41, -234]), height: 17, turn: 90, night: 1, within: 4000, clear: 14, shade: { radius: 8, height: 11 } },
+  { id: 'blvd-world-china-hall', name: 'The red hall, Boulevard World', file: 'hall', at: worldPlace(WORLD_SPOTS.halls.red), height: 17, turn: 90, night: 1, within: 4000, clear: 14, shade: { radius: 8, height: 11 } },
   // The same hall stands for the quarter's two other halls, which no photograph shows whole: the great hall,
   // 26 m long with its front to the south, and the small one north of the red hall.
-  { id: 'blvd-world-china-great-hall', name: 'The great hall, Boulevard World', file: 'hall', at: worldPlace([2, -191]), height: 20, turn: 0, night: 1, within: 4000, clear: 0, shade: { radius: 9, height: 13 } },
-  { id: 'blvd-world-china-small-hall', name: 'The small hall, Boulevard World', file: 'hall', at: worldPlace([40.4, -216]), height: 10, turn: 90, night: 1, within: 4000, clear: 0, shade: { radius: 5, height: 6.5 } },
+  { id: 'blvd-world-china-great-hall', name: 'The great hall, Boulevard World', file: 'hall', at: worldPlace(WORLD_SPOTS.halls.great), height: 20, turn: 0, night: 1, within: 4000, clear: 0, shade: { radius: 9, height: 13 } },
+  { id: 'blvd-world-china-small-hall', name: 'The small hall, Boulevard World', file: 'hall', at: worldPlace(WORLD_SPOTS.halls.small), height: 10, turn: 90, night: 1, within: 4000, clear: 0, shade: { radius: 5, height: 6.5 } },
+  // Egypt: the two gate towers before the temple, each with its king seated at its foot and a bowl of fire on
+  // a stand: one model, standing twice. They face the lagoon, a little west of south.
+  ...WORLD_SPOTS.pylons.map((at, n) => ({ id: `blvd-world-pylon-${n + 1}`, name: 'A gate tower of Egypt, Boulevard World', file: 'pylon', at: worldPlace(at), height: 12.5, turn: 16, night: 1, within: 4000, clear: 9, shade: { radius: 4.5, height: 11 } })),
+  // Greece: the church with its blue dome, 22 m long. It stands twice in the village: at its west front,
+  // facing the lagoon, and smaller at its south end, facing south.
+  { id: 'blvd-world-church-1', name: 'The church, Greek village, Boulevard World', file: 'church', at: worldPlace(WORLD_SPOTS.churches[0]), height: 14, turn: 90, night: 1, day: WHITEWASHED, within: 4000, clear: 0, shade: { radius: 5, height: 9 } },
+  { id: 'blvd-world-church-2', name: 'The chapel, Greek village, Boulevard World', file: 'church', at: worldPlace(WORLD_SPOTS.churches[1]), height: 11, turn: 0, night: 1, day: WHITEWASHED, within: 4000, clear: 0, shade: { radius: 4, height: 7 } },
+  // And the village's houses: the low house at the church's side, cut off the same model, standing once
+  // for every house (see GREEK_HOUSES in boulevard.js for where, and why that is made up).
+  ...GREEK_HOUSES.map((house, n) => ({ id: `blvd-world-greek-house-${n + 1}`, name: 'A house of the Greek village, Boulevard World', file: 'house', picture: 'church', at: worldPlace(house.at), height: house.height, turn: house.turn, night: 1, day: WHITEWASHED, within: 4000, clear: 0, shade: { radius: 3.6, height: Math.round(house.height * 8) / 10 } })),
 ];
 
 const HEAD_BYTES = 36;

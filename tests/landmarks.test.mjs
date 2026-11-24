@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { WORLD_PARTS } from '../js/boulevard.js';
 import { LANDMARKS, STAYED_BRIDGES, landmarkBeacons, landmarkModels, landmarkRoofs, landmarkShades, landmarkSlabs, replacedByLandmarks } from '../js/landmarks.js';
 import { ModelMesh, cutMesh } from '../js/models.js';
+import { PROPS } from '../js/props.js';
 import { RoofMesh, roofDecks, roofingOf } from '../js/roofs.js';
 import { facesOf } from './model-faces.mjs';
 
@@ -713,15 +714,16 @@ test('replacedByLandmarks picks the tower\'s own outline, not the block it stand
   assert.equal(landmark('tv-tower').clear, 0);
   const shades = landmarkShades();
   // (Between those two and the bridge's masts come the shades of Boulevard World: nine, three of them the pyramids';
-  // and those of the pagoda and the three halls there, models that carry a picture.)
-  assert.equal(shades.length, 4 + 9 + 4);
+  // and those of the models there that carry a picture: the pagoda, three halls, two gate towers, two churches,
+  // and the houses of the Greek village.)
+  assert.equal(shades.length, 4 + 9 + PROPS.length);
   assert.deepEqual(shades.slice(0, 2).map((shade) => [shade.height, shade.base, shade.polygons.length, shade.polygons[0][0].length]), [[150, 0, 1, 13], [58, 0, 1, 13]]);
   assert.deepEqual(shades.slice(2, 11).map((shade) => Math.round(shade.height)), [34, 100, 7, 13, 15, 22, 10, 12, 28]);
   // So do the two masts of the Wadi Laban Bridge, which stand 405 m apart along its deck.
   const bridge = STAYED_BRIDGES[0];
   assert.deepEqual([bridge.id, bridge.masts, bridge.masts[1] - bridge.masts[0]], ['wadi-laban', [-202.5, 202.5], 405]);
-  assert.deepEqual(shades.slice(11, 15).map((shade) => shade.height), [25, 11, 13, 6.5]);
-  const masts = shades.slice(15).map((shade) => {
+  assert.deepEqual(shades.slice(11, 19).map((shade) => shade.height), [25, 11, 13, 6.5, 11, 11, 9, 7]);
+  const masts = shades.slice(-2).map((shade) => {
     const ring = shade.polygons[0][0];
     const middle = [(ring[0][0] + ring[2][0]) / 2, (ring[0][1] + ring[2][1]) / 2];
     return { height: shade.height, at: along(bridge, from(bridge, middle)) };
