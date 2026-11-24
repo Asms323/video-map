@@ -13,7 +13,7 @@ import { GLASS, MATERIALS, SHAPES, allowedNow, chooseParked, chooseVehicle } fro
 
 const METERS_PER_DEGREE = 111320;
 const LANE_METERS = 3.4;
-const NARROW_LANE_METERS = 2; // on a residential street, where cars are parked along both sides
+const NARROW_LANE_METERS = 3.2; // on a residential street: asphalt from wall to wall, cars parked along both sides of it
 
 // Bridges. The map says which stretches are on a bridge, and gives each a
 // number for its level; how high that is, it does not say. The numbers only

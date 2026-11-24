@@ -456,6 +456,9 @@ void main() {
   if (front > 0.5) {
     // Towers are glass in a frame of metal, and the glass shows the sky: lighter the higher it is.
     vec3 glassTint = mix(vec3(0.36, 0.44, 0.54), mix(vec3(0.40, 0.54, 0.68), mix(vec3(0.42, 0.58, 0.60), vec3(0.58, 0.52, 0.44), step(40.0, seed)), step(20.0, seed)), tower);
+    // (A house's windows are small and stand dark in its wall by day: so Riyadh's villas show in photographs.)
+    glassTint = mix(glassTint, vec3(0.20, 0.215, 0.24), house);
+    mirror *= mix(1.0, 0.55, house);
     if (floors > 2.4 && span > 2.2 && up < floors) {
       float storey = mix(3.2, mix(3.4, 3.7, tower), step(0.5, kind) * step(kind, 2.5));
       float levels = max(floor(floors / storey + 0.4), 1.0);
@@ -473,10 +476,10 @@ void main() {
       fx -= column;
       float pick = chance(vec2(column + seed * 3.7, level * 1.3 + floor(span * 2.0)));
       // The window's place in its bay: left, right, bottom, top.
-      vec4 box = mix(vec4(0.22, 0.78, 0.26, 0.76), mix(vec4(0.31, 0.69, 0.30, 0.72), vec4(0.05, 0.95, 0.12, 0.90), tower), step(0.5, kind) * step(kind, 2.5));
+      vec4 box = mix(vec4(0.22, 0.78, 0.26, 0.76), mix(vec4(0.375, 0.625, 0.27, 0.72), vec4(0.05, 0.95, 0.12, 0.90), tower), step(0.5, kind) * step(kind, 2.5));
       box = mix(box, vec4(0.05, 0.95, 0.02, 0.70), shopFloor);
-      // A house does not have a window in every bay of every floor.
-      float there = mix(1.0, step(0.22, pick), house);
+      // A house has a window in half its bays or so: a villa keeps its walls to the street mostly blank.
+      float there = mix(1.0, step(0.5, pick), house);
       float gx = (fx - box.x) / (box.y - box.x);
       float gy = (fy - box.z) / (box.w - box.z);
       // (Edges are softened over a pixel, so that a window does not flicker as the map moves.)
@@ -546,7 +549,7 @@ void main() {
       lights = mix(lights, board * 1.05 + 0.08, onBoard);
       // Seen from so far off that a bay is a pixel or two, a wall is the even mixture of its wall and its
       // glass, and gives the even mixture of its lights.
-      float cover = (box.y - box.x) * (box.w - box.z) * mix(1.0, 0.78, house);
+      float cover = (box.y - box.x) * (box.w - box.z) * mix(1.0, 0.5, house);
       vec3 mean = mix(wall, mix(glassTint * 0.66, mirrored(thrownFlat) * mix(vec3(1.0), min(glassTint * 1.7, vec3(1.0)), 0.55), mirror), cover);
       // (A floor that is lit from end to end still shows as a band of light from where its windows no
       // longer do; from further off than that, a tower has the even light of all its floors.)

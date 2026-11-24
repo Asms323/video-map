@@ -21,7 +21,7 @@ import { drawBox, heightAlong, localTime, pointAlong, seededRandom } from './lif
 /** How many people walk along a kilometre of street of each kind when the pavements are at their fullest: both pavements together. */
 const WALKERS_PER_KM = { minor: 5, tertiary: 9, secondary: 15, primary: 17 };
 /** How wide the pavement beside each kind of street is, in metres (as the map lays it). */
-const PAVEMENT_WIDE = { minor: 2.6, tertiary: 3.5, secondary: 3.5, primary: 4.5 };
+const PAVEMENT_WIDE = { minor: 1.3, tertiary: 3.5, secondary: 3.5, primary: 4.5 };
 const ON_THE_LEVEL_METERS = 0.5; // a street is walked along only where it lies on the ground
 const STRAIGHT_ON = 0.5; // a street leads straight on if it turns by less than sixty degrees
 const TURN_BACK_SHARE = 0.25; // of those who could go straight on, so many turn back all the same

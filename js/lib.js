@@ -1153,7 +1153,7 @@ export function buildingFootprints(features, box, estimates, skip) {
 // so main roads are drawn over the side streets that meet them.
 const CITY_ROADS = [
   { id: 'service', classes: ['service', 'track'], meters: 4, minzoom: 14 },
-  { id: 'minor', classes: ['minor', 'busway'], meters: 7, minzoom: 12 },
+  { id: 'minor', classes: ['minor', 'busway'], meters: 10.5, minzoom: 12 },
   { id: 'mid', classes: ['secondary', 'tertiary'], meters: 9.5, minzoom: 9 },
   { id: 'main', classes: ['primary'], meters: 12, minzoom: 7 },
   { id: 'big', classes: ['motorway', 'trunk'], meters: 14, minzoom: 5 },
@@ -1166,7 +1166,8 @@ const PATH_METERS = 2.2;
  * service lane or a track. The map data seldom has pavements of its own; these
  * are laid by rule, the same along every street of a kind.
  */
-export const PAVEMENT_METERS = { minor: 2.6, mid: 3.5, main: 4.5 };
+// (A house street has none: its asphalt runs to a raised strip at the foot of the plot walls, which the app lays itself. See streetAprons in houses.js.)
+export const PAVEMENT_METERS = { minor: 0, mid: 3.5, main: 4.5 };
 const PAVING = '#e2dfd8'; // paving stones: paler and greyer than the bare ground beside them
 const PAVING_EDGE = '#9f9a8e'; // where the pavement ends against the plots
 const KERB = '#f1eee8'; // the kerb stone between the pavement and the road
@@ -1732,7 +1733,8 @@ export function cityModelStyle(base, { buildings = null, night = 0, sunlight = 1
     paint: {
       'fill-extrusion-color': colour,
       'fill-extrusion-base': height,
-      'fill-extrusion-height': ['+', height, 1.2],
+      // (A block laid flat, for the app's own houses to stand in its place, has no slab either: see houses.js.)
+      'fill-extrusion-height': ['+', height, ['case', ['boolean', ['feature-state', 'flat'], false], 0, 1.2]],
       'fill-extrusion-vertical-gradient': false,
     },
   });
@@ -1774,7 +1776,8 @@ export function cityModelStyle(base, { buildings = null, night = 0, sunlight = 1
       ['+', floor, ['*', ['to-number', ['get', 'num_floors'], 0], FLOOR_METERS]],
       ['+', floor, usual],
     ];
-    const height = ['case', ['!=', ['feature-state', 'h'], null], ['to-number', ['feature-state', 'h'], 0], recorded];
+    // (A block the app has divided into houses of its own lies flat: see houses.js.)
+    const height = ['case', ['boolean', ['feature-state', 'flat'], false], floor, ['!=', ['feature-state', 'h'], null], ['to-number', ['feature-state', 'h'], 0], recorded];
     // A metro station under a street is on record as a building too: leave what is underground out.
     const aboveGround = ['!=', ['get', 'is_underground'], true];
     const whole = ['all', aboveGround, ['!=', ['get', 'has_parts'], true]]; // one with parts is drawn as its parts

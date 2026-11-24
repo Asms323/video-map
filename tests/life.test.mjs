@@ -907,8 +907,8 @@ test('on a residential street the moving cars keep clear of the parked ones', ()
   let seen = 0;
   traffic.eachVehicle((type, x, y, east) => {
     seen += 1;
-    // Two-way: a metre to the right of the middle. One-way: down the middle.
-    if (y < 50) assert.ok(near(y, east > 0 ? -1 : 1, 1e-9), `${y}`);
+    // Two-way: 1.6 m to the right of the middle, clear of the cars parked along the walls. One-way: down the middle.
+    if (y < 50) assert.ok(near(y, east > 0 ? -1.6 : 1.6, 1e-9), `${y}`);
     else assert.ok(near(y, 100, 1e-9), `${y}`);
   });
   assert.ok(seen > 20, String(seen));

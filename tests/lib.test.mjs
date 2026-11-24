@@ -673,11 +673,11 @@ test('cityModelStyle draws the city as a model on drawn ground', () => {
   assert.equal(buildings['source-layer'], 'building');
   assert.deepEqual(buildings.paint['fill-extrusion-height'], ['coalesce', ['get', 'render_height'], 5]);
 
-  // A 7 m street is about 6.4 px wide at zoom 16 and doubles with every zoom step.
+  // A house street, 10.5 m of asphalt from kerb strip to kerb strip, is about 9.5 px wide at zoom 16 and doubles with every zoom step.
   const width = style.layers[at('city-road-minor')].paint['line-width'];
   assert.deepEqual(width.slice(0, 3), ['interpolate', ['exponential', 2], ['zoom']]);
-  assert.ok(Math.abs(width[width.indexOf(16) + 1] - 7 / 1.1) < 1e-9);
-  assert.ok(Math.abs(width[width.indexOf(20) + 1] - (7 / 1.1) * 16) < 1e-9);
+  assert.ok(Math.abs(width[width.indexOf(16) + 1] - 10.5 / 1.1) < 1e-9);
+  assert.ok(Math.abs(width[width.indexOf(20) + 1] - (10.5 / 1.1) * 16) < 1e-9);
 
   // Shadows are a flat 3D layer of their own, filled in by the app as the sun moves.
   const shadows = style.layers[at('city-shadows')];
@@ -707,7 +707,9 @@ test('cityModelStyle draws the city as a model on drawn ground', () => {
   // A slab on each windowed building hides the windows that would run across its roof.
   const roofs = style.layers[at('city-roofs')];
   assert.deepEqual(roofs.paint['fill-extrusion-base'], ['coalesce', ['get', 'render_height'], 5]);
-  assert.deepEqual(roofs.paint['fill-extrusion-height'], ['+', ['coalesce', ['get', 'render_height'], 5], 1.2]);
+  // (A slab 1.2 m thick; none on a block laid flat for the app's own houses to stand in its place.)
+  const slab = ['case', ['boolean', ['feature-state', 'flat'], false], 0, 1.2];
+  assert.deepEqual(roofs.paint['fill-extrusion-height'], ['+', ['coalesce', ['get', 'render_height'], 5], slab]);
   assert.equal(roofs.minzoom, 14, 'from a level further out than the windows: a far tile is drawn with the windows of the next level in');
 
   // Tunnels are a faint trace under everything; bridges lie over the roads on the ground.
@@ -720,9 +722,9 @@ test('cityModelStyle draws the city as a model on drawn ground', () => {
   assert.ok(ground.includes('["match",["get","brunnel"],["bridge","tunnel"],false,true]'), 'ground roads leave out bridges and tunnels');
   assert.ok(JSON.stringify(style.layers[at('city-bridge')].filter).includes('["==",["get","brunnel"],"bridge"]'));
   assert.ok(JSON.stringify(style.layers[at('city-tunnels')].filter).includes('["==",["get","brunnel"],"tunnel"]'));
-  // A bridge is as wide as the road it carries: 14 m for a motorway, 7 m for a side street.
+  // A bridge is as wide as the road it carries: 14 m for a motorway, 10.5 m for a side street.
   const bridgeWidth = JSON.stringify(style.layers[at('city-bridge')].paint['line-width']);
-  assert.ok(bridgeWidth.includes('["motorway","trunk"],14') && bridgeWidth.includes('["minor","busway"],7'), bridgeWidth);
+  assert.ok(bridgeWidth.includes('["motorway","trunk"],14') && bridgeWidth.includes('["minor","busway"],10.5'), bridgeWidth);
   // Also on the ground: rail with sleepers, footpaths, lawns and playing fields.
   for (const id of ['city-grass', 'city-pitch', 'city-paths', 'city-rail', 'city-rail-ties', 'city-rail-shade']) assert.ok(at(id) > 0, id);
   // From close by the app builds bridges and viaducts in 3D: their flat drawing fades out as that takes over, and the shade under them stays.
@@ -965,7 +967,7 @@ test('clipLine keeps the parts of a line inside a box, cut at its edges', () => 
 });
 
 test('groundWidth is how much ground a line of the street map takes up', () => {
-  assert.deepEqual(['service', 'minor', 'busway', 'tertiary', 'secondary', 'primary', 'trunk', 'motorway'].map(groundWidth), [4, 7, 7, 9.5, 9.5, 12, 14, 14]);
+  assert.deepEqual(['service', 'minor', 'busway', 'tertiary', 'secondary', 'primary', 'trunk', 'motorway'].map(groundWidth), [4, 10.5, 10.5, 9.5, 9.5, 12, 14, 14]);
   assert.deepEqual(['rail', 'transit', 'path'].map(groundWidth), [5, 5, 2.2]);
   assert.deepEqual(['ferry', 'aerialway', undefined].map(groundWidth), [0, 0, 0]);
   // The roads are drawn to the same widths.
@@ -1113,12 +1115,14 @@ test('cityModelStyle draws one building per outline when it is given the buildin
 
   // Height: the one the app read from the photo if there is one, else the record, else the usual, varied by the building's number.
   const height = layer('city-buildings').paint['fill-extrusion-height'];
-  assert.deepEqual(height.slice(0, 3), ['case', ['!=', ['feature-state', 'h'], null], ['to-number', ['feature-state', 'h'], 0]]);
-  const recorded = JSON.stringify(height[3]);
+  // (First of all: a block the app has divided into houses of its own lies flat, so that those houses stand in its place.)
+  assert.deepEqual(height.slice(0, 3), ['case', ['boolean', ['feature-state', 'flat'], false], ['to-number', ['get', 'min_height'], 0]]);
+  assert.deepEqual(height.slice(3, 5), [['!=', ['feature-state', 'h'], null], ['to-number', ['feature-state', 'h'], 0]]);
+  const recorded = JSON.stringify(height[5]);
   assert.ok(recorded.includes('["get","height"]') && recorded.includes('["get","num_floors"]') && recorded.includes('"residential",7.5') && recorded.includes('["%",["abs",["id"]],5]'), recorded);
   assert.deepEqual(layer('city-buildings').paint['fill-extrusion-base'], ['to-number', ['get', 'min_height'], 0]);
   assert.deepEqual(layer('city-roofs').paint['fill-extrusion-base'], height);
-  assert.deepEqual(layer('city-roofs').paint['fill-extrusion-height'], ['+', height, 1.2]);
+  assert.deepEqual(layer('city-roofs').paint['fill-extrusion-height'], ['+', height, ['case', ['boolean', ['feature-state', 'flat'], false], 0, 1.2]]);
   // Which buildings are towers is settled by the record, so it can be a filter.
   assert.ok(!JSON.stringify(layer('city-towers').filter).includes('feature-state'));
   assert.deepEqual(layer('city-towers').filter.at(-1).slice(0, 1), ['>=']);
@@ -1264,14 +1268,15 @@ test('cityModelStyle lays a pavement along both sides of every street people wal
   assert.ok(ids.indexOf('city-water') < ids.indexOf('city-pavement-edge'));
   // Streets and main roads on the ground; no motorway, service lane, bridge or tunnel.
   const filter = JSON.stringify(paving.filter);
-  assert.ok(filter.includes('["match",["get","class"],["minor","busway","secondary","tertiary","primary"],true,false]'), filter);
+  assert.ok(filter.includes('["match",["get","class"],["secondary","tertiary","primary"],true,false]'), filter);
   assert.ok(filter.includes('["match",["get","brunnel"],["bridge","tunnel"],false,true]'));
   assert.deepEqual(paving.filter, edge.filter);
   assert.deepEqual(Object.keys(PAVEMENT_METERS), ['minor', 'mid', 'main']);
-  assert.ok(Object.values(PAVEMENT_METERS).every((meters) => meters >= 2 && meters <= 5));
-  // As wide as the street and a pavement either side: a side street of 7 m with 2.6 m pavements is 12.2 m, which is 12.2 / 1.1 px at zoom 16.
+  // (A house street has no pavement: its asphalt runs to a raised strip at the foot of the plot walls, laid by the app itself.)
+  assert.ok(Object.values(PAVEMENT_METERS).every((meters) => meters >= 0 && meters <= 5) && PAVEMENT_METERS.minor === 0);
+  // As wide as the street and a pavement either side: a street of 9.5 m with 3.5 m pavements is 16.5 m, which is 16.5 / 1.1 px at zoom 16.
   const width = JSON.stringify(paving.paint['line-width']);
-  assert.ok(width.includes(`["match",["get","class"],["minor","busway"],${7 + 2 * PAVEMENT_METERS.minor},["secondary","tertiary"],${9.5 + 2 * PAVEMENT_METERS.mid},["primary"],${12 + 2 * PAVEMENT_METERS.main},0]`), width);
+  assert.ok(width.includes(`["match",["get","class"],["secondary","tertiary"],${9.5 + 2 * PAVEMENT_METERS.mid},["primary"],${12 + 2 * PAVEMENT_METERS.main},0]`), width);
   assert.deepEqual(paving.paint['line-width'].slice(0, 3), ['interpolate', ['exponential', 2], ['zoom']]);
   assert.equal(paving.paint['line-width'][5], 16);
   // Its edge is a little wider and darker: the line where the pavement ends.

@@ -26,7 +26,7 @@ const GATE_PAINT = [92, 78, 66]; // sheet metal, painted brown
 const GATE_NEAR_STREET_METERS = 16;
 const SMALLEST_SQUARE_METERS = 70; // less than this is a shed, not a house
 const LARGEST_SQUARE_METERS = 900;
-const PAVEMENT_CLEAR_METERS = 3; // a wall keeps this far back from the edge of a road
+const PAVEMENT_CLEAR_METERS = 1.4; // a wall keeps this far back from the edge of a road: the kerb strip at its foot
 const ROAD_SQUARE_METERS = 48;
 const WITHIN_METERS = 1200; // the walls are stood round the houses this near the middle of the scene
 
@@ -89,7 +89,8 @@ export function plotWalls(mesh, buildings, network, origin, light, { fencedAt, b
   };
 
   for (const building of buildings) {
-    if (building.base > 0 || building.replaced || facadeOf(building) !== 'house') continue;
+    // (A house the app has laid out itself has its wall from there: see houses.js.)
+    if (building.base > 0 || building.replaced || building.house !== undefined || facadeOf(building) !== 'house') continue;
     const outer = building.polygons[0]?.[0];
     if (!outer || outer.length < 4) continue;
     const ring = outer.map(([lng, lat]) => [(lng - origin.lng) * squeeze, (lat - origin.lat) * METERS_PER_DEGREE]);

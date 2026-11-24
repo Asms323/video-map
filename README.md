@@ -147,9 +147,26 @@ map opens on the city and keeps to it, and places are looked for in it.
   sign. Every other fuel station gets a plain canopy with pumps.
 - **Mosques with domes and minarets.** Each mosque on the map has a dome on
   its roof and a minaret at a corner, two on a large one.
-- **Pavements.** Along both sides of every street and main road runs a
-  pavement of pale paving, with a kerb at the road and rounded corners at the
-  junctions; a side street runs through the pavement of the road it meets.
+- **Houses as they stand.** The map gives a row of villas as one long flat
+  block. With "Detailed walls and shadows" on, each such block is divided
+  into its houses: plots some 16 to 22 m wide along the street, two rows back
+  to back where the block is deep, a gap of a metre or two between
+  neighbours. Each villa is built of parts, as Riyadh's are: a main part of
+  two storeys, a lower wing beside or before it, an open court for the car,
+  on some a room on the roof. Each has its own colour and style from those
+  its district is built in: tan and peach plaster with canopies of red clay
+  tiles in the east, cream stone in the older north, white and grey with dark
+  trim in the new north. Windows are few, small and dark. Round every plot
+  runs its wall, with a darker band at its foot and a coping on top, gate
+  piers, a dark steel gate or a roller door, a door for people, the
+  electricity meter's box; the court is tiled and many have a shade for the
+  car.
+- **Pavements, and asphalt to the walls.** Along both sides of every main
+  road and through street runs a pavement of pale paving, with a kerb at the
+  road and rounded corners at the junctions. A street of houses has none, as
+  in Riyadh: its asphalt runs from plot wall to plot wall, a little paler
+  and dustier at the edges where the cars stand, with a narrow raised strip
+  at the foot of the walls.
 - **Painted roads.** Main roads have their lanes: a broken line between lanes,
   a line along each edge, a yellow line down the middle where traffic runs
   both ways. A side street has a zebra crossing where it meets a main road,
@@ -337,6 +354,7 @@ Everything is free and needs no account or key.
 | --- | --- | --- |
 | Street map, names, places, road names | [OpenFreeMap](https://openfreemap.org), built from [OpenStreetMap](https://www.openstreetmap.org/copyright) | Drawn on the phone by [MapLibre](https://maplibre.org) |
 | Satellite photos | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. Shown only in the Satellite look. How sharp the photo comes differs from place to place: the service is asked, a square of tiles at a time, and only what it has is fetched. In the 3D city the photo is never shown: it is read on the phone, at one middling level of sharpness, for trees, shadows and the colours of roofs, and the service is asked once per area for the day the photo was taken |
+| What Riyadh's houses and house streets look like | [OpenStreetView-5M](https://huggingface.co/datasets/osv5m/osv5m) (Astruc and others, CVPR 2024): street photographs by Mapillary contributors, CC BY-SA 4.0 | Studied, not shown: the 1,629 photographs taken inside Riyadh were looked through and the houses are built by rules drawn from them. No photograph is in the app or fetched by it |
 | One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
 | Detailed map picture | OpenStreetMap tile servers | [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
 | Place details, speed limits, where the traffic signals stand | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits; and one for all of Riyadh's traffic signals, the same whoever asks it (so nothing of where you are goes with it), whose answer is kept on the phone for a week |
@@ -512,9 +530,20 @@ city the photo is read at one middling level only, which is a few megabytes
 for an hour's driving, and nothing at all with the reading switched off.
 
 Pavements. Hardly any pavement is in the map data. They are laid by rule: the
-same width along every street of a kind (2.6 m beside a side street, up to
-4.5 m beside a main road), none along a motorway or a service lane. Where a
-street really has no pavement, or a wider one, the map does not say.
+same width along every street of a kind (3.5 m beside a through street, 4.5 m
+beside a main road), none along a motorway or a service lane, and none along
+a street of houses, where the asphalt is carried to the foot of the plot walls
+instead. Where a street really has a pavement, or none, the map does not say.
+
+Houses. That a block of villas holds houses of about this size and build is
+what photographs show: the look of Riyadh's houses and house streets was
+studied in 1,629 street photographs taken across the city between 2016 and
+2021 (the OpenStreetView-5M dataset, see below) and in the satellite photo.
+Where one plot ends and the next begins, which house has which shape, colour
+and gate, and where its windows are, is made up by rule, the same way every
+time: nobody has mapped that. A block is only divided where the map has no
+height or floors on record for it, where it is whole in the map data, and in
+districts of villas. The photographs themselves are not part of the app.
 
 Road markings. The lanes painted are the ones the simulated traffic keeps to,
 which go by the class of the road, not by a count of its real lanes. Whether
@@ -737,7 +766,9 @@ js/landmarks.js         the landmarks modelled by hand, as stacks of slabs
 js/models.js            the famous buildings built as true models, face by face
 js/districts.js         the city's districts and what each is like
 js/districts-data.js    where each district lies
-js/plots.js             the walls and gates round the houses
+js/plots.js             the walls and gates round the houses the map gives singly
+js/houses.js            blocks of villas divided into houses, each built of parts,
+                        with its plot, wall and gate; asphalt to the walls
 js/dress.js             metro station footbridges and pavilions, chain stores,
                         shop fronts, mosques
 js/roofs.js             the roofs: cut along the buildings' outlines, their

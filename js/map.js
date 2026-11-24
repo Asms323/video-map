@@ -39,7 +39,8 @@ import {
   withOverlays,
 } from './lib.js';
 import { drawCuttings, overCutting } from './cuttings.js';
-import { characterAt } from './districts.js';
+import { CHARACTERS, characterAt, districtAt } from './districts.js';
+import { dressHouses, parcelHouses, streetAprons } from './houses.js';
 import { PLAIN_FUEL, brandOf, localKind, mosqueExtras, mosquesAmong, stationExtras, storeExtras } from './dress.js';
 import { STAYED_BRIDGES, landmarkBeacons, landmarkModels, landmarkRoofs, landmarkShades, replacedByLandmarks } from './landmarks.js';
 import { drawFarLights, drawLamps, drawRoofLights, drawTrafficLights, lightPoints, shopSpill } from './lights.js';
@@ -463,6 +464,9 @@ export class MapView {
     this.marksMade = null;
     this.roofMesh = new Mesh(); // what stands on the roofs
     this.roofs = []; // the buildings the shadows were last laid for
+    this.houses = []; // the houses the blocks of villas among them were divided into (see houses.js)
+    this.divided = new Set(); // the map's own blocks laid flat because the app draws houses of its own in their place
+    this.mosqueIds = new Set(); // the buildings that are mosques: never divided into houses
     this.roofsMade = null;
     this.casterMesh = new CasterMesh(); // what throws the shadows on walls and roofs
     this.heightMesh = new CasterMesh(); // the tops of the buildings, for the picture of how open to the sky each place is
@@ -494,6 +498,9 @@ export class MapView {
     this.farMade = null;
     this.beaconMesh = new Mesh(); // the red lamps on what is tall
     this.plotMesh = new Mesh(); // the walls round the houses
+    this.houseMesh = new Mesh(); // the plot of each house the app has laid out itself: wall, gate, court (see houses.js)
+    this.apronMesh = new Mesh(); // the asphalt between each house street and the walls along it
+    this.apronsMade = null;
     this.roadsideMesh = new Mesh(); // barriers, sign gantries and the kerbs of medians
     this.signMesh = new Mesh(); // the signs along the roads, and the hoardings beside the great ones
     this.signLightMesh = new Mesh(); // the hoardings as they are lit by night
@@ -530,6 +537,7 @@ export class MapView {
     this.cuttingGlowMesh = new Mesh(); // and the lamps' light on their floors and walls by night
     this.cuttingsMade = null;
     this.plotsMade = null;
+    this.housesMade = null;
     this.modelMesh = new ModelMesh(); // the famous buildings that are true models
     this.modelsMade = null;
     this.roadNames = null; // the layers of names along the roads, and how strongly they are shown
@@ -591,6 +599,7 @@ export class MapView {
       this.lifeMade = null;
       this.network = null;
       this.raiseBuildings(this.heights.keys()); // a new style starts without the heights read from the photo
+      this.divided = new Set(); // and with every block standing: those the app has divided are laid flat again with the shadows
       this.buildingFilters.clear();
       this.extrasMade = null;
       this.clearStreets(true);
@@ -997,6 +1006,20 @@ export class MapView {
     });
   }
 
+  /**
+   * Lay flat the map's own blocks that the app has divided into houses of its
+   * own (see houses.js), and stand up again those it no longer has divided.
+   */
+  flatten(ids) {
+    const next = new Set(ids);
+    this.whenStyled((map) => {
+      if (!map.getSource(BUILDING_SOURCE)) return;
+      for (const id of this.divided) if (!next.has(id)) map.setFeatureState({ source: BUILDING_SOURCE, sourceLayer: 'building', id }, { flat: false });
+      for (const id of next) if (!this.divided.has(id)) map.setFeatureState({ source: BUILDING_SOURCE, sourceLayer: 'building', id }, { flat: true });
+      this.divided = next;
+    });
+  }
+
   /** The footprints of the buildings that reach into a box, from whichever source the style on screen draws them from. */
   footprints(box, estimates) {
     const map = this.map;
@@ -1102,6 +1125,7 @@ export class MapView {
         features = features.concat(marks.features);
         shades = marks.shades;
         counts.mosques = mosques.length;
+        this.mosqueIds = new Set(mosques.map((mosque) => mosque.id).filter((id) => id !== undefined));
       }
       counts = { ...counts, stations: stations.size, entrances: entrances.size, stores: stores.size, locals: locals.size };
     } catch {
@@ -1221,6 +1245,8 @@ export class MapView {
       made?.box &&
       made.tiles === this.tilesLoaded &&
       made.heights === this.heightsRead &&
+      made.network === this.network &&
+      made.detail === this.detailOn &&
       Math.abs(made.zoom - zoom) < 0.6 &&
       (reach === null ? made.reach === null : made.reach !== null && sameShade(made.reach, reach)) &&
       made.box.west <= view.west &&
@@ -1247,11 +1273,31 @@ export class MapView {
     } catch {
       return;
     }
+    // A block of villas is divided into its houses (see houses.js), where the app draws the walls itself and
+    // knows the streets the houses front on. The map's own block is laid flat meanwhile.
+    if (this.detailOn && this.buildings && this.network) {
+      const wholeInTile = (building) => {
+        if (!building.tile) return true;
+        const tile = tileBox(...building.tile);
+        return building.polygons[0][0].every(([lng, lat]) => lng > tile.west && lng < tile.east && lat > tile.south && lat < tile.north);
+      };
+      const districtOf = (lng, lat) => {
+        const kind = districtAt(lng, lat).kind;
+        return { kind, fenced: (CHARACTERS[kind] ?? CHARACTERS.villa).fenced };
+      };
+      const parcelled = parcelHouses(buildings, this.network, { districtOf, whole: wholeInTile, skip: this.mosqueIds });
+      buildings = parcelled.buildings;
+      this.houses = parcelled.houses;
+      this.flatten(parcelled.divided);
+    } else {
+      this.houses = [];
+      this.flatten([]);
+    }
     const metersPerPixel = (EARTH_AROUND_METERS * Math.cos((centre.lat * Math.PI) / 180)) / (512 * 2 ** zoom);
     // (Landmarks the map has no building for throw a shadow too.)
     this.busy.shade += 1;
     source.setData(reach ? buildingShadows([...buildings, ...landmarkShades(), ...this.extraShades], reach, SHADE_SMALLEST_PX * metersPerPixel) : EMPTY);
-    this.shade = { reach, box, zoom, tiles: this.tilesLoaded, heights: this.heightsRead };
+    this.shade = { reach, box, zoom, tiles: this.tilesLoaded, heights: this.heightsRead, network: this.network, detail: this.detailOn };
     // The same buildings get their roofs furnished.
     this.roofs = this.buildings ? buildings : [];
     if (!this.scene.origin) this.scene.setOrigin({ lng: centre.lng, lat: centre.lat });
@@ -1318,6 +1364,10 @@ export class MapView {
         this.parapetMesh.clear();
         this.plotMesh.clear();
         this.scene.set('plots', this.plotMesh);
+        this.houseMesh.clear();
+        this.scene.set('houses', this.houseMesh);
+        this.apronMesh.clear();
+        this.scene.set('aprons', this.apronMesh);
         this.scene.set('roofs', this.roofMesh, { lifted: 1 });
         this.scene.set('roofshade', this.roofShadeMesh, { lifted: 2 });
         this.scene.set('parapets', this.parapetMesh, { lifted: 1 });
@@ -1376,7 +1426,24 @@ export class MapView {
       this.plotsMade = null;
     }
     this.scene.set('plots', this.plotMesh);
-    // The shadows the buildings throw on each other's walls and roofs, to go with the ones the map lays on the ground.
+    // And round each house the app has laid out itself, its own plot: wall, gate, court (see houses.js).
+    if (this.detailOn && this.houses.length > 0) {
+      const sunlight = lightFrom(this.sun);
+      this.housesMade = dressHouses(this.houseMesh, this.houses, origin, (east, north, up) => faceLight(sunlight, east, north, up));
+    } else {
+      this.houseMesh.clear();
+      this.housesMade = null;
+    }
+    this.scene.set('houses', this.houseMesh);
+    // And between each house street and what is built along it: asphalt to the foot of the walls.
+    if (this.detailOn && this.network) {
+      const sunlight = lightFrom(this.sun);
+      this.apronsMade = streetAprons(this.apronMesh, this.network, origin, this.builtGround()?.built ?? null, (east, north, up) => faceLight(sunlight, east, north, up));
+    } else {
+      this.apronMesh.clear();
+      this.apronsMade = null;
+    }
+    this.scene.set('aprons', this.apronMesh);
     const sunFall = shadowFall(shadowReach(this.sun));
     const fall = this.detailOn ? sunFall : null;
     // (Of the landmarks and minarets that throw a shadow of their own, only those round here: one far across the city would stretch the picture of the shadows thin.)
@@ -1464,6 +1531,10 @@ export class MapView {
       this.whenStyled((map) => {
         if (map.getSource(BUILDING_SOURCE)) map.removeFeatureState({ source: BUILDING_SOURCE, sourceLayer: 'building' });
       });
+      // (That stood the divided blocks up again as well: lay them flat once more.)
+      const flat = [...this.divided];
+      this.divided = new Set();
+      this.flatten(flat);
     }
     this.syncLife();
     this.layTrees();
@@ -1566,7 +1637,10 @@ export class MapView {
         for (const id of this.heights.keys()) {
           if (this.heights.size <= HEIGHTS_KEPT) break;
           this.heights.delete(id);
-          this.whenStyled((map) => map.removeFeatureState({ source: BUILDING_SOURCE, sourceLayer: 'building', id }));
+          this.whenStyled((map) => {
+            map.removeFeatureState({ source: BUILDING_SOURCE, sourceLayer: 'building', id });
+            if (this.divided.has(id)) map.setFeatureState({ source: BUILDING_SOURCE, sourceLayer: 'building', id }, { flat: true });
+          });
         }
         this.raiseBuildings(raised);
         this.heightsRead += 1;
