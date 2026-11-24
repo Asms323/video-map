@@ -178,6 +178,13 @@ map opens on the city and keeps to it, and places are looked for in it.
   fountain and tower, the big wheel, the Mexican pyramid, the Indian hall,
   the Kuwait Towers, Grendizer, and the pier with its coaster. They are
   models, not photographs: plain shapes in the right places and colours.
+  One thing there is not built by hand: the pagoda of the Chinese quarter
+  is a mesh of some twenty thousand triangles with a picture laid over it,
+  made from the owner's photograph of the real pagoda by a generator of 3D
+  models. What the photograph showed is the pagoda as it is; the sides it
+  did not show are the generator's guess. The photograph was taken by
+  night, so by night the pagoda shows as its lamps light it, and by day
+  its colours are only lifted out of the dark.
   How tall each is, is judged from pictures; where the big wheel, the tower
   of the Paris quarter, Grendizer, the sphinx and Little Venice's bell tower
   stand is a judgement too. The rest of the fairground's thirty quarters is
@@ -371,6 +378,7 @@ Everything is free and needs no account or key.
 | Satellite photos | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. Shown only in the Satellite look. How sharp the photo comes differs from place to place: the service is asked, a square of tiles at a time, and only what it has is fetched. In the 3D city the photo is never shown: it is read on the phone, at one middling level of sharpness, for trees, shadows and the colours of roofs, and the service is asked once per area for the day the photo was taken |
 | What Riyadh's houses and house streets look like | [OpenStreetView-5M](https://huggingface.co/datasets/osv5m/osv5m) (Astruc and others, CVPR 2024): street photographs by Mapillary contributors, CC BY-SA 4.0 | Studied, not shown: the 1,629 photographs taken inside Riyadh were looked through and the houses are built by rules drawn from them. No photograph is in the app or fetched by it |
 | What stands at Boulevard World, and where | The satellite photo above (Esri World Imagery, taken in September 2025): the lagoon's shore was traced from it and every thing's place measured on it. Sixteen photographs of the place by night and the fairground's own booklet for the 2026-27 season, both sent by the app's owner | Studied, not shown: the models are built by hand from them. No photograph and no page of the booklet is in the app or fetched by it |
+| The pagoda at Boulevard World (`models/pagoda.vmm`, `models/pagoda.jpg`) | Made from one photograph sent by the app's owner, by [TRELLIS](https://github.com/microsoft/TRELLIS) (Microsoft Research, MIT licence), run on Hugging Face under the owner's account; then cleaned of what stood beside the pagoda in the photograph and packed with `tools/pack-model.mjs` | In the app as those two files. Its picture is made of the photograph, so it is the owner's to share |
 | One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
 | Detailed map picture | OpenStreetMap tile servers | [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
 | Place details, speed limits, where the traffic signals stand | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits; and one for all of Riyadh's traffic signals, the same whoever asks it (so nothing of where you are goes with it), whose answer is kept on the phone for a week |
@@ -783,6 +791,10 @@ js/models.js            the famous buildings built as true models, face by face
 js/solids.js            plain solids for the models: blocks, tapers, things turned
                         on a lathe, beams, sweeping roofs, panes
 js/boulevard.js         Boulevard World: its lagoon and what stands round it
+js/props.js             models that carry a picture, each made from a photograph:
+                        the list of them, and the reading of their meshes
+models/                 those models: name.vmm (the mesh), name.jpg (its picture)
+tools/pack-model.mjs    packs such a model for the app
 js/districts.js         the city's districts and what each is like
 js/districts-data.js    where each district lies
 js/plots.js             the walls and gates round the houses the map gives singly

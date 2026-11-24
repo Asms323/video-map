@@ -47,6 +47,7 @@ import { STAYED_BRIDGES, landmarkBeacons, landmarkModels, landmarkRoofs, landmar
 import { drawFarLights, drawLamps, drawRoofLights, drawTrafficLights, lightPoints, shopSpill } from './lights.js';
 import { buildNetwork, drawBridges, drawMarks, drawParkedNear, drawRoofs, drawStreet, drawTraffic, drawTrees, faceLight, lightFrom, Mesh, stayedHere, streetDirection, streetNear, Traffic, trafficLevel } from './life.js';
 import { ModelMesh } from './models.js';
+import { propsNear, readProp } from './props.js';
 import { plotWalls } from './plots.js';
 import { drawFootbridges, drawRoadside, drawSigns, medianPalms } from './roadside.js';
 import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
@@ -541,6 +542,8 @@ export class MapView {
     this.housesMade = null;
     this.modelMesh = new ModelMesh(); // the famous buildings that are true models
     this.modelsMade = null;
+    this.propFiles = new Map(); // the models that carry a picture, as fetched: by name, { mesh, picture } (null while on their way)
+    this.propsMade = null;
     this.roadNames = null; // the layers of names along the roads, and how strongly they are shown
     this.spillMesh = new Mesh(); // the light from shop windows on the pavement
     this.roofLightMesh = new Mesh(); // the lamps left on up on the roofs
@@ -2255,6 +2258,49 @@ export class MapView {
     const models = landmarkModels(this.modelMesh, origin);
     this.modelsMade = { origin, models, faces: this.modelMesh.faces, corners: this.modelMesh.count };
     this.scene.setModels(this.modelMesh);
+    this.layProps();
+  }
+
+  /**
+   * The models that carry a picture (see props.js): those that stand near are
+   * fetched, once each, and put where they stand from the scene's origin.
+   */
+  layProps() {
+    const origin = this.scene.origin;
+    if (!origin) return;
+    const shown = [];
+    for (const { prop, east, north } of propsNear(origin)) {
+      const kept = this.propFiles.get(prop.id);
+      if (!kept) this.fetchProp(prop);
+      else if (kept.mesh) shown.push({ id: prop.id, mesh: kept.mesh, picture: kept.picture, at: [east, north, 0], turn: prop.turn ?? 0, lit: prop.night ?? 0 });
+    }
+    this.scene.setProps(shown);
+    this.propsMade = { origin, shown: shown.length, triangles: shown.reduce((sum, one) => sum + one.mesh.indices.length / 3, 0) };
+  }
+
+  /** Fetch one such model's mesh and its picture; when both are in, it is put in its place. One that cannot be had is left out, and not asked for again. */
+  fetchProp(prop) {
+    const kept = { mesh: null, picture: null };
+    this.propFiles.set(prop.id, kept);
+    const mesh = fetch(`./models/${prop.file}.vmm`)
+      .then((answer) => (answer.ok ? answer.arrayBuffer() : Promise.reject(new Error(`no mesh: ${answer.status}`))))
+      .then((bytes) => readProp(bytes, prop.height));
+    const picture = new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('no picture'));
+      image.src = `./models/${prop.file}.jpg`;
+    });
+    Promise.all([mesh, picture])
+      .then(([made, image]) => {
+        if (!made) throw new Error('not a mesh');
+        kept.mesh = made;
+        kept.picture = image;
+        if (this.type !== 'city' || !this.scene.origin) return;
+        this.layProps();
+        this.map?.triggerRepaint();
+      })
+      .catch(() => {});
   }
 
   /** Before each picture: move the traffic on and draw it afresh. True while there is something moving. */

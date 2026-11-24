@@ -789,6 +789,65 @@ void main() {
   gl_FragColor = vec4(min(toned(colour) + glow * u_lamps + show * smoothstep(0.5, 0.85, u_night), vec3(1.0)) * u_opacity, u_opacity);
 }`;
 
+// A model that carries a picture (see props.js): a mesh made from a photograph of the real thing, with the
+// photograph's colours laid over it. It is measured from the middle of its own foot, and put where it stands
+// and turned as it is drawn. The sun lights it by how each part of its surface faces. A picture taken by
+// night shows the thing as its lamps light it: by night it is drawn just so, giving that light; by day its
+// colours are lifted out of the dark, as near as may be to what the sun would show.
+const PROP_VERTEX = `
+attribute vec3 a_pos;
+attribute vec3 a_normal;
+attribute vec2 a_uv;
+uniform mat4 u_matrix;
+uniform vec3 u_at;      // where its foot stands, in the scene's metres
+uniform vec2 u_turn;    // the cosine and the sine of how far it is turned, clockwise
+varying vec3 v_world;
+varying vec3 v_normal;
+varying vec2 v_uv;
+void main() {
+  vec3 place = vec3(a_pos.x * u_turn.x + a_pos.y * u_turn.y, a_pos.y * u_turn.x - a_pos.x * u_turn.y, a_pos.z);
+  v_world = u_at + place;
+  v_normal = vec3(a_normal.x * u_turn.x + a_normal.y * u_turn.y, a_normal.y * u_turn.x - a_normal.x * u_turn.y, a_normal.z);
+  v_uv = a_uv;
+  gl_Position = u_matrix * vec4(v_world, 1.0);
+}`;
+
+const PROP_FRAGMENT = `${PRECISION}
+${SHADOW}
+${TONE}
+uniform sampler2D u_picture;
+uniform vec3 u_sun;      // the way to the sun: east, north, up
+uniform float u_day;     // 1 while the sun is up, 0 once it is down
+uniform float u_night;   // 0 by day, 1 by night, in between at dusk and dawn
+uniform float u_lit;     // how far its picture shows it lit by its lamps: 1 for a photograph taken after dark
+uniform float u_opacity;
+varying vec3 v_world;
+varying vec3 v_normal;
+varying vec2 v_uv;
+
+void main() {
+  vec3 normal = normalize(v_normal);
+  vec3 picture = texture2D(u_picture, v_uv).rgb;
+  // The light: the sky from all round, and the sun by how squarely the surface is turned to it, unless
+  // something stands in its way. (The mesh is fine and full of hollows: it is lit as one that is seen from
+  // both sides, and never wholly dark where it turns from the sun.)
+  float facing = dot(normal, u_sun);
+  float sunned = max(facing, 0.0) * u_day;
+  if (sunned > 0.0) sunned *= 1.0 - inShadow(v_world + vec3(normal.xy * 3.0, 0.0), 0.6);
+  vec3 sky = vec3(0.62, 0.65, 0.72) * (0.86 + 0.14 * normal.z);
+  vec3 sunlight = mix(vec3(1.0, 0.72, 0.44), vec3(1.0, 0.925, 0.77), smoothstep(0.1, 0.6, u_sun.z)) * 0.62;
+  vec3 light = mix(vec3(0.80, 0.82, 0.88), sky + sunlight * sunned, u_day);
+  light = mix(light, vec3(0.16, 0.18, 0.26), u_night);
+  // Its own colours. Out of a picture taken by night: what the lamps did not reach is lifted, and the cast
+  // of the lamps' own colour taken half away.
+  float grey = dot(picture, vec3(0.3, 0.59, 0.11));
+  vec3 lifted = pow(mix(picture, vec3(grey), 0.25), vec3(0.6)) * 1.08;
+  vec3 colour = mix(picture, lifted, u_lit) * light;
+  // By night: as the picture has it, lit by its own lamps.
+  vec3 glow = picture * u_lit * 1.12;
+  gl_FragColor = vec4(min(toned(colour) + glow * smoothstep(0.35, 0.85, u_night), vec3(1.0)) * u_opacity, u_opacity);
+}`;
+
 // The ground. The map paints it in flat colours: asphalt one grey, sand one beige, from kerb to kerb and
 // from here to the horizon. Real ground is never one colour over any distance: it is patched, stained,
 // dusty, grained. So over all that lies flat the scene lays a thin dark veil that is uneven: wide
@@ -1015,6 +1074,7 @@ export class SceneLayer {
     this.roofs = { mesh: null, buffers: null, stale: true }; // the roofs, worked out point by point
     this.walls = { mesh: null, buffers: null, stale: true }; // the walls, worked out point by point
     this.models = { mesh: null, buffers: null, stale: true }; // the models of the famous buildings
+    this.props = new Map(); // the models that carry a picture, by name: { mesh, picture, at, turn, lit, buffers, texture, stale }
     this.modelOpacity = 1; // they show from further off than the rest of the scene does
     this.haze = 0; // how much haze hangs in the distance: 0 in a view from above, 1 in one that reaches the horizon
     this.hazeBuffer = null;
@@ -1044,6 +1104,7 @@ export class SceneLayer {
     this.roofProgram = null;
     this.wallProgram = null;
     this.modelProgram = null;
+    this.propProgram = null;
     this.hazeProgram = null;
     this.castProgram = null;
     this.blank = null;
@@ -1073,6 +1134,8 @@ export class SceneLayer {
     this.open.ready = false;
     this.modelProgram = link(gl, MODEL_VERTEX, MODEL_FRAGMENT);
     this.modelAt = places(gl, this.modelProgram, ['pos', 'normal', 'surf', 'edge', 'tint', 'light', 'more'], ['matrix', 'opacity', 'sun', 'day', 'night', 'lamps', 'eye', 'pixel', 'skyHigh', 'skyLow', 'time', ...SHADOW_UNIFORMS]);
+    this.propProgram = link(gl, PROP_VERTEX, PROP_FRAGMENT);
+    this.propAt = places(gl, this.propProgram, ['pos', 'normal', 'uv'], ['matrix', 'opacity', 'sun', 'day', 'night', 'at', 'turn', 'picture', 'lit', ...SHADOW_UNIFORMS]);
     this.hazeProgram = link(gl, HAZE_VERTEX, HAZE_FRAGMENT);
     this.hazeAt = places(gl, this.hazeProgram, ['pos', 'thick'], ['matrix', 'haze']);
     this.hazeBuffer = null;
@@ -1100,6 +1163,11 @@ export class SceneLayer {
     this.walls.stale = true;
     this.models.buffers = null;
     this.models.stale = true;
+    for (const prop of this.props.values()) {
+      prop.buffers = null;
+      prop.texture = null;
+      prop.stale = true;
+    }
     this.shadow.target = null;
     this.shadow.buffer = null;
     this.shadow.ready = false;
@@ -1126,6 +1194,7 @@ export class SceneLayer {
     this.walls.buffers = null;
     if (this.models.buffers) for (const buffer of Object.values(this.models.buffers)) gl.deleteBuffer(buffer);
     this.models.buffers = null;
+    for (const prop of this.props.values()) this.dropProp(gl, prop);
     for (const kept of [this.shadow, this.heights]) {
       const target = kept.target;
       if (target) {
@@ -1150,7 +1219,7 @@ export class SceneLayer {
     }
     this.open.target = null;
     this.open.ready = false;
-    for (const name of ['program', 'roofProgram', 'wallProgram', 'modelProgram', 'hazeProgram', 'castProgram', 'groundProgram', 'openProgram']) {
+    for (const name of ['program', 'roofProgram', 'wallProgram', 'modelProgram', 'propProgram', 'hazeProgram', 'castProgram', 'groundProgram', 'openProgram']) {
       if (this[name]) gl.deleteProgram(this[name]);
       this[name] = null;
     }
@@ -1237,6 +1306,46 @@ export class SceneLayer {
   setModels(mesh) {
     this.models.mesh = mesh;
     this.models.stale = true;
+  }
+
+  /**
+   * Give the scene its models that carry a picture (see props.js): [{ id,
+   * mesh: { positions, normals, uvs, indices }, picture: an image, at:
+   * [east, north, up] of its foot in the scene's metres, turn: degrees
+   * clockwise, lit: 0 to 1 }]. One that is already there is only moved; one
+   * no longer on the list is let go.
+   */
+  setProps(list) {
+    const named = new Set(list.map((one) => one.id));
+    for (const [id, prop] of this.props) {
+      if (named.has(id)) continue;
+      const gl = this.map?.painter?.context?.gl;
+      if (gl) this.dropProp(gl, prop);
+      this.props.delete(id);
+    }
+    for (const one of list) {
+      const kept = this.props.get(one.id);
+      if (kept && kept.mesh === one.mesh && kept.picture === one.picture) {
+        kept.at = one.at;
+        kept.turn = one.turn;
+        kept.lit = one.lit;
+        continue;
+      }
+      if (kept) {
+        const gl = this.map?.painter?.context?.gl;
+        if (gl) this.dropProp(gl, kept);
+      }
+      this.props.set(one.id, { mesh: one.mesh, picture: one.picture, at: one.at, turn: one.turn, lit: one.lit, buffers: null, texture: null, stale: true });
+    }
+  }
+
+  /** Let go of what one such model keeps in the graphics memory. */
+  dropProp(gl, prop) {
+    if (prop.buffers) for (const buffer of Object.values(prop.buffers)) gl.deleteBuffer(buffer);
+    if (prop.texture) gl.deleteTexture(prop.texture);
+    prop.buffers = null;
+    prop.texture = null;
+    prop.stale = true;
   }
 
   /**
@@ -1605,7 +1714,8 @@ export class SceneLayer {
     const shown = this.opacity > 0;
     const models = this.models.mesh;
     const modelled = Boolean(models && models.count > 0 && this.modelOpacity > 0);
-    if (!shown && !modelled) return;
+    const pictured = this.props.size > 0 && this.modelOpacity > 0;
+    if (!shown && !modelled && !pictured) return;
 
     // Metres around the origin, into the map's own measure of the world: the
     // whole width of the Earth is 1, and north is towards 0.
@@ -1797,6 +1907,61 @@ export class SceneLayer {
       this.models.stale = false;
       gl.drawArrays(gl.TRIANGLES, 0, models.count);
       for (const where of [at.pos, at.normal, at.surf, at.edge, at.tint, at.light, at.more]) gl.disableVertexAttribArray(where);
+    }
+
+    // The models that carry a picture: each its own mesh and its own picture, put where it stands.
+    if (pictured) {
+      const at = this.propAt;
+      gl.useProgram(this.propProgram);
+      gl.uniformMatrix4fv(at.matrix, false, m);
+      gl.uniform1f(at.opacity, Math.min(this.modelOpacity, 1));
+      gl.uniform3f(at.sun, this.sun[0], this.sun[1], this.sun[2]);
+      gl.uniform1f(at.day, this.day);
+      gl.uniform1f(at.night, night);
+      this.shadowsFor(gl, at);
+      gl.uniform1i(at.picture, 3);
+      gl.activeTexture(gl.TEXTURE3);
+      for (const where of [at.pos, at.normal, at.uv]) gl.enableVertexAttribArray(where);
+      for (const prop of this.props.values()) {
+        if (!prop.buffers) prop.buffers = { positions: gl.createBuffer(), normals: gl.createBuffer(), uvs: gl.createBuffer(), indices: gl.createBuffer() };
+        const send = (buffer, where, data, size) => {
+          gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+          if (prop.stale) gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+          gl.vertexAttribPointer(where, size, gl.FLOAT, false, 0, 0);
+        };
+        send(prop.buffers.positions, at.pos, prop.mesh.positions, 3);
+        send(prop.buffers.normals, at.normal, prop.mesh.normals, 3);
+        send(prop.buffers.uvs, at.uv, prop.mesh.uvs, 2);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, prop.buffers.indices);
+        if (prop.stale) gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, prop.mesh.indices, gl.STATIC_DRAW);
+        if (!prop.texture) {
+          // Its picture: smoothed for the distance, and never repeated past its edge.
+          prop.texture = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, prop.texture);
+          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+          gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, prop.picture);
+          const square = (size) => size > 0 && (size & (size - 1)) === 0;
+          const whole = square(prop.picture.width) && square(prop.picture.height);
+          if (whole) gl.generateMipmap(gl.TEXTURE_2D);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, whole ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        } else {
+          gl.bindTexture(gl.TEXTURE_2D, prop.texture);
+        }
+        prop.stale = false;
+        const angle = ((prop.turn ?? 0) * Math.PI) / 180;
+        gl.uniform3f(at.at, prop.at[0], prop.at[1], prop.at[2] ?? 0);
+        gl.uniform2f(at.turn, Math.cos(angle), Math.sin(angle));
+        gl.uniform1f(at.lit, prop.lit ?? 0);
+        gl.drawElements(gl.TRIANGLES, prop.mesh.indices.length, gl.UNSIGNED_SHORT, 0);
+      }
+      for (const where of [at.pos, at.normal, at.uv]) gl.disableVertexAttribArray(where);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.activeTexture(gl.TEXTURE0);
     }
     if (!shown) {
       this.drawHaze(gl, m);

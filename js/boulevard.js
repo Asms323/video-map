@@ -726,7 +726,7 @@ function chineseHall(model, to, [halfU, halfV], { storeys = 1, tiles = TILE_GREY
     if (floor > 0) block(model, to, [-halfU - 1, halfU + 1, -halfV - 1, halfV + 1], floor * storey - 0.25, floor * storey + 0.1, plain('#8f1f19', '#ff5a30', 0.6));
   }
   const over = 3;
-  const rise = Math.min(halfV, halfU) * 0.78 + 1.2;
+  const rise = Math.min(halfV, halfU) * 0.5 + 1;
   sweptRoof(model, to, [halfU + over, halfV + over], [Math.max(halfU - halfV, 0) * 0.9 + 0.6, 0.35], tall, rise, plain(tiles, edge, 0.12), { power: 1.75, lift: 1.5, steps: 4, cols: 6, under: plain('#a52a1c', '#ff4a2a', 0.95), wall: [halfU, halfV] });
   // The line of light along the eaves, and the ridge with its gilded ends.
   const line = lamp(blend(tiles, edge, 0.4), edge, 0.95);
@@ -738,51 +738,10 @@ function chineseHall(model, to, [halfU, halfV], { storeys = 1, tiles = TILE_GREY
   return tall + rise + 1.8;
 }
 
-const PAGODA_TIERS = 5;
-
-/**
- * The pagoda: five storeys, each smaller than the one below; walls of dark
- * green with windows of gilded lattice, red posts at the corners and a red
- * band under every roof; roofs of bright green tiles turned up sharply at
- * the corners; over the last a tall roof and a gilded spire.
- */
-function pagoda(model, to) {
-  const green = plain('#1f5a48', '#ffd08a', 0.45);
-  const red = plain('#c22a1e', '#ff5a30', 0.9);
-  const tiles = plain(TILE_GREEN, '#c8ff6a', 0.5);
-  const edge = lamp('#6fc46a', '#d8ff5a', 0.95);
-  let floor = 0;
-  let half = 4.7;
-  for (let tier = 0; tier < PAGODA_TIERS; tier += 1) {
-    const tall = tier === 0 ? 5.2 : 4.2;
-    block(model, to, [-half, half, -half, half], floor, floor + tall, green, { top: null });
-    for (const side of ['south', 'east', 'north', 'west']) panes(model, to, [-half, half, -half, half], side, [[floor + 1.1, floor + tall - 1.2]], 2, LATTICE, { share: 0.6, margin: 0.7 });
-    for (const [su, sv] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) beam(model, to(su * half, sv * half, floor), to(su * half, sv * half, floor + tall), 0.5, red);
-    block(model, to, [-half - 0.15, half + 0.15, -half - 0.15, half + 0.15], floor + tall - 0.9, floor + tall, red, { top: null });
-    floor += tall;
-    const next = half - 0.45;
-    const eaves = half + 2.7;
-    if (tier < PAGODA_TIERS - 1) {
-      sweptRoof(model, to, [eaves, eaves], [next + 0.1, next + 0.1], floor, 1.3, tiles, { power: 1.6, lift: 1.5, steps: 2, cols: 4, under: plain('#a52a1c', '#ff4a2a', 0.9), wall: [half, half] });
-      floor += 1.3;
-    } else {
-      sweptRoof(model, to, [eaves, eaves], [0.2, 0.2], floor, 6, tiles, { power: 1.7, lift: 1.7, steps: 4, cols: 4, under: plain('#a52a1c', '#ff4a2a', 0.9), wall: [half, half] });
-      floor += 6;
-    }
-    for (const [a, b] of [[[-1, -1], [1, -1]], [[1, -1], [1, 1]], [[1, 1], [-1, 1]], [[-1, 1], [-1, -1]]]) {
-      const up = floor - (tier < PAGODA_TIERS - 1 ? 1.2 : 5.9);
-      beam(model, to(a[0] * eaves * 0.84, a[1] * eaves * 0.84, up), to(b[0] * eaves * 0.84, b[1] * eaves * 0.84, up), 0.22, edge);
-    }
-    half = next;
-  }
-  lathe(model, to, [0, 0], [[0.5, floor - 0.3], [0.7, floor + 0.6], [0.3, floor + 1.4], [0.45, floor + 2], [0.1, floor + 3.6]], plain('#c9a94a', '#ffe9a0', 0.95), { cuts: 6 });
-  return floor + 3.6;
-}
-
 /**
  * The Chinese quarter, square to the compass on its own quay: the great hall
  * with its red front to the south; the long gallery down the west side; the
- * two-storey hall in the south-east and the pagoda at its corner; kiosks
+ * two-storey hall in the south-east (the pagoda stands at its corner); kiosks
  * under green roofs and dark ones; lanterns on strings between them; and a
  * junk at anchor off the quay.
  */
@@ -793,7 +752,7 @@ function china(model) {
   chineseHall(model, frame([-27, 21], Math.PI / 2), [30, 4], { edge: '#ffb03a' });
   chineseHall(model, frame([39, -43], Math.PI / 2), [11, 9.5], { storeys: 2, shops: true });
   chineseHall(model, frame([38.4, -25]), [6.5, 6], { tiles: '#3f5560' });
-  const top = pagoda(model, frame([55.5, -47]));
+  // (The pagoda at the south-east hall's corner is not built here: it is a model made from a photograph. See props.js.)
   // Kiosks: four under green roofs, then two rows under dark ones, six-sided.
   for (const east of [-11, 0, 11, 22]) chineseHall(model, frame([east, -22]), [4, 3.2], { tiles: TILE_GREEN, edge: '#c8ff6a' });
   for (const [row, north] of [[0, -35], [1, -47]]) {
@@ -822,7 +781,7 @@ function china(model) {
   const sail = plain('#a8452e', '#ff7a4a', 0.5);
   model.quad(junk(-2.6, 0.2, 4), junk(3.6, 0.2, 3.4), junk(3.2, 0.2, 11), junk(-2, 0.2, 11.6), sail, { out: junk.way(0, 1) });
   model.quad(junk(-2.6, 0.1, 4), junk(3.6, 0.1, 3.4), junk(3.2, 0.1, 11), junk(-2, 0.1, 11.6), sail, { out: junk.way(0, -1) });
-  return { top };
+  return {};
 }
 
 // ── Greece ────────────────────────────────────────────────────────────────
@@ -1286,7 +1245,7 @@ export const WORLD_PARTS = [
   },
   { id: 'blvd-world-rock', name: 'The rock at the entrance, Boulevard World', at: [-97, -205], height: 30, reach: 135, clear: 62, model: rock, shade: { radius: 44, height: 22 } },
   { id: 'blvd-world-entrance', name: 'The entrance, Boulevard World', at: [-136, -295], height: 21, reach: 55, clear: 52, model: entrance },
-  { id: 'blvd-world-china', name: 'The Chinese quarter, Boulevard World', at: [2, -191], height: 31.9, reach: 82, clear: 62, model: china },
+  { id: 'blvd-world-china', name: 'The Chinese quarter, Boulevard World', at: [2, -191], height: 18.1, reach: 82, clear: 80, model: china },
   { id: 'blvd-world-greece', name: 'The Greek village, Boulevard World', at: [203, -9], height: 16.2, reach: 85, clear: 34, model: greece },
   { id: 'blvd-world-bridge', name: 'The white bridge, Boulevard World', at: [149, -29.3], height: 3.5, reach: 66, clear: 0, model: whiteBridge },
   { id: 'blvd-world-venice', name: 'Little Venice, Boulevard World', at: [95, -40], height: 30.5, reach: 92, clear: 62, model: venice },

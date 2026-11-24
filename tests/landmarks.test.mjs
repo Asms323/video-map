@@ -712,14 +712,16 @@ test('replacedByLandmarks picks the tower\'s own outline, not the block it stand
   // The TV tower stands on open ground: nothing is cleared for it. It and the water tower bring their own shadow.
   assert.equal(landmark('tv-tower').clear, 0);
   const shades = landmarkShades();
-  // (Between those two and the bridge's masts come the shades of Boulevard World: nine, three of them the pyramids'.)
-  assert.equal(shades.length, 4 + 9);
+  // (Between those two and the bridge's masts come the shades of Boulevard World: nine, three of them the pyramids';
+  // and that of the pagoda there, a model that carries a picture.)
+  assert.equal(shades.length, 4 + 9 + 1);
   assert.deepEqual(shades.slice(0, 2).map((shade) => [shade.height, shade.base, shade.polygons.length, shade.polygons[0][0].length]), [[150, 0, 1, 13], [58, 0, 1, 13]]);
   assert.deepEqual(shades.slice(2, 11).map((shade) => Math.round(shade.height)), [34, 100, 7, 13, 15, 22, 10, 12, 28]);
   // So do the two masts of the Wadi Laban Bridge, which stand 405 m apart along its deck.
   const bridge = STAYED_BRIDGES[0];
   assert.deepEqual([bridge.id, bridge.masts, bridge.masts[1] - bridge.masts[0]], ['wadi-laban', [-202.5, 202.5], 405]);
-  const masts = shades.slice(11).map((shade) => {
+  assert.equal(shades[11].height, 25);
+  const masts = shades.slice(12).map((shade) => {
     const ring = shade.polygons[0][0];
     const middle = [(ring[0][0] + ring[2][0]) / 2, (ring[0][1] + ring[2][1]) / 2];
     return { height: shade.height, at: along(bridge, from(bridge, middle)) };

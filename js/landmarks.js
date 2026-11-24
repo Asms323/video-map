@@ -17,6 +17,7 @@
 
 import { WORLD_PARTS, worldPlace } from './boulevard.js';
 import { Model, ModelMesh } from './models.js';
+import { PROPS } from './props.js';
 
 const TAU = Math.PI * 2;
 const METERS_PER_DEGREE = 111320;
@@ -1215,10 +1216,12 @@ export const STAYED_BRIDGES = [
 /**
  * The footprints that landmarks without a building on the map throw a
  * shadow from, in the form buildingShadows() takes: [{ height, base, polygons }].
+ * (The landmarks' first, then the models' that carry a picture, then the bridges' masts.)
  */
 export function landmarkShades() {
   const shades = [];
-  for (const landmark of LANDMARKS) {
+  // (And of the models that carry a picture: see props.js.)
+  for (const landmark of [...LANDMARKS, ...PROPS]) {
     for (const shade of [...(landmark.shade ? [landmark.shade] : []), ...(landmark.shades ?? [])]) {
       const [east, north] = shade.at ?? [0, 0];
       const ring = circle(shade.radius, 12).map(([u, v]) => place(landmark, east + u, north + v, true));
@@ -1246,7 +1249,8 @@ export function landmarkShades() {
  */
 export function replacedByLandmarks(outlines) {
   const out = new Set();
-  for (const landmark of LANDMARKS) {
+  // (A model that carries a picture has its clearing too: see props.js.)
+  for (const landmark of [...LANDMARKS, ...PROPS]) {
     if (landmark.covers) {
       for (const { id, ring } of outlines) {
         if (id === undefined || id === null || !ring || ring.length < 4) continue;
