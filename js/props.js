@@ -71,8 +71,11 @@ const HEAD_BYTES = 36;
  * height. Returns { corners, positions: Float32Array (east, north, up),
  * uvs: Float32Array (across and down its picture, 0 to 1), indices:
  * Uint16Array, normals: Float32Array (which way the surface looks at each
- * corner), reach: how far it reaches from its middle line, top: its height },
- * or null if the bytes are not such a file.
+ * corner), reach: how far it reaches from its middle line, top: its height,
+ * foot: its footprint, lamps: null, or for each corner how it shows by night
+ * (0: as the rest of it; 255: a lamp, lit every night; any other number: a
+ * window, lit on some nights' houses and dark on others, those with the same
+ * number together) }, or null if the bytes are not such a file.
  */
 export function readProp(bytes, height = 1) {
   const data = bytes instanceof ArrayBuffer ? new DataView(bytes) : new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -100,23 +103,31 @@ export function readProp(bytes, height = 1) {
   }
   // (Its footprint: how far it reaches east and west, south and north of its middle line.)
   const foot = [box[0] * height, box[3] * height, box[1] * height, box[4] * height];
-  return { corners, positions, uvs, indices, normals: propNormals(positions, indices), reach, top: box[5] * height, foot };
+  // A mesh built by hand may say of each corner how it shows by night: a number for each, after the triangles.
+  const lampsAt = indicesAt + padded(count * 2);
+  const lamps = data.byteLength >= lampsAt + corners ? new Uint8Array(corners) : null;
+  if (lamps) for (let i = 0; i < corners; i += 1) lamps[i] = data.getUint8(lampsAt + i);
+  // (Such a mesh is made of flat faces that meet at edges, each with corners of its own: every face keeps its own
+  // way of looking. A mesh from the generator is one skin: there the corners that meet are lit as one.)
+  return { corners, positions, uvs, indices, normals: propNormals(positions, indices, lamps === null), reach, top: box[5] * height, foot, lamps };
 }
 
 /**
  * Which way the surface looks at each corner of a mesh: the mean of the
  * faces that meet there, the larger faces counting for more. (Corners that
  * lie at the same place but on different parts of the picture are counted
- * as one, so that the light does not break along the picture's seams.)
+ * as one, so that the light does not break along the picture's seams;
+ * joined false leaves each corner to the faces that name it, for a mesh of
+ * flat faces with edges between them.)
  */
-export function propNormals(positions, indices) {
+export function propNormals(positions, indices, joined = true) {
   const corners = positions.length / 3;
   const normals = new Float32Array(corners * 3);
-  // Corners at one place share one sum.
+  // Corners at one place share one sum (unless each face is to keep its own: joined false).
   const sums = new Map();
   const sumOf = new Array(corners);
   for (let i = 0; i < corners; i += 1) {
-    const key = `${Math.round(positions[i * 3] * 500)},${Math.round(positions[i * 3 + 1] * 500)},${Math.round(positions[i * 3 + 2] * 500)}`;
+    const key = joined ? `${Math.round(positions[i * 3] * 500)},${Math.round(positions[i * 3 + 1] * 500)},${Math.round(positions[i * 3 + 2] * 500)}` : i;
     let sum = sums.get(key);
     if (!sum) {
       sum = [0, 0, 0];
@@ -179,11 +190,16 @@ export function propsNear(origin, props = PROPS) {
  * colour of its own walls (a house painted otherwise is tinted from it),
  * plot: true for a model that has the house's wall and gate to the street
  * as well (it is fitted to the house's whole plot from the street back, and
- * the app builds no wall or gate of its own there) }.
- * There are none yet: until the first is made from a photograph of a house
- * of Riyadh, every house stays as houses.js builds it.
+ * the app builds no wall or gate of its own there); roof: how far up the
+ * model the edge of its main roof is, where more stands on that roof (a
+ * stair house, a water tank): the house's own height is given to that
+ * edge, and what stands on the roof rises over it }.
+ *
+ * The first: a new villa of two storeys behind its street wall, built by
+ * measure from photographs the app's owner sent, with the photographs
+ * themselves laid on it (see tools/models/built/villa.py).
  */
-export const HOUSE_MODELS = [];
+export const HOUSE_MODELS = [{ file: 'villa', night: 0, tone: [0.674, 0.571, 0.488], plot: true, roof: 0.757 }];
 
 /** A house is drawn as a model when it stands no further than this from the middle of the view… */
 export const HOUSE_MODEL_REACH_METERS = 280;
@@ -191,6 +207,8 @@ export const HOUSE_MODEL_REACH_METERS = 280;
 export const HOUSE_MODEL_MIN_ZOOM = 17;
 export const HOUSE_MODELS_MOST = 320;
 const BATCH_MOST_CORNERS = 65535;
+/** Of a house's windows that can be lit, so many are on any night. */
+const WINDOWS_LIT = 0.55;
 
 /** Which of so many models a house is drawn as: always the same for the same house. */
 export function houseModelOf(id, count) {
@@ -234,7 +252,10 @@ export function housesNear(houses, centre, { reach = HOUSE_MODEL_REACH_METERS, m
  * front, the side its photograph showed, comes to stand at the box's front.
  *
  * Returns [{ corners, positions, normals, uvs, tints, indices }], each of no
- * more corners than a mesh may have.
+ * more corners than a mesh may have. A corner's tint is four numbers: the
+ * three it is coloured by, halved; and how it shows by night: up to 127,
+ * how much of the street lamps' light falls on it (most on what faces the
+ * street); from 128, a lamp or a lit window, and how brightly it glows.
  */
 export function standMany(mesh, places) {
   const batches = [];
@@ -254,6 +275,11 @@ export function standMany(mesh, places) {
       const [bx, by] = place.back;
       const tint = place.tint ?? [1, 1, 1];
       const bytes = tint.map((part) => Math.round(Math.min(Math.max(part / 2, 0), 1) * 255));
+      // (Which of this house's windows are lit tonight: its own choice, the same every night.)
+      const chance = (group) => {
+        const value = Math.sin(place.at[0] * 12.9898 + place.at[1] * 78.233 + group * 37.719) * 43758.5453;
+        return value - Math.floor(value);
+      };
       for (let i = 0; i < mesh.corners; i += 1) {
         const u = (mesh.positions[i * 3] - middleX) * sx;
         const v = (mesh.positions[i * 3 + 1] - middleY) * sy;
@@ -273,7 +299,17 @@ export function standMany(mesh, places) {
         batch.normals[at + 2] = nz / size;
         batch.uvs[(first + i) * 2] = mesh.uvs[i * 2];
         batch.uvs[(first + i) * 2 + 1] = mesh.uvs[i * 2 + 1];
-        batch.tints.set([bytes[0], bytes[1], bytes[2], 255], (first + i) * 4);
+        // By night (see the scene): a lamp or a lit window glows; everything else catches the light of the street
+        // lamps, by how squarely it is turned to the street, and what looks up catches the less of it.
+        const lamp = mesh.lamps ? mesh.lamps[i] : 0;
+        let night;
+        if (lamp === 255 || (lamp > 0 && chance(lamp) < WINDOWS_LIT)) night = lamp === 255 ? 255 : 230;
+        else {
+          const toStreet = -(bx * (nx / size) + by * (ny / size));
+          const share = (toStreet >= 0 ? 0.3 + 0.7 * toStreet : 0.3 + 0.18 * toStreet) * (1 - 0.5 * Math.max(nz / size, 0));
+          night = Math.round(Math.min(Math.max(share, 0), 1) * 127);
+        }
+        batch.tints.set([bytes[0], bytes[1], bytes[2], night], (first + i) * 4);
       }
       const from = n * mesh.indices.length;
       for (let i = 0; i < mesh.indices.length; i += 1) batch.indices[from + i] = first + mesh.indices[i];
@@ -293,21 +329,25 @@ export function standMany(mesh, places) {
  * its colours as they are. plot: true for a model that has the house's wall
  * to the street as well: its box is then the house's plot, from the line of
  * the wall at the street back to the back of the house, and from the middle
- * of the gap to one neighbour to the middle of the gap to the other.
+ * of the gap to one neighbour to the middle of the gap to the other. roof:
+ * how far up the model the edge of its main roof is (1: its very top): the
+ * house's main part, with its parapet, is as tall as that.
  */
-export function housePlace(house, origin, tone = null, plot = false) {
+export function housePlace(house, origin, tone = null, plot = false, roof = 1) {
   const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * 111320;
   // (In the house's own measure: along its front from its left corner, and back from its front.)
   const [a0, a1] = plot ? [-house.plot.left, house.wide + house.plot.right] : [0, house.wide];
   const [b0, b1] = plot ? [-house.plot.front, house.deep] : [0, house.deep];
   const east = (house.at[0] - origin.lng) * squeeze + house.along[0] * ((a0 + a1) / 2) + house.back[0] * ((b0 + b1) / 2);
   const north = (house.at[1] - origin.lat) * 111320 + house.along[1] * ((a0 + a1) / 2) + house.back[1] * ((b0 + b1) / 2);
-  const tallest = Math.max(...house.parts.map((part) => part.height));
+  // (A model with a room of its own on its roof: the house's main part is measured, not what the app would have put on it.)
+  const mains = roof < 1 ? house.parts.filter((part) => part.part === 'main') : [];
+  const tallest = Math.max(...(mains.length > 0 ? mains : house.parts).map((part) => part.height));
   let tint = null;
   if (tone && typeof house.paint === 'string') {
     // The house's own paint over the model's: but never so far from the model's that its picture is washed out.
     const paint = [1, 3, 5].map((at) => Number.parseInt(house.paint.slice(at, at + 2), 16) / 255);
     tint = paint.map((part, k) => Math.min(Math.max(part / Math.max(tone[k], 0.05), 0.7), 1.45));
   }
-  return { at: [east, north], along: house.along, back: house.back, wide: a1 - a0, deep: b1 - b0, height: tallest + 1.4, tint };
+  return { at: [east, north], along: house.along, back: house.back, wide: a1 - a0, deep: b1 - b0, height: (tallest + 1.4) / Math.min(Math.max(roof, 0.2), 1), tint };
 }

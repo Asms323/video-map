@@ -13,12 +13,17 @@ const bytesOf = (file) => {
   return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
 };
 
-/** A packed mesh, as tools/models/pack.mjs writes one: corners [[east, north, up, across, down], …] and triangles. */
-function packed(corners, triangles) {
+/**
+ * A packed mesh, as tools/models/pack.mjs writes one: corners [[east, north, up, across, down], …] and triangles;
+ * and, as a mesh built by hand may have it, how each corner shows by night (see readProp).
+ */
+function packed(corners, triangles, lamps = null) {
   const min = [0, 1, 2].map((k) => Math.min(...corners.map((corner) => corner[k])));
   const max = [0, 1, 2].map((k) => Math.max(...corners.map((corner) => corner[k])));
   const padded = (length) => length + ((4 - (length % 4)) % 4);
-  const data = new DataView(new ArrayBuffer(36 + padded(corners.length * 6) + padded(corners.length * 4) + triangles.length * 2));
+  const lampsAt = 36 + padded(corners.length * 6) + padded(corners.length * 4) + padded(triangles.length * 2);
+  const data = new DataView(new ArrayBuffer(lamps ? lampsAt + corners.length : lampsAt - padded(triangles.length * 2) + triangles.length * 2));
+  if (lamps) lamps.forEach((lamp, i) => data.setUint8(lampsAt + i, lamp));
   [0x56, 0x4d, 0x4d, 0x31].forEach((byte, i) => data.setUint8(i, byte));
   data.setUint32(4, corners.length, true);
   data.setUint32(8, triangles.length, true);
@@ -218,7 +223,17 @@ test('one mesh stands many times, each fitted to its own box and turned to its o
   assert.deepEqual(Array.from(batch.indices.subarray(12, 15)), [5, 6, 9]);
   // Each corner keeps its place on the picture, and has its tint (halved, so that 1 is 128 of 255).
   assert.ok(near(batch.uvs[8], 0.5, 1e-4) && near(batch.uvs[18], 0.5, 1e-4));
-  assert.deepEqual([Array.from(batch.tints.subarray(0, 4)), Array.from(batch.tints.subarray(20, 24))], [[128, 128, 128, 255], [102, 77, 179, 255]]);
+  assert.deepEqual([Array.from(batch.tints.subarray(0, 3)), Array.from(batch.tints.subarray(20, 23))], [[128, 128, 128], [102, 77, 179]]);
+  // The fourth number of a tint is how the corner shows by night. This mesh has neither lamp nor window: every
+  // corner only catches the light of the street lamps (no more than 127), the more the more squarely it is
+  // turned to its street: the first house's front corners more than its back ones, and its tip, which looks
+  // straight up, least of the three.
+  assert.equal(mesh.lamps, null);
+  const byNight = (i) => batch.tints[i * 4 + 3];
+  for (let i = 0; i < 10; i += 1) assert.ok(byNight(i) <= 127);
+  assert.ok(byNight(0) > byNight(2) && byNight(1) > byNight(3) && byNight(0) > byNight(4) && byNight(4) === 19, [0, 1, 2, 3, 4].map(byNight).join(' '));
+  // (The second house's street is to its east: the corners that came to its east side catch the most.)
+  assert.ok(byNight(5) > byNight(7) && byNight(6) > byNight(8));
   // Which way the surface looks is turned with the box, and stays one long: the tip of each looks straight up.
   for (let i = 0; i < 10; i += 1) assert.ok(near(Math.hypot(batch.normals[i * 3], batch.normals[i * 3 + 1], batch.normals[i * 3 + 2]), 1, 1e-5));
   assert.ok(near(batch.normals[14], 1, 1e-5) && near(batch.normals[29], 1, 1e-5));
@@ -232,9 +247,73 @@ test('one mesh stands many times, each fitted to its own box and turned to its o
   assert.ok(many.every((one) => one.indices.every((corner) => corner < one.corners)));
 });
 
+test('a mesh built by hand may have lamps and windows that are lit by night', () => {
+  // A wall two wide and one high facing south, in two halves: the left half plain, the right half a window;
+  // and over it a small lamp. (Each face has corners of its own.)
+  const wall = (x0, x1, z0, z1) => [[x0, 0, z0, 0, 1], [x1, 0, z0, 1, 1], [x1, 0, z1, 1, 0], [x0, 0, z1, 0, 0]];
+  const corners = [...wall(-1, 0, 0, 1), ...wall(0, 1, 0, 1), ...wall(-0.1, 0.1, 1, 1.2), [0, 1, 0, 0, 0]];
+  const triangles = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11];
+  const mesh = readProp(packed(corners, triangles, [0, 0, 0, 0, 7, 7, 7, 7, 255, 255, 255, 255, 0]));
+  assert.deepEqual(Array.from(mesh.lamps), [0, 0, 0, 0, 7, 7, 7, 7, 255, 255, 255, 255, 0]);
+  // (A mesh packed without such a list has none.)
+  assert.equal(readProp(packed(corners, triangles)).lamps, null);
+  const places = Array.from({ length: 200 }, (_, n) => ({ at: [n * 20, (n % 7) * 15], along: [1, 0], back: [0, 1], wide: 10, deep: 5, height: 6 }));
+  const [batch] = standMany(mesh, places);
+  let lit = 0;
+  for (let n = 0; n < places.length; n += 1) {
+    const byNight = (i) => batch.tints[(n * 13 + i) * 4 + 3];
+    // The plain wall faces its street squarely: all of the street lamps' light. The lamp is lit at every house.
+    assert.ok([0, 1, 2, 3].every((i) => byNight(i) === 127) && [8, 9, 10, 11].every((i) => byNight(i) === 255));
+    // The window is lit or dark, all of it together: lit, it glows; dark, it is wall like the rest.
+    const window = [4, 5, 6, 7].map(byNight);
+    assert.ok(window.every((value) => value === window[0]) && (window[0] === 230 || window[0] === 127), window.join(' '));
+    if (window[0] === 230) lit += 1;
+  }
+  // About half the houses have it lit; and the same houses every time.
+  assert.ok(lit > 80 && lit < 140, `${lit} of 200 lit`);
+  assert.deepEqual(Array.from(standMany(mesh, places)[0].tints), Array.from(batch.tints));
+});
+
+test('the villa: a house of Riyadh built by measure, with its photographs laid on it', () => {
+  assert.deepEqual(HOUSE_MODELS, [{ file: 'villa', night: 0, tone: [0.674, 0.571, 0.488], plot: true, roof: 0.757 }]);
+  const villa = readProp(bytesOf('villa.vmm'));
+  assert.ok(villa && villa.corners > 250 && villa.corners < 600 && villa.indices.length / 3 > 120 && villa.indices.length / 3 < 400, `${villa?.corners} corners`);
+  // One high to the top of its water tank; its plot 12.9 m along the street and 14.2 m back for 11.73 m of height.
+  assert.ok(near(villa.top, 1, 1e-4) && near(villa.foot[1] - villa.foot[0], 12.9 / 11.73, 0.005) && near(villa.foot[3] - villa.foot[2], 14.2 / 11.73, 0.005), villa.foot.join(' '));
+  // The edge of its roof is where the list says: no corner but those of the stair house, the tank and the
+  // cooling units stands higher than a hand over it.
+  const higher = new Set();
+  for (let i = 0; i < villa.corners; i += 1) if (villa.positions[i * 3 + 2] > 0.757 + 0.002) higher.add(Math.round(villa.positions[i * 3 + 2] * 1000));
+  assert.ok(higher.size >= 2 && higher.size <= 3 && Math.max(...higher) === 1000, [...higher].join(' '));
+  // It stands on the ground, and every face of it looks outwards: its street wall to the south, its roofs up.
+  // (It is made of flat faces: each looks squarely one way, and nothing at the roof's floor looks down.)
+  let south = 0;
+  let front = 0;
+  let up = 0;
+  let down = 0;
+  for (let i = 0; i < villa.corners; i += 1) {
+    const [north, high] = [villa.positions[i * 3 + 1], villa.positions[i * 3 + 2]];
+    assert.ok(high >= 0);
+    if (near(north, villa.foot[2], 1e-4)) {
+      front += 1;
+      south += villa.normals[i * 3 + 1];
+    }
+    if (near(high, 0.757 - 1.35 / 11.73, 0.002)) {
+      if (villa.normals[i * 3 + 2] > 0.99) up += 1;
+      if (villa.normals[i * 3 + 2] < -0.01) down += 1;
+    }
+  }
+  assert.ok(front >= 8 && south / front < -0.99, `its street wall looks ${(south / front).toFixed(2)} north`);
+  assert.ok(up >= 8 && down === 0, `at its roof's floor ${up} corners look up, ${down} down`);
+  // By night: three windows that may be lit, and two lamps beside its door.
+  assert.deepEqual([...new Set(villa.lamps)].sort((a, b) => a - b), [0, 1, 2, 3, 255]);
+  assert.equal(villa.lamps.filter((lamp) => lamp === 255).length, 8);
+  for (let i = 0; i < villa.uvs.length; i += 1) assert.ok(villa.uvs[i] >= 0 && villa.uvs[i] <= 1);
+  const picture = new Uint8Array(bytesOf('villa.jpg'));
+  assert.ok(picture[0] === 0xff && picture[1] === 0xd8 && picture.length < 400000);
+});
+
 test('the houses drawn as models are the nearest to the middle of the view; each always as the same model', () => {
-  // No model of a house of Riyadh is made yet: every house stays as it was laid out.
-  assert.deepEqual(HOUSE_MODELS, []);
   assert.ok(HOUSE_MODEL_REACH_METERS === 280 && HOUSE_MODEL_MIN_ZOOM === 17 && HOUSE_MODELS_MOST === 320);
   // Houses along a street running east, one every 20 m, each 12 m wide and 14 deep with two parts.
   const origin = { lng: 46.7, lat: 24.75 };
@@ -261,6 +340,10 @@ test('the houses drawn as models are the nearest to the middle of the view; each
   // street (2 m before the house) to the house's back, and from half the gap to one neighbour to half the gap to the other.
   const plotted = housePlace({ ...houses[2], plot: { front: 2, left: 1, right: 0.8, behind: 1.2 } }, origin, null, true);
   assert.ok(near(plotted.wide, 13.8) && near(plotted.deep, 16) && near(plotted.at[0], 39.9, 0.01) && near(plotted.at[1], 16, 0.01) && near(plotted.height, 9.6));
+  // A model with a stair house of its own on its roof, its roof's edge at three quarters of its height: the house's
+  // main part with its parapet is as tall as that edge, whatever the app itself would have put on the roof.
+  const roomed = { ...houses[2], parts: [{ height: 8.2, part: 'main' }, { height: 11.3, part: 'room' }] };
+  assert.ok(near(housePlace(roomed, origin).height, 12.7) && near(housePlace(roomed, origin, null, false, 0.75).height, 9.6 / 0.75));
   // Painted its own colour over a model whose own walls are paler: darker, but never so far off that the picture goes.
   const tinted = housePlace(houses[2], origin, [0.95, 0.9, 0.82]).tint;
   assert.ok(near(tinted[0], 0.847 / 0.95, 0.01) && near(tinted[2], 0.659 / 0.82, 0.01));

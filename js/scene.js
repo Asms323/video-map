@@ -798,7 +798,7 @@ const PROP_VERTEX = `
 attribute vec3 a_pos;
 attribute vec3 a_normal;
 attribute vec2 a_uv;
-attribute vec4 a_tint;  // what its picture's colours are multiplied by, halved (so that it may brighten as well as darken)
+attribute vec4 a_tint;  // what its picture's colours are multiplied by, halved (so that it may brighten as well as darken); and how it shows by night: under a half, how much of the street lamps' light falls on it; from a half, a lamp or a lit window
 uniform mat4 u_matrix;
 uniform vec3 u_at;      // where its foot stands, in the scene's metres
 uniform vec2 u_turn;    // the cosine and the sine of how far it is turned, clockwise
@@ -807,12 +807,14 @@ varying vec3 v_world;
 varying vec3 v_normal;
 varying vec2 v_uv;
 varying vec3 v_paint;
+varying vec2 v_byNight; // how much of the street lamps' light falls on it; and, for a lamp or a lit window, how brightly it glows
 void main() {
   vec3 place = vec3(a_pos.x * u_turn.x + a_pos.y * u_turn.y, a_pos.y * u_turn.x - a_pos.x * u_turn.y, a_pos.z) * u_tall;
   v_world = u_at + place;
   v_normal = vec3(a_normal.x * u_turn.x + a_normal.y * u_turn.y, a_normal.y * u_turn.x - a_normal.x * u_turn.y, a_normal.z);
   v_uv = a_uv;
   v_paint = a_tint.rgb * 2.0;
+  v_byNight = a_tint.a < 0.5 ? vec2(a_tint.a * 2.008, 0.0) : vec2(0.0, (a_tint.a - 0.5) * 2.0);
   gl_Position = u_matrix * vec4(v_world, 1.0);
 }`;
 
@@ -830,6 +832,7 @@ varying vec3 v_world;
 varying vec3 v_normal;
 varying vec2 v_uv;
 varying vec3 v_paint;
+varying vec2 v_byNight;
 
 void main() {
   vec3 normal = normalize(v_normal);
@@ -843,14 +846,18 @@ void main() {
   vec3 sky = vec3(0.62, 0.65, 0.72) * (0.86 + 0.14 * normal.z);
   vec3 sunlight = mix(vec3(1.0, 0.72, 0.44), vec3(1.0, 0.925, 0.77), smoothstep(0.1, 0.6, u_sun.z)) * 0.62;
   vec3 light = mix(vec3(0.80, 0.82, 0.88), sky + sunlight * sunned, u_day);
-  light = mix(light, vec3(0.16, 0.18, 0.26), u_night);
+  // By night: what little the sky gives; and on what faces the street the light of the street lamps, warm and
+  // fading upwards, as on the walls the app builds itself.
+  vec3 lamps = vec3(1.0, 0.72, 0.42) * 0.62 * exp(-max(v_world.z, 0.0) / 5.5) * v_byNight.x;
+  light = mix(light, vec3(0.16, 0.18, 0.26) + lamps, u_night);
   // Its own colours. Out of a picture taken by night: what the lamps did not reach is lifted, and the cast
   // of the lamps' own colour taken part away (a whitewashed wall under violet lamps is white by day).
   float grey = dot(picture, vec3(0.3, 0.59, 0.11));
   vec3 lifted = pow(mix(picture, vec3(grey), u_byDay.y), vec3(0.6)) * 1.08 * u_byDay.x;
   vec3 colour = mix(picture, lifted, u_lit) * light;
-  // By night: as the picture has it, lit by its own lamps.
-  vec3 glow = picture * u_lit * 1.12;
+  // By night: as the picture has it, lit by its own lamps. In a picture taken by day, a lamp or a lit window
+  // glows: the dark of its glass bright, whatever bars it in the picture darker against it.
+  vec3 glow = picture * u_lit * 1.12 + vec3(1.0, 0.80, 0.54) * (1.12 - 0.85 * grey) * v_byNight.y;
   gl_FragColor = vec4(min(toned(colour) + glow * smoothstep(0.35, 0.85, u_night), vec3(1.0)) * u_opacity, u_opacity);
 }`;
 
@@ -1933,7 +1940,7 @@ export class SceneLayer {
           gl.vertexAttribPointer(at.tint, 4, gl.UNSIGNED_BYTE, true, 0, 0);
         } else {
           gl.disableVertexAttribArray(at.tint);
-          gl.vertexAttrib4f(at.tint, 0.5, 0.5, 0.5, 1);
+          gl.vertexAttrib4f(at.tint, 0.5, 0.5, 0.5, 0); // (its own colours; by night neither lamp light nor a lit pane: it shows as its picture has it)
         }
         const send = (buffer, where, data, size) => {
           gl.bindBuffer(gl.ARRAY_BUFFER, buffer);

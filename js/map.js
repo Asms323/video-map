@@ -1454,7 +1454,7 @@ export class MapView {
     if (this.houseModelsMade && this.houseModelsMade.ids.size > 0) {
       HOUSE_MODELS.forEach((model, n) => {
         const kept = this.propFiles.get(model.file);
-        const places = this.houses.filter((house) => house.modelled === n).map((house) => housePlace(house, origin, model.tone ?? null, Boolean(model.plot)));
+        const places = this.houses.filter((house) => house.modelled === n).map((house) => housePlace(house, origin, model.tone ?? null, Boolean(model.plot), model.roof ?? 1));
         if (!kept?.mesh || places.length === 0) return;
         for (const mesh of standMany(kept.mesh, places)) this.houseBatches.push({ mesh, picture: kept.picture, at: [0, 0, 0], turn: 0, tall: 1, lit: model.night ?? 0, gain: model.day?.gain, plain: model.day?.plain });
       });

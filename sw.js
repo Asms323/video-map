@@ -43,6 +43,8 @@ const SHELL = [
   './models/church.vmm',
   './models/church.jpg',
   './models/house.vmm',
+  './models/villa.vmm',
+  './models/villa.jpg',
   './js/lights.js',
   './js/scene.js',
   './js/sight.js',

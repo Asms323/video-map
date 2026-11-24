@@ -75,6 +75,18 @@ surface to look inwards: by day the sun lit the sides turned from it. The five
 models have been turned (the tests now hold every model to it), and `pack.mjs`
 leaves the triangles as the generator wound them.
 
+## Built by measure
+
+Not every model need come from the generator. A building of plain shape that
+was photographed straight on, from across its street, can be measured in its
+photograph and built face by face, with the photograph laid on what it shows:
+sharper than the generator's work, true in its measures, a few hundred
+triangles, and no allowance to wait for. `built/villa.py <straight.jpg>
+<corner.jpg> <above.jpg> ../../models/villa` does this for the owner's villa
+and says how at its head. Such a mesh may also say which of its faces are
+windows and lamps, to be lit by night (see `readProp` in `js/props.js`), and
+its faces keep their edges.
+
 ## Whose photographs
 
 A model's picture is made out of its photograph, so the photograph's terms
@@ -100,7 +112,9 @@ come with it.
 ## What stands where, and what is next
 
 Made so far: the pagoda, the red hall, Egypt's gate tower and the Greek
-church (with the house cut off it), all at Boulevard World.
+church (with the house cut off it), all at Boulevard World, by the generator;
+and the villa that the city's houses are drawn as near the eye, built by
+measure (above).
 
 Next, from `inputs/`, in this order (`inputs.json` says the same):
 
@@ -116,11 +130,15 @@ Next, from `inputs/`, in this order (`inputs.json` says the same):
    older villas `villa-a` and `villa-b`.
 
 Each villa has its own wall and garage or door to the street, so it goes into
-`HOUSE_MODELS` with `plot: true`. With the first villa there, the houses near
-the middle of the view are drawn as it instead of as plain blocks; the app
-already does the rest (`pickHouseModels` in `js/map.js`, `standMany` and
-`housePlace` in `js/props.js`).
-A photograph taken by day gives a model with `night: 0`: how such a house
-shows its lamps by night is still to be written. The mosque and the block of
+`HOUSE_MODELS` with `plot: true`, beside the villa built by measure that is
+there already: the houses near the middle of the view are then drawn as one
+or the other (`pickHouseModels` in `js/map.js`, `standMany` and `housePlace`
+in `js/props.js`). Keep a generated villa only if it stands comparison with
+the built one.
+A photograph taken by day gives a model with `night: 0`. By night such a house
+catches the street lamps' light on what faces its street (the scene does
+that for any house model); lit windows it has only if its mesh says which
+faces they are, as a mesh built by measure can: for the generator's meshes
+that is still to be found a way for. The mosque and the block of
 flats need one more thing: fitting a model to the outline of any building,
 not only to a house the app laid out itself.
