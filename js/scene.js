@@ -777,15 +777,20 @@ void main() {
     vec2 cell = floor(grid);
     vec2 within = abs(grid - cell - 0.5);
     float pick = chance(cell * vec2(1.7, 2.3) + own);
-    // Which of the diamonds are cut, and how large each is: the more is cut away, the more alike they are.
-    float cut = mix(step(1.0 - clamp(0.25 + 0.9 * holes, 0.0, 1.0), pick), 1.0, upright);
-    float half_ = 0.5 * (0.45 + 0.5 * holes) * (1.0 - 0.35 * (1.0 - holes) * fract(pick * 7.3));
-    vec2 reach = mix(vec2(half_), vec2(0.18 + 0.33 * holes, 0.22 + 0.16 * holes), upright);
+    // Which of the diamonds are cut, and how large each is. They come in drifts: large in the middle of
+    // a drift, small at its edge, none between two drifts. The more is cut away, the more alike they are.
+    float drift = 0.5 + 0.5 * sin(cell.x * 0.43 + own * 1.3) * sin(cell.y * 0.35 + cell.x * 0.09 + own * 2.1);
+    float share = clamp(0.25 + 0.9 * holes, 0.0, 1.0);
+    float rank = mix(drift, pick, 0.3) - (1.0 - share);
+    float cut = mix(step(0.0, rank), 1.0, upright);
+    float most = 0.5 * (0.45 + 0.5 * holes);
+    float half_ = most * mix(0.45 + 0.55 * clamp(rank / max(share, 0.01), 0.0, 1.0), 1.0, holes * holes);
+    vec2 reach = mix(vec2(half_), vec2(min(0.18 + 0.5 * holes, 0.52), 0.22 + 0.1 * holes), upright);
     float size = min(storey, bay);
     float soft = clamp(pixel / size, 0.002, 0.5);
     float window = cut * (1.0 - smoothstep(reach.x - soft, reach.x + soft, within.x)) * (1.0 - smoothstep(reach.y - soft, reach.y + soft, within.y));
     // (What is too fine for the screen is drawn as the even mixture it makes.)
-    float evenly = mix(clamp(0.25 + 0.9 * holes, 0.0, 1.0) * (0.45 + 0.5 * holes) * (0.45 + 0.5 * holes) * 0.8, min(4.0 * reach.x * reach.y, 1.0), upright);
+    float evenly = mix(share * 2.25 * most * most * mix(1.0, 1.78, holes * holes), min(4.0 * reach.x * reach.y, 1.0), upright);
     window = mix(evenly, window, smoothstep(1.2, 3.0, size / pixel));
     // The skin, a little uneven; and in the holes dark glass, with the sky in it.
     vec3 skin = colour * (0.97 + 0.06 * chance(floor(v_world.xy / 3.0) + own));

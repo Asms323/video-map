@@ -489,29 +489,41 @@ const WALK_ROOF_PAINT = [186, 191, 197];
 const WALK_GLASS = [112, 146, 164];
 const WALK_GLASS_SOLID = 0.5;
 const WALK_TOWER_PAINT = [214, 209, 198];
+// A skywalk: one of the glazed bridges that join the towers of the financial district, three storeys up.
+// It is wider and taller than a footbridge over a road, glazed from its floor to its roof in a white
+// frame, and ends in the buildings it joins: it has no towers of its own.
+const SKYWALK_HALF_METERS = 2.5;
+const SKYWALK_UP_METERS = 14;
+const SKYWALK_ROOF_METERS = 4.4;
+const SKYWALK_RAIL_METERS = 0.45;
+const SKYWALK_PIER_EVERY_METERS = 34;
+const SKYWALK_PIER_HALF_METERS = 0.6;
+const SKYWALK_PAINT = [238, 238, 234];
+const SKYWALK_GLASS = [96, 138, 166];
 
 /**
  * Fill a mesh (see Mesh in life.js) with the footbridges over the roads.
  *
- * walks: [{ coordinates: [[lng, lat], …] }], the footpaths the map marks as
- * bridges (a bridge that crosses the edge of a map tile comes in two
- * lengths, which meet end to end). network: the roads, as buildNetwork()
+ * walks: [{ coordinates: [[lng, lat], …], sky }], the footpaths the map marks
+ * as bridges (a bridge that crosses the edge of a map tile comes in two
+ * lengths, which meet end to end); sky: true for a skywalk between towers
+ * (see above): higher, wider, glazed all the way up, without towers. network: the roads, as buildNetwork()
  * gives them, so that no pier is stood in a carriageway (or null). origin:
  * { lng, lat }. light: the sun, as lightFrom() gives it.
  *
  * Each has a floor 5.9 m up, solid sides a metre high with glazing above
  * them, a roof, a pier every so often where there is ground to stand one
  * on, and a tower at each of its ends. Returns { bridges (lengths), metres,
- * towers, piers }.
+ * towers, piers, sky (how many of the lengths are skywalks) }.
  */
 export function drawFootbridges(mesh, walks, network, origin, light) {
   mesh.clear();
-  const made = { bridges: 0, metres: 0, towers: 0, piers: 0 };
+  const made = { bridges: 0, metres: 0, towers: 0, piers: 0, sky: 0 };
   if (!walks || walks.length === 0 || !origin) return made;
   const squeeze = Math.cos((origin.lat * Math.PI) / 180) * 111320;
   const lines = walks
-    .map((walk) => walk.coordinates.map(([lng, lat]) => [(lng - origin.lng) * squeeze, (lat - origin.lat) * 111320]))
-    .filter((xy) => xy.length >= 2 && Math.hypot(xy[xy.length - 1][0] - xy[0][0], xy[xy.length - 1][1] - xy[0][1]) > 3);
+    .map((walk) => ({ sky: Boolean(walk.sky), xy: walk.coordinates.map(([lng, lat]) => [(lng - origin.lng) * squeeze, (lat - origin.lat) * 111320]) }))
+    .filter(({ xy }) => xy.length >= 2 && Math.hypot(xy[xy.length - 1][0] - xy[0][0], xy[xy.length - 1][1] - xy[0][1]) > 3);
   if (lines.length === 0) return made;
   const near = network ? filed(network, 2) : () => [];
   const onRoad = (x, y) => near(x, y).some((way) => nearestOn(way, x, y).distance < way.width / 2 + 0.8);
@@ -539,27 +551,33 @@ export function drawFootbridges(mesh, walks, network, origin, light) {
     mesh.face([a1[0], a1[1], low], [a0[0], a0[1], low], [a0[0], a0[1], high], [a1[0], a1[1], high], behind[0], behind[1], behind[2], solid);
   };
   // Where each length ends: one that ends where another does carries on as it, and has no tower there.
-  const ends = lines.flatMap((xy, line) => [{ at: xy[0], line }, { at: xy[xy.length - 1], line }]);
+  const ends = lines.flatMap(({ xy }, line) => [{ at: xy[0], line }, { at: xy[xy.length - 1], line }]);
   const free = (at, line) => !ends.some((end) => end.line !== line && Math.hypot(end.at[0] - at[0], end.at[1] - at[1]) < WALK_JOIN_METERS);
-  const floor = WALK_UP_METERS;
-  const top = floor + WALK_ROOF_METERS;
 
-  lines.forEach((xy, line) => {
+  lines.forEach(({ xy, sky }, line) => {
     made.bridges += 1;
+    if (sky) made.sky += 1;
+    const half = sky ? SKYWALK_HALF_METERS : WALK_HALF_METERS;
+    const floor = sky ? SKYWALK_UP_METERS : WALK_UP_METERS;
+    const top = floor + (sky ? SKYWALK_ROOF_METERS : WALK_ROOF_METERS);
+    const rail = sky ? SKYWALK_RAIL_METERS : WALK_RAIL_METERS;
+    const paint = sky ? SKYWALK_PAINT : WALK_PAINT;
+    const pierEvery = sky ? SKYWALK_PIER_EVERY_METERS : WALK_PIER_EVERY_METERS;
+    const pierHalf = sky ? SKYWALK_PIER_HALF_METERS : WALK_PIER_HALF_METERS;
     let along = 0;
-    let nextPier = WALK_PIER_EVERY_METERS / 2;
+    let nextPier = pierEvery / 2;
     for (let i = 1; i < xy.length; i += 1) {
       const a = xy[i - 1];
       const b = xy[i];
       const long = Math.hypot(b[0] - a[0], b[1] - a[1]);
       if (!(long > 0.05)) continue;
       // The walkway: its floor, its two solid sides, the glazing over them, and its roof.
-      box(a, b, 0, WALK_HALF_METERS, floor - WALK_THICK_METERS, floor, WALK_PAINT);
+      box(a, b, 0, half, floor - WALK_THICK_METERS, floor, paint);
       for (const side of [1, -1]) {
-        box(a, b, side * (WALK_HALF_METERS - 0.08), 0.08, floor, floor + WALK_RAIL_METERS, WALK_PAINT);
-        box(a, b, side * (WALK_HALF_METERS - 0.08), 0.03, floor + WALK_RAIL_METERS, top, WALK_GLASS, WALK_GLASS_SOLID);
+        box(a, b, side * (half - 0.08), 0.08, floor, floor + rail, paint);
+        box(a, b, side * (half - 0.08), 0.03, floor + rail, top, sky ? SKYWALK_GLASS : WALK_GLASS, sky ? 0.72 : WALK_GLASS_SOLID);
       }
-      box(a, b, 0, WALK_HALF_METERS + WALK_ROOF_OUT_METERS, top, top + 0.16, WALK_ROOF_PAINT);
+      box(a, b, 0, half + WALK_ROOF_OUT_METERS, top, top + (sky ? 0.4 : 0.16), sky ? SKYWALK_PAINT : WALK_ROOF_PAINT);
       // Its piers: one every so often, moved along a little where it would stand in a road, left out where it cannot be.
       while (nextPier < along + long) {
         for (const shift of [0, 4, -4, 8, -8]) {
@@ -568,18 +586,18 @@ export function drawFootbridges(mesh, walks, network, origin, light) {
           const [x, y] = [a[0] + ((b[0] - a[0]) * s) / long, a[1] + ((b[1] - a[1]) * s) / long];
           if (onRoad(x, y)) continue;
           const [east, north] = [(b[0] - a[0]) / long, (b[1] - a[1]) / long];
-          box([x - east * WALK_PIER_HALF_METERS, y - north * WALK_PIER_HALF_METERS], [x + east * WALK_PIER_HALF_METERS, y + north * WALK_PIER_HALF_METERS], 0, WALK_PIER_HALF_METERS, 0, floor - WALK_THICK_METERS, WALK_PAINT);
+          box([x - east * pierHalf, y - north * pierHalf], [x + east * pierHalf, y + north * pierHalf], 0, pierHalf, 0, floor - WALK_THICK_METERS, paint);
           made.piers += 1;
           break;
         }
-        nextPier += WALK_PIER_EVERY_METERS;
+        nextPier += pierEvery;
       }
       along += long;
     }
     made.metres += along;
     // A tower at each end that is an end: the stairs and the lift, as tall as the walkway's roof.
     for (const [at, towards] of [[xy[0], xy[1]], [xy[xy.length - 1], xy[xy.length - 2]]]) {
-      if (!free(at, line)) continue;
+      if (sky || !free(at, line)) continue; // (a skywalk ends in the buildings it joins)
       const long = Math.hypot(at[0] - towards[0], at[1] - towards[1]) || 1;
       const [east, north] = [(at[0] - towards[0]) / long, (at[1] - towards[1]) / long];
       // (It stands beyond the end of the walkway, on the ground the bridge comes down to.)

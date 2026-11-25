@@ -40,6 +40,7 @@ import {
 } from './lib.js';
 import { drawCuttings, overCutting } from './cuttings.js';
 import { inFairground, onLagoon } from './boulevard.js';
+import { inKafd } from './kafd.js';
 import { CHARACTERS, characterAt, districtAt } from './districts.js';
 import { dressHouses, parcelHouses, streetAprons } from './houses.js';
 import { PLAIN_FUEL, brandOf, localKind, mosqueExtras, mosquesAmong, stationExtras, storeExtras } from './dress.js';
@@ -1829,7 +1830,8 @@ export class MapView {
         const tile = Number.isInteger(feature._z) ? tileBox(feature._z, feature._x, feature._y) : null;
         for (const part of lineParts(feature.geometry)) {
           for (const coordinates of tile ? clipLine(part, tile) : [part]) {
-            if (coordinates.length >= 2 && coordinates.some(inBox)) walks.push({ coordinates });
+            // (Between the towers of the financial district it is a skywalk, three storeys up.)
+            if (coordinates.length >= 2 && coordinates.some(inBox)) walks.push({ coordinates, sky: inKafd(...coordinates[0]) && inKafd(...coordinates[coordinates.length - 1]) });
           }
         }
         continue;

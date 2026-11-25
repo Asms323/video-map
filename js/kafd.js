@@ -50,19 +50,19 @@ const EDGE_LIGHT = '#dcebff';
  */
 const SKINS = {
   // Dark glass under a net of fins, the folds picked out in pale lines: the PIF Tower's family.
-  dark: { kind: 'glass', colour: '#2c3f44', bay: 3, lit: 0.45, fins: 0.75, mirror: 0.15, ridge: 1, light: EDGE_LIGHT, glow: 0.5 },
+  dark: { kind: 'glass', colour: '#2c3f44', bay: 3, lit: 0.45, fins: 0.75, mirror: 0.15, ridge: 1, light: EDGE_LIGHT, glow: 0.2 },
   // Blue glass that mirrors the sky.
-  blue: { kind: 'glass', colour: '#4c7a9f', bay: 3, lit: 0.4, floors: 0.45, mirror: 0.6, ridge: 0.9, light: EDGE_LIGHT, glow: 0.45 },
+  blue: { kind: 'glass', colour: '#4c7a9f', bay: 3, lit: 0.4, floors: 0.45, mirror: 0.6, ridge: 0.9, light: EDGE_LIGHT, glow: 0.16 },
   // Glass so pale that it is nearly white where the sky is in it.
-  ice: { kind: 'glass', colour: '#9db8cb', bay: 3, lit: 0.35, floors: 0.35, mirror: 0.8, ridge: 1, light: '#eef6ff', glow: 0.5 },
+  ice: { kind: 'glass', colour: '#9db8cb', bay: 3, lit: 0.35, floors: 0.35, mirror: 0.8, ridge: 1, light: '#eef6ff', glow: 0.3 },
   // Grey-blue glass, every floor a strong pale line.
-  steel: { kind: 'glass', colour: '#3a4f62', bay: 3, lit: 0.45, floors: 1, mirror: 0.35, ridge: 0.6, light: EDGE_LIGHT, glow: 0.4 },
+  steel: { kind: 'glass', colour: '#3a4f62', bay: 3, lit: 0.45, floors: 1, mirror: 0.35, ridge: 0.6, light: EDGE_LIGHT, glow: 0.14 },
   // Black glass, in great flat facets.
-  black: { kind: 'glass', colour: '#1c242a', bay: 4, lit: 0.25, floors: 0.3, mirror: 0.3, ridge: 1, light: '#ffffff', glow: 0.5 },
+  black: { kind: 'glass', colour: '#1c242a', bay: 4, lit: 0.25, floors: 0.3, mirror: 0.3, ridge: 1, light: '#ffffff', glow: 0.25 },
   // Clear glass in a white frame: the facets of the hall.
-  facet: { kind: 'glass', colour: '#6f93ad', bay: 3.5, lit: 0.6, floors: 0.25, mirror: 0.7, ridge: 1, light: '#ffffff', glow: 0.6 },
+  facet: { kind: 'glass', colour: '#6f93ad', bay: 3.5, lit: 0.6, floors: 0.25, mirror: 0.7, ridge: 1, light: '#ffffff', glow: 0.4 },
   // Pale grey panels in a fine slanting net over glass: the World Trade Center.
-  pale: { kind: 'glass', colour: '#8794a0', bay: 2.4, lit: 0.35, fins: 1, floors: 0.3, mirror: 0.45, ridge: 1, light: '#ffffff', glow: 0.55 },
+  pale: { kind: 'glass', colour: '#8794a0', bay: 2.4, lit: 0.35, fins: 1, floors: 0.3, mirror: 0.45, ridge: 1, light: '#ffffff', glow: 0.35 },
   // White panels with diamond windows, some large and some small.
   lattice: { kind: 'pierced', colour: '#ece9e1', bay: 3.4, storey: 4.2, diamonds: true, holes: 0.45, lit: 0.3, light: '#fff1d8', glow: 0.22 },
   // A cream mesh of diamonds, wide open, with the glass behind it.
@@ -74,7 +74,7 @@ const SKINS = {
   // White stone with windows in rows.
   white: { kind: 'pierced', colour: '#e9e6de', bay: 3, holes: 0.3, lit: 0.3, light: '#fff1d8', glow: 0.2 },
   // White bands and bands of glass, by turns, right round.
-  bands: { kind: 'pierced', colour: '#e8e8e4', bay: 3, holes: 1, lit: 0.4, light: '#fff1d8', glow: 0.15 },
+  bands: { kind: 'pierced', colour: '#e8e8e4', bay: 3, holes: 0.7, lit: 0.4, light: '#fff1d8', glow: 0.15 },
   // The red-brown of the low blocks by the station.
   terracotta: { kind: 'pierced', colour: '#8c5140', bay: 3, holes: 0.35, lit: 0.3, light: '#ffd9b0', glow: 0.18 },
   // The mosque's stone: no windows to speak of, and lamps trained on it by night.
@@ -164,7 +164,7 @@ const PLANS = {
   67: { skin: 'black', top: 'peak', rise: 12, tiers: 0 }, // black glass in a few great facets, north of the station's forecourt
   68: { skin: 'white', roof: '#6f8a4f' }, // its roof is planted
   69: { skin: 'stone' },
-  71: { skin: 'steel', top: 'flat', tiers: 0 }, // the curved block at the district's northern point, banded
+  71: { skin: 'bands' }, // the curved block at the district's northern point, banded
   72: { skin: 'stone' },
   73: { skin: 'blue', drop: 5 },
   74: { skin: 'dark', drop: 18 },
@@ -290,7 +290,8 @@ export function crystal(model, building, plan) {
   if (kind === 'peak') {
     const [east, north] = plan.apex ?? [0, 0];
     const apex = [east, north, top];
-    const facets = glass ? { ...stuff, lit: 0, open: true } : { ...stuff, kind: 'plain', colour: plan.roof ?? ROOFS[plan.skin], ridge: 0.8, open: true };
+    // (Of glass over glass; over a pierced skin, of plain panels, their folds faint and unlit.)
+    const facets = glass ? { ...stuff, lit: 0, open: true } : { kind: 'plain', colour: plan.roof ?? ROOFS[plan.skin], ridge: 0.3, open: true };
     for (let i = 0; i < count; i += 1) {
       const j = (i + 1) % count;
       model.facet(rim[i], rim[j], apex, facets, { out: [rim[i][0] + rim[j][0] - 2 * east, rim[i][1] + rim[j][1] - 2 * north, wide] });
@@ -529,6 +530,20 @@ export function onKafd(lng, lat) {
     if (far < 6 || inside(one.ring, one.at, east, north)) return true;
   }
   return false;
+}
+
+/**
+ * The ground the district stands on: the inside of its ring road, drawn by hand round its buildings, in
+ * metres east and north of KAFD_AT. (A drop, its point to the north.)
+ */
+const GROUND = [
+  [60, 1045], [205, 1000], [305, 830], [335, 650], [440, 520], [475, 200], [445, -120], [385, -250], [230, -335], [0, -385],
+  [-250, -405], [-345, -300], [-360, -50], [-350, 150], [-240, 350], [-135, 480], [-115, 620], [-75, 800], [-25, 950],
+];
+
+/** Whether a place lies in the district: a footbridge there is a skywalk between its towers (see drawFootbridges in roadside.js). */
+export function inKafd(lng, lat) {
+  return inside(GROUND, [0, 0], (lng - KAFD_AT[0]) * SQUEEZE, (lat - KAFD_AT[1]) * METERS_PER_DEGREE);
 }
 
 /** How tall the Grand Mosque's two minarets are. */

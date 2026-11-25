@@ -131,8 +131,9 @@ map opens on the city and keeps to it, and places are looked for in it.
   along slanting lines and cut off aslant; white towers pierced with diamond
   windows; blocks of tan stone; the World Trade Center's two pale shafts with
   the seam of glass between them; the Grand Mosque with its two minarets; the
-  faceted glass hall. By night their floors, their rooms and their edges are
-  lit.
+  faceted glass hall. Between the towers run the district's skywalks, glazed
+  bridges three storeys up. By night the floors, the rooms and the edges of
+  the towers are lit.
 - **Bridges you can drive over.** Flyovers, interchange ramps and metro
   viaducts are built in 3D: a deck with parapets on piers, with the traffic
   and the trains up on it. A bridge is as high as what it passes over: one
@@ -564,7 +565,9 @@ Center and the Grand Mosque follow what is published of them, but where the
 mosque's two minarets stand is a judgement. Two buildings that the data does
 not have were traced from the satellite photo; others it does not have, in
 the west and the north of the district, are still missing, and so are the
-bridges between the towers, the monorail and the gardens of the wadi.
+gardens of the wadi. The skywalks between the towers are the street map's
+footbridges there, drawn as glazed bridges three storeys up: where they run
+is real, how high and how wide they are is a likeness.
 
 Bridges. Which stretches of road and track are on a bridge, and which pass
 over which, is real. How high a bridge is, is not recorded: a road deck is
@@ -991,3 +994,8 @@ phones drop their saved copy.
   as served by OpenFreeMap (© OpenMapTiles).
 - `tests/fixtures/buildings.json` holds building outlines from Overture Maps
   (© OpenStreetMap contributors and Overture Maps Foundation, ODbL).
+- `js/kafd-data.js` and `tools/kafd/outlines.json` hold the outlines of the
+  financial district's buildings, and such heights as are on record, from
+  Overture Maps (© OpenStreetMap contributors and Overture Maps Foundation,
+  ODbL); two of the outlines and the other heights were read by hand off
+  Esri World Imagery (see `tools/kafd/README.md`).

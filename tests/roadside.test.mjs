@@ -131,8 +131,21 @@ test('drawFootbridges: a roofed walkway six metres over the road, on piers that 
   // The glazing is see-through; the rest is solid.
   const solid = Array.from({ length: mesh.count }, (_, i) => mesh.colours[i * 4 + 3]);
   assert.deepEqual([...new Set(solid)].sort((a, b) => a - b), [127, 255]);
+  assert.equal(made.sky, 0);
+  // A skywalk between the towers of the financial district: 14 m up, five metres wide and 4.4 m high inside,
+  // glazed from its floor up, on a pier here and there, and with no tower at either end: it ends in the towers.
+  const sky = drawFootbridges(mesh, [{ ...walk([[300, 100], [380, 100]]), sky: true }], network, ORIGIN, NOON);
+  assert.deepEqual([sky.bridges, sky.sky, sky.towers], [1, 1, 0]);
+  assert.ok(sky.piers >= 1 && sky.piers <= 3 && Math.abs(sky.metres - 80) < 0.01, JSON.stringify(sky));
+  const tube = corners(mesh);
+  assert.ok(tube.every((point) => point[0] >= 300 - 1e-3 && point[0] <= 380 + 1e-3), 'nothing beyond its ends');
+  const deck = tube.filter((point) => Math.abs(point[2] - 14) < 1e-3);
+  assert.ok(deck.length > 0 && deck.every((point) => Math.abs(point[1] - 100) <= 2.5 + 1e-3) && deck.some((point) => Math.abs(point[1] - 100) > 2.4));
+  assert.ok(Math.abs(Math.max(...tube.map((point) => point[2])) - (14 + 4.4 + 0.4)) < 1e-3);
+  const panes = Array.from({ length: mesh.count }, (_, i) => [mesh.colours[i * 4 + 3], mesh.positions[i * 3 + 2]]).filter(([solid]) => solid < 255);
+  assert.ok(panes.length > 0 && Math.abs(Math.min(...panes.map(([, up]) => up)) - 14.45) < 1e-3 && Math.abs(Math.max(...panes.map(([, up]) => up)) - 18.4) < 1e-3);
   // No footbridges: nothing.
-  assert.deepEqual(drawFootbridges(mesh, [], network, ORIGIN, NOON), { bridges: 0, metres: 0, towers: 0, piers: 0 });
+  assert.deepEqual(drawFootbridges(mesh, [], network, ORIGIN, NOON), { bridges: 0, metres: 0, towers: 0, piers: 0, sky: 0 });
   assert.equal(mesh.count, 0);
 });
 

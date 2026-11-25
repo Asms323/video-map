@@ -169,7 +169,7 @@ test('the skins of the district: dark and blue glass, pale panels with diamond w
   assert.deepEqual([skinOf(75).kind, skinOf(75).colour, skinOf(75).floors], ['pierced', '#ece9e1', 0]);
   assert.ok(near(skinOf(75).fins, 0.45, 0.01) && near(skinOf(38).fins, 0.95, 0.01) && skinOf(38).floors === 0);
   assert.deepEqual([skinOf(13).kind, skinOf(13).colour, skinOf(13).floors], ['pierced', '#cdbb9b', 1]);
-  assert.ok(near(skinOf(15).fins, 1, 0.01) && skinOf(15).floors === 1);
+  assert.ok(near(skinOf(15).fins, 0.7, 0.01) && skinOf(15).floors === 1);
   // Every building is as tall as told, stands on the ground, and keeps to its outline (a fold stands a little out).
   for (const one of KAFD_PARTS.slice(1)) {
     const n = Number(one.id.slice(5));
@@ -257,4 +257,15 @@ test('a red lamp stands on the top of every tower of the district', () => {
     }
     assert.ok(made.some((lamp) => near(lamp[2], one.height + 0.6, 0.01)), `${one.id}: one on its very top`);
   }
+});
+
+test('inKafd says what lies inside the district\'s ring road: a footbridge there is a skywalk', async () => {
+  const { inKafd } = await import('../js/kafd.js');
+  // Every building of the district, the PIF Tower and the metro station; not the car park across King Fahd Road, nor Al Aqiq to the west.
+  for (const one of KAFD_BUILDINGS) assert.ok(inKafd(...kafdPlace(one.at)), String(one.n));
+  for (const id of ['pif-tower', 'kafd-station']) assert.ok(inKafd(...LANDMARKS.find((one) => one.id === id).at), id);
+  assert.equal(inKafd(...kafdPlace([700, 300])), false);
+  assert.equal(inKafd(...kafdPlace([-600, 0])), false);
+  assert.equal(inKafd(...kafdPlace([0, -600])), false);
+  assert.equal(inKafd(46.6744, 24.7113), false, 'Kingdom Centre');
 });

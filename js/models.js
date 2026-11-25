@@ -149,7 +149,7 @@ export class Model {
    *       bay and as tall as a storey); without it they stand upright, in rows,
    *     holes: how much of the skin is cut away (0 to 1). Of diamonds: few and small, of many sizes, up to
    *       every one of them and wide open, which leaves a mesh. Of upright windows: from narrow ones up
-   *       to bands of glass that run right round between bands of skin.
+   *       to bands of glass that run right round between bands of skin (from 0.64).
    *
    * out: a direction the face looks towards rather than away from; it
    * settles which of its two sides is the outside. Without it the outside is
