@@ -342,34 +342,19 @@ export function roofTintOf(colour, floorTone = [0.8, 0.8, 0.8]) {
   return colour.slice(0, 3).map((part, n) => Math.round((Math.min(Math.max(part / 255 / Math.max(floorTone[n], 0.05), 0.55), 1.25) / 2) * 255));
 }
 
-/** Meshes being filled: corners in the scene's metres, each with its place on the picture, its tint and how it shows by night. */
+/** One house being built: its corners in the scene's metres, four to a face, each with its place on the picture, its tint and how it shows by night. */
 class Meshes {
   constructor() {
-    this.done = [];
-    this.open();
-  }
-
-  open() {
     this.positions = [];
     this.normals = [];
     this.uvs = [];
     this.tints = [];
-    this.indices = [];
-  }
-
-  close() {
-    if (this.indices.length === 0) return;
-    this.done.push({
-      corners: this.positions.length / 3,
-      positions: Float32Array.from(this.positions),
-      normals: Float32Array.from(this.normals),
-      uvs: Float32Array.from(this.uvs),
-      tints: Uint8Array.from(this.tints),
-      indices: Uint16Array.from(this.indices),
-    });
-    this.open();
   }
 }
+
+// What each house came to, kept for as long as the house is: a house is built once, not every time the
+// houses near the eye change (which is every few metres of a drive).
+const built = new WeakMap();
 
 /**
  * Dress houses, each from the kit: meshes the scene can draw whole, every
@@ -378,27 +363,68 @@ class Meshes {
  *
  * houses: as parcelHouses gives them (houses.js): each with its parts, if
  * the app has laid it out, or with its own outline (ring) and height, if
- * the map has the house whole. origin: { lng, lat }, what the scene is
- * measured from. kit: the kit (see kit.js).
+ * the map has the house whole; and roof: the colour of its roof, if known.
+ * origin: { lng, lat }, what the scene is measured from. kit: the kit (see
+ * kit.js).
  *
  * Returns [{ corners, positions, normals, uvs, tints, indices }], each of no
  * more corners than a mesh may have. A corner's tint is four numbers: the
  * three it is coloured by, halved; and how it shows by night: up to 127,
  * how much of the street lamps' light falls on it; from 128, a lamp or a lit
  * window, and how brightly it glows.
+ *
+ * What a house came to is kept with the house: asked for again (from the
+ * same origin, with the same kit and the same roof colour), it is not built
+ * again, only put with the others.
  */
 export function dressInFronts(houses, origin, kit = KIT) {
-  const meshes = new Meshes();
   const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * 111320;
   const [sizeU, sizeV] = kit.size;
+  const batches = [[]];
+  let corners = 0;
   for (const house of houses) {
-    const frontage = frontageOf(house);
-    if (!frontage) continue;
-    if (meshes.positions.length / 3 > MOST_CORNERS - 8000) meshes.close();
-    dressOne(meshes, house, [(house.at[0] - origin.lng) * squeeze, (house.at[1] - origin.lat) * 111320], kit, sizeU, sizeV, frontage);
+    const key = `${origin.lng},${origin.lat},${Array.isArray(house.roof) ? house.roof.join(',') : ''}`;
+    let made = built.get(house);
+    if (!made || made.key !== key || made.kit !== kit) {
+      const frontage = frontageOf(house);
+      if (!frontage) continue;
+      const one = new Meshes();
+      dressOne(one, house, [(house.at[0] - origin.lng) * squeeze, (house.at[1] - origin.lat) * 111320], kit, sizeU, sizeV, frontage);
+      made = { key, kit, corners: one.positions.length / 3, positions: Float32Array.from(one.positions), normals: Float32Array.from(one.normals), uvs: Float32Array.from(one.uvs), tints: Uint8Array.from(one.tints) };
+      built.set(house, made);
+    }
+    if (made.corners === 0) continue;
+    if (corners + made.corners > MOST_CORNERS) {
+      batches.push([]);
+      corners = 0;
+    }
+    batches[batches.length - 1].push(made);
+    corners += made.corners;
   }
-  meshes.close();
-  return meshes.done;
+  // Each batch of houses as one mesh: their corners one after another; every face is four corners, two triangles.
+  return batches
+    .filter((batch) => batch.length > 0)
+    .map((batch) => {
+      const count = batch.reduce((sum, made) => sum + made.corners, 0);
+      const mesh = { corners: count, positions: new Float32Array(count * 3), normals: new Float32Array(count * 3), uvs: new Float32Array(count * 2), tints: new Uint8Array(count * 4), indices: new Uint16Array((count / 4) * 6) };
+      let at = 0;
+      for (const made of batch) {
+        mesh.positions.set(made.positions, at * 3);
+        mesh.normals.set(made.normals, at * 3);
+        mesh.uvs.set(made.uvs, at * 2);
+        mesh.tints.set(made.tints, at * 4);
+        at += made.corners;
+      }
+      for (let face = 0, corner = 0, n = 0; corner < count; face += 1, corner += 4) {
+        mesh.indices[n++] = corner;
+        mesh.indices[n++] = corner + 1;
+        mesh.indices[n++] = corner + 2;
+        mesh.indices[n++] = corner;
+        mesh.indices[n++] = corner + 2;
+        mesh.indices[n++] = corner + 3;
+      }
+      return mesh;
+    });
 }
 
 /** One house, into the meshes: see dressInFronts. at: its front left corner, in the scene's metres. frontage: the wall its face goes on (see frontageOf). */
@@ -443,7 +469,6 @@ function dressOne(meshes, house, at, kit, sizeU, sizeV, frontage) {
       const share = (toStreet >= 0 ? 0.3 + 0.7 * toStreet : 0.3 + 0.18 * toStreet) * (1 - 0.5 * Math.max(normal[2], 0));
       night = Math.round(Math.min(Math.max(share, 0), 1) * 127);
     }
-    const first = meshes.positions.length / 3;
     for (const k of order) {
       const [a, b, z] = corners[k];
       meshes.positions.push(at[0] + ax * a + bx * b, at[1] + ay * a + by * b, z);
@@ -451,7 +476,6 @@ function dressOne(meshes, house, at, kit, sizeU, sizeV, frontage) {
       meshes.uvs.push(across[k][0] / sizeU, across[k][1] / sizeV);
       meshes.tints.push(tinted[0], tinted[1], tinted[2], night);
     }
-    meshes.indices.push(first, first + 1, first + 2, first, first + 2, first + 3);
   };
   /** The four corners of a box of the picture, for a face whose corners go round from its lower left. */
   const cornersOf = (box) => [

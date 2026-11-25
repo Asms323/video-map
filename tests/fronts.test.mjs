@@ -379,4 +379,22 @@ test('a roof is drawn in its own colour, where that is known', () => {
     assert.deepEqual([...tinted.tints.subarray(i * 4, i * 4 + 3)], beige);
   }
   assert.equal(changed, 4);
+  // A house is built once and kept: asked for again it comes out the same; from another origin, or with
+  // another roof colour, it is built again.
+  const house = houseOf(77, 14, 13);
+  const first = dressInFronts([house], origin)[0];
+  assert.deepEqual(dressInFronts([house], origin)[0], first);
+  const moved = dressInFronts([house], { lng: origin.lng + 0.001, lat: origin.lat })[0];
+  assert.ok(near(moved.positions[0] - first.positions[0], -0.001 * 111320 * Math.cos((origin.lat * Math.PI) / 180), 0.01));
+  house.roof = [214, 196, 160];
+  assert.notDeepEqual(dressInFronts([house], origin)[0].tints, first.tints);
+  // Many houses: in as many meshes as their corners need, none of more corners than a mesh may have, every
+  // face four corners and two triangles.
+  const many = dressInFronts(Array.from({ length: 300 }, (_, n) => houseOf(1000 + n, 14, 13, { at: [origin.lng + n * 0.0002, origin.lat] })), origin);
+  assert.ok(many.length >= 2);
+  for (const mesh of many) {
+    assert.ok(mesh.corners <= 65535 && mesh.corners % 4 === 0 && mesh.indices.length === (mesh.corners / 4) * 6);
+    assert.ok(mesh.positions.length === mesh.corners * 3 && mesh.tints.length === mesh.corners * 4 && mesh.uvs.length === mesh.corners * 2);
+    assert.deepEqual([...mesh.indices.subarray(6, 12)], [4, 5, 6, 4, 6, 7]);
+  }
 });
