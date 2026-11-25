@@ -8,7 +8,7 @@
 // Nothing here touches the browser. Measurements are in metres; a model is measured from the middle of
 // its own footprint, east and north being its own (it is turned with its landmark's bearing).
 
-import { ballProfile, beam, frame, lathe } from './solids.js';
+import { ballProfile, beam, frame, lathe, prism, taper } from './solids.js';
 
 const TAU = Math.PI * 2;
 
@@ -366,6 +366,191 @@ function kingFahdLibrary(model) {
   return {};
 }
 
+// ── Masmak Fort ───────────────────────────────────────────────────────────
+
+/**
+ * A ring with every side moved in by so much (out, if by less than nothing): for a ring without
+ * hollows in its outline, its corners [[u, v], …] anticlockwise.
+ */
+export function inset(ring, by) {
+  const count = ring.length;
+  const inward = ring.map(([u, v], i) => {
+    const [nextU, nextV] = ring[(i + 1) % count];
+    const long = Math.hypot(nextU - u, nextV - v) || 1;
+    return [-(nextV - v) / long, (nextU - u) / long];
+  });
+  return ring.map(([u, v], i) => {
+    const [a, b] = [inward[(i + count - 1) % count], inward[i]];
+    const share = by / (1 + a[0] * b[0] + a[1] * b[1]);
+    return [u + (a[0] + b[0]) * share, v + (a[1] + b[1]) * share];
+  });
+}
+
+// The fort's measures, in metres. Places are [u, v]: u along its north wall, eastwards, v across it, northwards.
+export const MASMAK = {
+  turn: 19, // how far that u is turned from east, anticlockwise, in degrees
+  corners: [[27.3, 18.7], [-32.4, 22.4], [-26.6, -22.5], [23.2, -23.8]], // where its walls meet: north-east, north-west, south-west, south-east
+  towers: [[29.8, 20], [-34.5, 23.6], [-28.8, -24.4], [25, -24.9]], // the middles of its four round towers
+  batter: 0.6, // how much further out the foot of a wall stands than its top
+  wall: 9.5, // the top of the walls…
+  roof: 8.2, // …and the roofs of the rooms inside them
+  tower: [4.4, 3.5, 3.05, 12, 16.9, 18], // a round tower: its radius at the foot, at its ledge and at its top; the heights of the ledge, of its floor on top and of the points of its battlements
+  keep: [-9.7, 14.5, 3.5, 13.6, 14.6], // the square tower: where its middle is, its half-width, and the heights of its roof and of its battlements
+  gate: [0.45, 2.65, 3.6], // the gate in the west wall: how far along from the north-western corner (as a share), its width and its height
+  // The courts inside: the middle of each, and how long and how wide it is.
+  courts: [[-21.5, 14.4, 13, 8.5], [-2.4, 13, 4, 8], [13.3, 9.8, 10, 8], [-15.7, -9.8, 14, 10], [-1.8, -12.5, 5, 11], [15.9, -13.3, 8, 8]],
+};
+
+/**
+ * Masmak Fort (Qasr al-Masmak), in the old town: the fort of clay and mud brick, begun in 1865 and
+ * finished in 1895, that Abdulaziz ibn Saud took in January 1902; a museum since 1995.
+ *
+ * Four walls of clay, thick at the foot and leaning back as they rise, with a round tower at each
+ * corner: each tower some 18 m high, narrowing upwards, with a ledge round it two thirds of the way up
+ * and a crown of pointed battlements. The gate is in the west wall, 3.6 m high and 2.65 m wide, of palm
+ * wood, under a box that stands out of the wall over it. Inside, rooms of two storeys round a handful of
+ * courts, under flat roofs; and over them a square watchtower. Rows of small three-cornered holes air
+ * the rooms, and wooden spouts stand out of the walls to throw the rain clear of them. By night the fort
+ * is floodlit, golden.
+ *
+ * (Its outline, with the four towers, is the buildings data's; it agrees with the satellite photo the
+ * app shows, in which the tops of the towers lie four metres east of where the data has their feet: that
+ * is the slant of the photo. The height of the towers and the size of the gate are as published. The
+ * height of the walls, 9.5 m, is judged against the towers in photographs. The courts are placed from
+ * the satellite photo, and the rooms round them built plainly, as one roof; which of the roofs the
+ * square tower stands on is a judgement. The holes, spouts and battlements are as the photographs show
+ * them, but not counted.)
+ */
+function masmakFort(model) {
+  const F = MASMAK;
+  const to = frame([0, 0], (F.turn * Math.PI) / 180);
+  const up = (ring, height) => ring.map(([u, v]) => to(u, v, height));
+  // Clay: floodlit by night where it faces the town.
+  const clay = { kind: 'plain', colour: '#c8a878', light: '#ffe08a', glow: 0.8 };
+  const roofing = { kind: 'plain', colour: '#d8c09a', open: true };
+  const dark = { kind: 'plain', colour: '#4a3826' };
+  const wood = { kind: 'plain', colour: '#6b4a2b' };
+
+  // The walls: leaning back from foot to top; a parapet on top; and inside it the one roof of all the rooms.
+  const walls = F.corners;
+  const within = inset(walls, 0.5);
+  between(model, up(inset(walls, -F.batter), 0), up(walls, F.wall), clay);
+  model.flat(up(walls, F.wall), { ...clay, open: true }, { holes: [up(within, F.wall)] });
+  between(model, up(within, F.roof), up(within, F.wall), { kind: 'plain', colour: '#c8a878', open: true }, { way: -1 });
+  const courts = F.courts.map(([u, v, long, wide]) => [[u - long / 2, v - wide / 2], [u + long / 2, v - wide / 2], [u + long / 2, v + wide / 2], [u - long / 2, v + wide / 2]]);
+  model.flat(up(within, F.roof), roofing, { holes: courts.map((court) => up(court, F.roof)) });
+  for (const court of courts) {
+    // (A court's walls, with the doors and windows of the rooms dark in them; and its floor of trodden earth.)
+    between(model, up(court, 0), up(court, F.roof), { kind: 'pierced', colour: '#c2a274', storey: F.roof / 2, bay: 2.6, holes: 0.1, lit: 0.25 }, { way: -1 });
+    model.flat(up(court, 0.05), { kind: 'plain', colour: '#b3966a' });
+  }
+
+  /** A place on the face of a wall: which wall (0: the north one, then west, south, east), how far along it as a share, how high, and how far it stands out of the face. */
+  const onWall = (wall, along, height, proud = 0) => {
+    const [from, until] = [walls[wall], walls[(wall + 1) % 4]];
+    const long = Math.hypot(until[0] - from[0], until[1] - from[1]);
+    const out = [(until[1] - from[1]) / long, -(until[0] - from[0]) / long];
+    const stands = F.batter * (1 - Math.min(height, F.wall) / F.wall) + proud;
+    return to(from[0] + (until[0] - from[0]) * along + out[0] * stands, from[1] + (until[1] - from[1]) * along + out[1] * stands, height);
+  };
+  const wayOut = (wall) => {
+    const [from, until] = [walls[wall], walls[(wall + 1) % 4]];
+    return to.way(until[1] - from[1], -(until[0] - from[0]));
+  };
+  for (let wall = 0; wall < 4; wall += 1) {
+    const [from, until] = [walls[wall], walls[(wall + 1) % 4]];
+    const long = Math.hypot(until[0] - from[0], until[1] - from[1]);
+    const out = wayOut(wall);
+    // Along its top, small pointed battlements; under them a row of three-cornered holes; and a wooden spout every so often.
+    for (let at = 4.2; at < long - 4; at += 1.4) {
+      const tooth = [onWall(wall, (at - 0.4) / long, F.wall), onWall(wall, (at + 0.4) / long, F.wall), onWall(wall, at / long, F.wall + 0.75)];
+      model.facet(...tooth, clay, { out, lines: [false, false, false] });
+      model.facet(...tooth, { kind: 'plain', colour: '#c8a878', open: true }, { out: [-out[0], -out[1], 0], lines: [false, false, false] });
+    }
+    for (let at = 5; at < long - 4.5; at += 2.4) {
+      model.facet(onWall(wall, (at - 0.25) / long, F.roof - 0.9, 0.04), onWall(wall, (at + 0.25) / long, F.roof - 0.9, 0.04), onWall(wall, at / long, F.roof - 0.35, 0.04), dark, { out, lines: [false, false, false] });
+    }
+    for (let at = 7; at < long - 6; at += 8.5) beam(model, onWall(wall, at / long, F.roof - 0.1, -0.2), onWall(wall, at / long, F.roof - 0.35, 0.95), 0.22, wood, { ends: true });
+  }
+
+  // The gate in the west wall: dark palm wood in a deep doorway; and over it the box that stands out of the wall, with its three slots.
+  const [gateAt, gateWide, gateTall] = F.gate;
+  const westLong = Math.hypot(walls[2][0] - walls[1][0], walls[2][1] - walls[1][1]);
+  const west = wayOut(1);
+  const half = gateWide / 2 / westLong;
+  model.quad(onWall(1, gateAt - half, 0, 0.05), onWall(1, gateAt + half, 0, 0.05), onWall(1, gateAt + half, gateTall, 0.05), onWall(1, gateAt - half, gateTall, 0.05), wood, { out: west, lines: [false, false, false, false] });
+  const box = [[gateAt - 1.1 / westLong, 0.05], [gateAt + 1.1 / westLong, 0.05], [gateAt + 1.1 / westLong, 0.85], [gateAt - 1.1 / westLong, 0.85]];
+  const [boxFoot, boxTop] = [gateTall + 1.5, gateTall + 3];
+  for (let i = 0; i < 4; i += 1) {
+    const [a, b] = [box[i], box[(i + 1) % 4]];
+    if (i === 3) continue; // (its back is the wall)
+    model.quad(onWall(1, a[0], boxFoot, a[1]), onWall(1, b[0], boxFoot, b[1]), onWall(1, b[0], boxTop, b[1]), onWall(1, a[0], boxTop, a[1]), clay, { out: i === 1 ? west : to.way(walls[2][0] - walls[1][0], walls[2][1] - walls[1][1]).map((part) => part * (i === 0 ? -1 : 1)), lines: [false, false, false, false] });
+  }
+  model.flat(box.map(([along, proud]) => onWall(1, along, boxTop, proud)), clay);
+  model.flat(box.map(([along, proud]) => onWall(1, along, boxFoot, proud)), dark, { out: [0, 0, -1] });
+  for (const slot of [-0.62, 0, 0.62]) {
+    const [left, right] = [gateAt + (slot - 0.17) / westLong, gateAt + (slot + 0.17) / westLong];
+    model.quad(onWall(1, left, boxFoot + 0.35, 0.89), onWall(1, right, boxFoot + 0.35, 0.89), onWall(1, right, boxFoot + 1.05, 0.89), onWall(1, left, boxFoot + 1.05, 0.89), dark, { out: west, lines: [false, false, false, false] });
+  }
+
+  // The four round towers: narrowing upwards, with a ledge round them, a floor on top behind a parapet, and a crown of pointed battlements.
+  const [footRadius, ledgeRadius, topRadius, ledge, floor, crown] = F.tower;
+  for (const [u, v] of F.towers) {
+    lathe(model, to, [u, v], [[footRadius, 0], [ledgeRadius + 0.05, ledge - 0.3], [ledgeRadius + 0.22, ledge], [ledgeRadius, ledge + 0.25], [topRadius, crown - 1.6]], clay, { cuts: 20 });
+    lathe(model, to, [u, v], [[topRadius, crown - 1.6], [topRadius - 0.03, crown - 0.75]], clay, { cuts: 20 });
+    const disc = (radius, height) => Array.from({ length: 20 }, (_, k) => to(u + Math.cos((k / 20) * TAU) * radius, v + Math.sin((k / 20) * TAU) * radius, height));
+    model.flat(disc(topRadius - 0.03, crown - 0.75), { kind: 'plain', colour: '#c8a878', open: true }, { holes: [disc(topRadius - 0.5, crown - 0.75)] });
+    lathe(model, to, [u, v], [[topRadius - 0.5, crown - 0.75], [topRadius - 0.5, floor]], { kind: 'plain', colour: '#b99a6c', open: true }, { cuts: 20 });
+    model.flat(disc(topRadius - 0.5, floor), roofing);
+    for (let k = 0; k < 10; k += 1) {
+      // (Each battlement a little block that ends in a point.)
+      const [a0, a1] = [((k + 0.2) / 10) * TAU, ((k + 0.8) / 10) * TAU];
+      const at = (angle, radius, height) => to(u + Math.cos(angle) * radius, v + Math.sin(angle) * radius, height);
+      const [outer, inner] = [topRadius - 0.03, topRadius - 0.5];
+      const mid = (a0 + a1) / 2;
+      const point = at(mid, (outer + inner) / 2, crown);
+      const foot = [at(a0, outer, crown - 0.75), at(a1, outer, crown - 0.75), at(a1, inner, crown - 0.75), at(a0, inner, crown - 0.75)];
+      const away = to.way(Math.cos(mid), Math.sin(mid));
+      model.facet(foot[0], foot[1], point, clay, { out: away, lines: [false, false, false] });
+      model.facet(foot[2], foot[3], point, { kind: 'plain', colour: '#c8a878', open: true }, { out: [-away[0], -away[1], 0], lines: [false, false, false] });
+      model.facet(foot[1], foot[2], point, clay, { out: to.way(-Math.sin(mid), Math.cos(mid)), lines: [false, false, false] });
+      model.facet(foot[3], foot[0], point, clay, { out: to.way(Math.sin(mid), -Math.cos(mid)), lines: [false, false, false] });
+    }
+    // Its holes, in two rings; and the pole that stands out near its top.
+    for (const [height, count, turnBy] of [[8.4, 8, 0], [14, 8, 0.5]]) {
+      const radius = height < ledge ? footRadius + ((ledgeRadius - footRadius) * height) / ledge : ledgeRadius + ((topRadius - ledgeRadius) * (height - ledge)) / (crown - 1.6 - ledge);
+      for (let k = 0; k < count; k += 1) {
+        const angle = ((k + turnBy) / count) * TAU;
+        const at = (aside, rise) => to(u + Math.cos(angle) * (radius + 0.07) - Math.sin(angle) * aside, v + Math.sin(angle) * (radius + 0.07) + Math.cos(angle) * aside, height + rise);
+        model.facet(at(-0.25, 0), at(0.25, 0), at(0, 0.55), dark, { out: to.way(Math.cos(angle), Math.sin(angle)), lines: [false, false, false] });
+      }
+    }
+    const away = Math.atan2(v, u);
+    beam(model, to(u + Math.cos(away) * (topRadius - 0.3), v + Math.sin(away) * (topRadius - 0.3), crown - 3), to(u + Math.cos(away) * (topRadius + 1.5), v + Math.sin(away) * (topRadius + 1.5), crown - 2.7), 0.16, wood, { ends: true });
+  }
+
+  // The square watchtower over the roofs: drawing in a little as it rises, with stepped battlements at its corners and the middles of its sides.
+  const [keepU, keepV, keepHalf, keepRoof, keepTop] = F.keep;
+  const keep = to.sub([keepU, keepV]);
+  // (It stands inside the block the map has for the fort, whose shadow would always lie on it: it takes none.)
+  const high = { ...clay, open: true };
+  taper(model, keep, [-keepHalf, keepHalf, -keepHalf, keepHalf], [-keepHalf + 0.35, keepHalf - 0.35, -keepHalf + 0.35, keepHalf - 0.35], F.roof, keepRoof, high, { top: roofing });
+  const edge = keepHalf - 0.35;
+  for (const [a, b] of [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]]) {
+    const [cu, cv] = [a * (edge - 0.45), b * (edge - 0.45)];
+    prism(model, keep, [[cu - 0.45, cv - 0.45], [cu + 0.45, cv - 0.45], [cu + 0.45, cv + 0.45], [cu - 0.45, cv + 0.45]], keepRoof, keepTop - (a !== 0 && b !== 0 ? 0 : 0.35), high);
+  }
+  for (const side of [0, 1, 2, 3]) {
+    const [du, dv] = [[0, -1], [1, 0], [0, 1], [-1, 0]][side];
+    for (const aside of [-1.2, 1.2]) {
+      const mid = [du * (keepHalf - 0.1) - dv * aside, dv * (keepHalf - 0.1) + du * aside];
+      const span = [-dv * 0.22, du * 0.22];
+      model.facet(keep(mid[0] - span[0], mid[1] - span[1], keepRoof - 2.2), keep(mid[0] + span[0], mid[1] + span[1], keepRoof - 2.2), keep(mid[0], mid[1], keepRoof - 1.7), dark, { out: keep.way(du, dv), lines: [false, false, false] });
+    }
+  }
+  return {};
+}
+
 /**
  * The famous buildings built here, as landmarks for the map (see landmarks.js): where each stands
  * ([lng, lat]), which way it is turned, how tall it is, within what distance of its middle the map's
@@ -395,5 +580,21 @@ export const FAMOUS = [
     reach: 105,
     model: kingFahdLibrary,
     within: 7000,
+  },
+  {
+    id: 'masmak-fort',
+    name: 'Masmak Fort',
+    at: [46.713368, 24.631221],
+    bearing: 0,
+    height: MASMAK.tower[5],
+    clear: 36,
+    reach: 52,
+    model: masmakFort,
+    within: 5000,
+    // (The map's block for it throws the shadow of its walls; its towers stand twice as high.)
+    shades: MASMAK.towers.map(([u, v]) => {
+      const turn = (MASMAK.turn * Math.PI) / 180;
+      return { at: [u * Math.cos(turn) - v * Math.sin(turn), u * Math.sin(turn) + v * Math.cos(turn)], radius: 3.6, height: 17 };
+    }),
   },
 ];

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { FAMOUS, LIBRARY, MINISTRY, stepped } from '../js/famous.js';
+import { FAMOUS, LIBRARY, MASMAK, MINISTRY, inset, stepped } from '../js/famous.js';
 import { LANDMARKS, landmarkBeacons, landmarkModels, landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
 import { facesOf } from './model-faces.mjs';
@@ -26,7 +26,7 @@ const lookOf = ({ corners: [a, b, c] }) => {
 };
 
 test('the famous buildings are landmarks of the map: each where it stands, with its clearing and its shadow', () => {
-  assert.deepEqual(FAMOUS.map((one) => one.id), ['interior-ministry', 'king-fahd-library']);
+  assert.deepEqual(FAMOUS.map((one) => one.id), ['interior-ministry', 'king-fahd-library', 'masmak-fort']);
   for (const one of FAMOUS) {
     assert.equal(LANDMARKS.find((landmark) => landmark.id === one.id), one);
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
@@ -46,9 +46,10 @@ test('the famous buildings are landmarks of the map: each where it stands, with 
   // The ministry is built for a view within nine kilometres of it, and not from further off.
   const ministry = famous('interior-ministry');
   const mesh = new ModelMesh();
-  // (Looked for to the south of it, where nothing else comes and goes with a step of two hundred metres.)
-  const without = landmarkModels(mesh, { lng: ministry.at[0], lat: ministry.at[1] - 9100 / METERS });
-  assert.equal(landmarkModels(mesh, { lng: ministry.at[0], lat: ministry.at[1] - 8900 / METERS }), without + 1);
+  // (Looked for to the west of it, where nothing else comes and goes with a step of two hundred metres.)
+  const west = METERS * Math.cos((ministry.at[1] * Math.PI) / 180);
+  const without = landmarkModels(mesh, { lng: ministry.at[0] - 9100 / west, lat: ministry.at[1] });
+  assert.equal(landmarkModels(mesh, { lng: ministry.at[0] - 8900 / west, lat: ministry.at[1] }), without + 1);
   // The map's own block at its middle makes way for it (the map has only a round one, where the dome is); the buildings across its garden do not.
   const squeeze = METERS * Math.cos((ministry.at[1] * Math.PI) / 180);
   const round = (east, north, radius) => Array.from({ length: 13 }, (_, i) => [ministry.at[0] + (east + Math.cos((i / 12) * Math.PI * 2) * radius) / squeeze, ministry.at[1] + (north + Math.sin((i / 12) * Math.PI * 2) * radius) / METERS]);
@@ -263,4 +264,98 @@ test('the King Fahd National Library: a glass box on columns, wrapped in a veil 
   assert.equal(dome.length, 24 * 6 * 2 - 0);
   assert.ok(near(Math.max(...heights(dome)), 26, 0.02) && near(Math.min(...heights(dome)), 20, 1e-3));
   assert.ok(near(Math.max(...dome.flatMap((face) => face.corners.map((corner) => Math.hypot(corner[0], corner[1])))), 8.8, 1e-3));
+});
+
+test('inset moves every side of a ring in, or out, by so much', () => {
+  const square = [[0, 0], [10, 0], [10, 10], [0, 10]];
+  assert.deepEqual(inset(square, 1), [[1, 1], [9, 1], [9, 9], [1, 9]]);
+  assert.deepEqual(inset(square, -2), [[-2, -2], [12, -2], [12, 12], [-2, 12]]);
+  assert.deepEqual(inset(square, 0), square);
+  // A ring that is not square: every side is still moved by just so much, measured square to it.
+  const ring = MASMAK.corners;
+  const moved = inset(ring, 1.5);
+  ring.forEach(([u, v], i) => {
+    const [nextU, nextV] = ring[(i + 1) % 4];
+    const long = Math.hypot(nextU - u, nextV - v);
+    for (const [pu, pv] of [moved[i], moved[(i + 1) % 4]]) assert.ok(near(((nextU - u) * (pv - v) - (nextV - v) * (pu - u)) / long, 1.5, 1e-9));
+  });
+});
+
+test('Masmak Fort: four leaning walls of clay with a round tower at each corner, a gate in the west wall, courts and a square tower within', () => {
+  const F = MASMAK;
+  const fort = famous('masmak-fort');
+  assert.deepEqual([fort.name, fort.bearing, fort.height, fort.clear], ['Masmak Fort', 0, 18, 36]);
+  // (In the old town, at the middle of the outline the buildings data has of it.)
+  assert.ok(near(fort.at[0], 46.71337, 1e-4) && near(fort.at[1], 24.63122, 1e-4));
+  const { faces } = built('masmak-fort');
+  const turn = (F.turn * Math.PI) / 180;
+  const placed = ([u, v]) => [u * Math.cos(turn) - v * Math.sin(turn), u * Math.sin(turn) + v * Math.cos(turn)];
+  const own = ([east, north]) => [east * Math.cos(turn) + north * Math.sin(turn), -east * Math.sin(turn) + north * Math.cos(turn)];
+  // Its plan: four walls that are not quite square to one another, 60 m along the north and some 45 m along the others.
+  const sides = F.corners.map((corner, i) => Math.hypot(F.corners[(i + 1) % 4][0] - corner[0], F.corners[(i + 1) % 4][1] - corner[1]));
+  assert.deepEqual(sides.map((side) => Math.round(side)), [60, 45, 50, 43]);
+  // The walls lean back as they rise: at the ground they stand 0.6 m further out than at their top, 9.5 m up.
+  const clay = faces.filter((face) => face.colour === '#c8a878');
+  const outer = clay.filter((face) => face.glow > 0.7 && near(Math.min(...face.corners.map((corner) => corner[2])), 0, 1e-6) && near(Math.max(...face.corners.map((corner) => corner[2])), F.wall, 1e-6));
+  assert.equal(outer.length, 8);
+  for (const face of outer) assert.ok(near(face.normal[2], F.batter / Math.hypot(F.batter, F.wall), 1e-3), 'they look a little upwards');
+  // Along their tops, small pointed battlements, some hundred and thirty of them; under them three-cornered holes; and wooden spouts.
+  const teeth = clay.filter((face) => face.glow > 0.7 && near(Math.max(...face.corners.map((corner) => corner[2])), F.wall + 0.75, 1e-6));
+  assert.ok(teeth.length > 110 && teeth.length < 150, String(teeth.length));
+  const holes = faces.filter((face) => face.colour === '#4a3826' && face.corners.every((corner) => corner[2] > F.roof - 1 && corner[2] < F.roof));
+  assert.ok(holes.length > 60 && holes.length < 90, String(holes.length));
+  const wood = faces.filter((face) => face.colour === '#6b4a2b');
+  assert.ok(wood.length > 100);
+
+  // The four towers: round, 8.8 m across at the foot and 6.1 m at the top, with a ledge 12 m up; their battlements end in points 18 m up.
+  for (const middle of F.towers) {
+    const [east, north] = placed(middle);
+    const round = faces.filter((face) => face.corners.every((corner) => Math.hypot(corner[0] - east, corner[1] - north) < F.tower[0] + 2));
+    const far = (from, to) => Math.max(...round.flatMap((face) => face.corners).filter((corner) => corner[2] >= from && corner[2] <= to).map((corner) => Math.hypot(corner[0] - east, corner[1] - north)));
+    assert.ok(near(far(0, 0.01), F.tower[0], 1e-3) && near(far(F.tower[3] - 0.01, F.tower[3] + 0.01), F.tower[1] + 0.22, 1e-3) && near(far(F.tower[5] - 1.61, F.tower[5] - 1.59), F.tower[2], 1e-3));
+    assert.ok(near(Math.max(...heights(round)), 18, 1e-3));
+    // (Ten battlements, each coming to a point; sixteen holes in two rings.)
+    assert.equal(round.flatMap((face) => face.corners).filter((corner) => near(corner[2], 18, 1e-6)).length, 10 * 4);
+    assert.equal(round.filter((face) => face.colour === '#4a3826').length, 16);
+    // It stands out past the corner of the walls, as a corner tower does.
+    const corner = F.corners[F.towers.indexOf(middle)];
+    assert.ok(Math.hypot(middle[0], middle[1]) > Math.hypot(corner[0], corner[1]) + 2);
+  }
+  // Each throws its own shadow, where it stands.
+  assert.equal(fort.shades.length, 4);
+  fort.shades.forEach((shade, i) => {
+    const [east, north] = placed(F.towers[i]);
+    assert.ok(near(shade.at[0], east, 1e-9) && near(shade.at[1], north, 1e-9) && shade.height === 17 && shade.radius < F.tower[0]);
+  });
+
+  // The gate: palm wood, 2.65 m wide and 3.6 m high, in the west wall; over it the box that stands out of the wall.
+  const gate = wood.filter((face) => face.corners.every((corner) => corner[2] <= F.gate[2] + 1e-6) && face.corners.some((corner) => near(corner[2], 0, 1e-6)));
+  assert.equal(gate.length, 2);
+  const spots = gate.flatMap((face) => face.corners);
+  assert.ok(near(Math.max(...spots.map((spot) => spot[2])), 3.6, 1e-6));
+  const across = Math.max(...spots.flatMap((a) => spots.map((b) => Math.hypot(a[0] - b[0], a[1] - b[1]))));
+  assert.ok(near(across, 2.65, 0.1), String(across));
+  assert.ok(spots.every((spot) => own(spot)[0] < -27), 'in the west wall');
+  assert.ok(gate.every((face) => own(face.normal)[0] < -0.9), 'and looking west');
+
+  // Within: one roof, 8.2 m up, with six courts cut out of it; each court lies well inside the walls and clear of the others.
+  const roof = faces.filter((face) => face.colour === '#d8c09a' && face.normal[2] > 0.99 && face.corners.every((corner) => near(corner[2], F.roof, 1e-6)));
+  const acres = roof.reduce((sum, { corners: [a, b, c] }) => sum + Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2, 0);
+  const walled = squareMeters(inset(F.corners, 0.5));
+  assert.ok(near(acres, walled - F.courts.reduce((sum, [, , long, wide]) => sum + long * wide, 0), 0.5), `${acres} of ${walled}`);
+  const inside = (ring, [u, v]) => ring.every(([a, b], i) => (ring[(i + 1) % ring.length][0] - a) * (v - b) - (ring[(i + 1) % ring.length][1] - b) * (u - a) > 0);
+  const rooms = inset(F.corners, 2.5);
+  F.courts.forEach(([u, v, long, wide], i) => {
+    for (const corner of [[u - long / 2, v - wide / 2], [u + long / 2, v - wide / 2], [u + long / 2, v + wide / 2], [u - long / 2, v + wide / 2]]) assert.ok(inside(rooms, corner), `court ${i}`);
+    for (const [u2, v2, long2, wide2] of [...F.courts.slice(i + 1), [F.keep[0], F.keep[1], F.keep[2] * 2, F.keep[2] * 2]]) {
+      assert.ok(Math.abs(u - u2) > (long + long2) / 2 + 0.5 || Math.abs(v - v2) > (wide + wide2) / 2 + 0.5, `court ${i} is clear of the next`);
+    }
+  });
+  // The square tower stands on that roof and rises to 14.6 m: it takes no shadow from the block the map has for the fort.
+  const [keepEast, keepNorth] = placed([F.keep[0], F.keep[1]]);
+  const keep = faces.filter((face) => face.corners.every((corner) => Math.hypot(corner[0] - keepEast, corner[1] - keepNorth) < F.keep[2] * 1.5 && corner[2] >= F.roof - 1e-6) && face.colour === '#c8a878');
+  assert.ok(keep.length > 40 && keep.every((face) => face.open));
+  assert.ok(near(Math.max(...heights(keep)), F.keep[4], 1e-6));
+  // By night the clay is floodlit, golden, on every wall that faces the town.
+  assert.ok(outer.every((face) => face.light === '#ffe08a'));
 });

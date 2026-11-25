@@ -137,6 +137,11 @@ map opens on the city and keeps to it, and places are looked for in it.
   showing dark between them. Open ground floor on round columns; on the
   roof forty strips of skylight and, in an eight-sided court, the old
   library's dome. By night every sail is lit.
+- **Masmak Fort.** The clay fort in the old town: four leaning walls with
+  pointed battlements, a round tower narrowing upwards at each corner, the
+  gate of palm wood in the west wall under its look-out box, the square
+  watchtower, the courts within. Three-cornered air holes and wooden rain
+  spouts along the walls. By night it is floodlit, golden.
 - **The financial district, building by building.** Round the PIF Tower the
   King Abdullah Financial District stands as it is built: seventy-four
   buildings, each a model on its own outline. Crystals of dark and blue glass, folded
@@ -467,6 +472,7 @@ Everything is free and needs no account or key.
 | The King Abdullah Financial District, building by building | Outlines and thirty-four heights: the buildings data below (Overture Maps), kept in `js/kafd-data.js` (see `tools/kafd/`). The other heights, six outlines the data lacks, and the colours of roofs and walls: the satellite photo above (Esri World Imagery), read by hand. What the towers look like from the ground: seven photographs on [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:King_Abdullah_Financial_District) (six by Kolaiel, CC0; one by Ahmed, CC BY-SA 4.0) and Wikipedia's articles on the district, its World Trade Center and its Grand Mosque | Studied, not shown: the models are built by hand from them. No photograph is in the app or fetched by it |
 | The Ministry of Interior | Its plan and what stands on its roof: the satellite photo above (Esri World Imagery), measured by hand. What it looks like from the road, by day and by night: six photographs found through [Openverse](https://openverse.org) on Flickr (by Rupert Affen, IMP1, Bakar_88, Mohd Azli Abdul Malek and airbus777, under Creative Commons licences) and Wikipedia's article on the building | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The King Fahd National Library | Its plan, its roof and its court: the satellite photo above (Esri World Imagery), measured by hand, and the buildings data's outline. Its veil by day and by night: two photographs found through [Openverse](https://openverse.org) on Flickr (by 'guerrilla' strategy, CC BY-NC-SA 2.0, and Mâřš, CC BY-NC-ND 2.0). How the veil is made: what its architects, Gerber Architekten, and its engineers, Bollinger + Grohmann, have published of it | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
+| Masmak Fort | Its outline: the buildings data below. Its courts: the satellite photo above (Esri World Imagery). What it looks like, by day and floodlit by night: twelve photographs found through [Openverse](https://openverse.org) on Flickr (by airbus777, Bruno Girin, SammySix, Desert Agama and amanderson2, under Creative Commons licences), and Wikipedia's article on the fort, which gives the heights of its towers and the size of its gate | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The models in `models/` (pagoda, hall, pylon, church, house) | Each made from one photograph out of those the app's owner sent, by [TRELLIS](https://github.com/microsoft/TRELLIS) (Microsoft Research, MIT licence), run on Hugging Face under the owner's account; then cleaned of what stood beside the thing in the photograph, thinned to at most thirty thousand triangles, and packed with `tools/models/pack.mjs` | In the app as those files. Their pictures are made out of the photographs. Who took each photograph is not recorded here: if it was not the owner, the photographer's rights in it remain, and that is to be settled before the app is published to others |
 | The fronts the houses are dressed from (`models/fronts.jpg`, `js/kit.js`) | Two pictures of a new Riyadh villa that the app's owner made with an AI image generator as a reference (not photographs of a real house); three pictures made for this by [FLUX.1 Krea dev](https://huggingface.co/black-forest-labs/FLUX.1-Krea-dev) (Black Forest Labs and Krea), run on Hugging Face on the owner's account; and nine made for this by [Gamma](https://gamma.app)'s image generator on the owner's account. Each measured by hand (`tools/fronts/fronts.json`): a street tree, an open gate and a plate with writing were painted over | In the app as that one picture. None of them shows a real house: every front in the map is a likely one, not that house's own |
 | One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
@@ -586,6 +592,14 @@ each half a sail over the last, above a ground floor of some 6.5 m). One
 published figure, a cube of 90 m, agrees with neither the photo nor the data
 and was not used. The cables, the struts that hold the two nets apart and
 the lamps are not built; what stands in the court is built plainly.
+
+Masmak Fort (`js/famous.js`). What is real: its outline with the four
+towers (the buildings data's, which the satellite photo bears out), the
+height of the towers, some 18 m, and the size of the gate, as published.
+What is judged from photographs: the height of the walls, 9.5 m, and how the
+towers narrow. What is only a likeness: the rooms within, which are one roof
+with six courts placed from the satellite photo; which roof the square
+watchtower stands on; and the count of battlements, air holes and spouts.
 
 The financial district. Seventy-four of its buildings are built as models,
 each on its own outline (`js/kafd.js`). What is real: where each stands and its
@@ -921,7 +935,7 @@ js/solids.js            plain solids for the models: blocks, tapers, things turn
 js/boulevard.js         Boulevard World: its lagoon and what stands round it
 js/kafd.js              the King Abdullah Financial District: every building on its own outline
 js/famous.js            the famous buildings that are not towers, each with its details: the Ministry of Interior,
-                        the King Fahd National Library
+                        the King Fahd National Library, Masmak Fort
 js/kafd-data.js         those outlines, and the buildings' heights (written by tools/kafd)
 js/fronts.js            houses dressed as real houses look: a front out of the kit on each one's own plot
 js/kit.js               the kit: where in models/fronts.jpg each front lies, and its measures (written by tools/fronts)
