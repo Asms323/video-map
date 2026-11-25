@@ -17,7 +17,8 @@ nothing before it; measured into
   and which are a window or a second gate in the wall (kept where there is
   room);
 - the **face of the house** over that wall: the pieces of the picture that
-  are house and not sky;
+  are house and not sky, and how far each stands out (a block set forward,
+  a balcony, a cornice stand out of the house as they do in the picture);
 - a **plain piece** of its plaster or stone, for every wall no picture shows;
 - its **windows**: set in the other walls of the house too, and lit by night
   (closed shutters are set there too, and never lit); its **lamps**, lit on
@@ -80,7 +81,11 @@ the likelier. Along a street, neighbours are not given the same.
    touch: what lies between two is left out), its `lamps`; `house`:
    `perMetre` (spots to a metre on the house's own face, which stands
    further off than the wall and so shows smaller), `rects` (as many as its
-   outline needs: what no rect covers is not drawn), `plain`, `plainScale`
+   outline needs: what no rect covers is not drawn; a fifth number is how
+   far that piece stands out before the wall, in metres: a block of the
+   house set forward, a balcony, a cornice: it is built standing out, with
+   sides and a top, and the windows and lamps in it go with it; a later
+   rect lies over an earlier one where both are), `plain`, `plainScale`
    (plain plaster may be laid larger than life: fewer pieces), `even` (the
    plain piece's stains and shadows are taken out, so that they do not show
    in rows: `false` leaves them, a number is how broad a stain is in

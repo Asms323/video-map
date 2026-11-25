@@ -284,7 +284,8 @@ test('what a front has besides its windows: lamps, closed shutters, battlements,
     let [from, until, beside] = [Infinity, -Infinity, 0];
     for (let i = 0; i < mesh.corners; i += 1) {
       const [east, north, up] = [mesh.positions[i * 3], mesh.positions[i * 3 + 1], mesh.positions[i * 3 + 2]];
-      if (!near(north, -0.06, 1e-4) || up < 3.5) continue;
+      // (What lies before the house's wall to the street, over the street wall: its face, flat or standing out.)
+      if (!(north < -0.05 && north > -1.7) || up < 3.5) continue;
       from = Math.min(from, east);
       until = Math.max(until, east);
     }
@@ -351,7 +352,7 @@ test('a house the map has whole is dressed on its own outline', () => {
   }
   // Its face is on its wall to the street (a hand's breadth before it), and nowhere else.
   let faced = 0;
-  for (let i = 0; i < mesh.corners; i += 1) if (near(mesh.positions[i * 3 + 1], -0.06, 1e-4) && mesh.positions[i * 3 + 2] > 3.5) faced += 1;
+  for (let i = 0; i < mesh.corners; i += 1) if (mesh.positions[i * 3 + 1] < -0.05 && mesh.positions[i * 3 + 1] > -1.7 && mesh.positions[i * 3 + 2] > 3.5) faced += 1;
   assert.ok(faced >= 8, String(faced));
   // The same house every time; and a house with neither parts nor an outline is left as it is.
   assert.deepEqual(dressInFronts([whole()], origin)[0].positions, mesh.positions);
@@ -396,5 +397,42 @@ test('a roof is drawn in its own colour, where that is known', () => {
     assert.ok(mesh.corners <= 65535 && mesh.corners % 4 === 0 && mesh.indices.length === (mesh.corners / 4) * 6);
     assert.ok(mesh.positions.length === mesh.corners * 3 && mesh.tints.length === mesh.corners * 4 && mesh.uvs.length === mesh.corners * 2);
     assert.deepEqual([...mesh.indices.subarray(6, 12)], [4, 5, 6, 4, 6, 7]);
+  }
+});
+
+test('what stands out of a house in its picture stands out of it here', () => {
+  const only = (name) => ({ ...KIT, fronts: KIT.fronts.filter((front) => front.name === name) });
+  // The limestone-and-white front: the right half of its house is set forward by 0.8 m in the picture (it
+  // throws its shadow on the left half), and so is the porch; its roof slab reaches further still.
+  const stone = KIT.fronts.find((front) => front.name === 'stone');
+  const outs = stone.house.rects.map((rect) => rect[4] ?? 0);
+  assert.ok(outs.some((out) => out === 0) && outs.filter((out) => out >= 0.8).length >= 3 && Math.max(...outs) <= 1.5);
+  const house = houseOf(1, 14, 13);
+  const [mesh] = dressInFronts([house], origin, only('stone'));
+  const face = faceMeasure(stone);
+  const scale = Math.min((9.6 - stone.wall.height) / face.tall, 1.3, (14 * 0.98) / face.wide);
+  // How far before the wall each corner of the face lies: flat on it, or 0.8 m out at the size the face is laid at.
+  const befores = new Set();
+  for (let i = 0; i < mesh.corners; i += 1) {
+    const [north, up] = [mesh.positions[i * 3 + 1], mesh.positions[i * 3 + 2]];
+    if (north < -0.05 && north > -1.7 && up > 3.5) befores.add(Math.round(-north * 1000) / 1000);
+  }
+  const want = (out) => Math.round((0.06 + out * scale) * 1000) / 1000;
+  assert.ok(befores.has(0.06) && befores.has(want(0.8)) && befores.has(want(1.0)), `${[...befores].join(' ')} for ${want(0.8)}`);
+  // A window in the part set forward lies on it, a hand's breadth before it; the lamps by the door too.
+  assert.ok(befores.has(Math.round((0.12 + 0.8 * scale) * 1000) / 1000) && befores.has(0.12));
+  // What stands out has sides: faces that look along the street, between the wall and the front of the piece.
+  let sides = 0;
+  for (let i = 0; i < mesh.corners; i += 4) {
+    const [east, north] = [mesh.normals[i * 3], mesh.normals[i * 3 + 1]];
+    const before = -mesh.positions[i * 3 + 1];
+    if (Math.abs(Math.abs(east) - 1) < 1e-6 && Math.abs(north) < 1e-6 && before >= -1e-6 && before < 1.6 && mesh.positions[i * 3 + 2] > 3 && mesh.positions[i * 3] > 0.3 && mesh.positions[i * 3] < 13.7) sides += 1;
+  }
+  assert.ok(sides >= 4, String(sides));
+  // A front measured flat is laid flat: every corner of its face a hand's breadth before the wall, its panes two.
+  const [flat] = dressInFronts([houseOf(2, 14, 13)], origin, only('band'));
+  for (let i = 0; i < flat.corners; i += 1) {
+    const [north, up] = [flat.positions[i * 3 + 1], flat.positions[i * 3 + 2]];
+    if (north < -0.05 && north > -1.7 && up > 3.5) assert.ok(near(north, -0.06, 1e-4) || near(north, -0.12, 1e-4), String(north));
   }
 });

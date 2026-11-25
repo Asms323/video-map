@@ -112,7 +112,7 @@ for front in spec['fronts']:
     wall, house = front['wall'], front['house']
     rows = wall['rows']
     strip = [min(p[0] for p in wall['pieces']), rows[0], max(p[1] for p in wall['pieces']), rows[1]]
-    face = around(house['rects'] + house.get('panes', []) + house.get('dark', []) + house.get('lamps', []))
+    face = around([b[:4] for b in house['rects']] + house.get('panes', []) + house.get('dark', []) + house.get('lamps', []))
     for lamp in wall.get('lamps', []):
         if not within(lamp, strip):
             raise SystemExit('%s: a lamp of the wall at %s is not on its wall' % (front['name'], lamp))
@@ -174,7 +174,8 @@ for front, scale, kept, tone in fronts:
         },
         'house': {
             'perMetre': round(house['perMetre'] * scale, 3),
-            'rects': [box(on_house, b) for b in house['rects']],
+            # (A rect's fifth number, how far it stands out in metres, goes with it as it is.)
+            'rects': [box(on_house, b) + list(b[4:5]) for b in house['rects']],
             'plain': box(on_plain, house['plain']),
             'plainPerMetre': round(house.get('plainPerMetre', house['perMetre']) * scale / house.get('plainScale', 1), 3),
             'panes': [box(on_house, b) for b in house.get('panes', [])],

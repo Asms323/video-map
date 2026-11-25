@@ -39,7 +39,8 @@ for u0, u1, kind in wall['pieces']:
 for b in wall.get('lamps', []) + house.get('lamps', []):
     draw.rectangle([b[0], b[1], b[2] - 1, b[3] - 1], outline=(255, 255, 255), width=1)
 for b in house['rects']:
-    draw.rectangle([b[0], b[1], b[2] - 1, b[3] - 1], outline=(0, 230, 255), width=1)
+    # (One that stands out before the wall: drawn the thicker the further it stands out.)
+    draw.rectangle([b[0], b[1], b[2] - 1, b[3] - 1], outline=(0, 230, 255), width=1 + round(2 * (b[4] if len(b) > 4 else 0)))
 for b in house.get('panes', []):
     draw.rectangle([b[0], b[1], b[2] - 1, b[3] - 1], outline=(40, 80, 255), width=2)
 for b in house.get('dark', []):

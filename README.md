@@ -215,7 +215,9 @@ map opens on the city and keeps to it, and places are looked for in it.
   house: gate, doors and windows keep their true size, and plain wall of
   the same stuff is laid as long as this house's own plot needs, piece
   after piece, every other one in mirror image so that no seam shows. The
-  face goes on the house's own wall at its own size; the front's windows
+  face goes on the house's own wall at its own size, and what stands out
+  of the house in its picture (a block set forward, a balcony, a cornice)
+  stands out of it here; the front's windows
   are set in the other walls too; round the plot go its walls; every part
   of the house has its parapet with the roof's floor behind it, and on the
   roof a stair house, a water tank and cooling units, each where this

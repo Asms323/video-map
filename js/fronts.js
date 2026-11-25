@@ -854,9 +854,30 @@ function dressOne(meshes, house, at, kit, sizeU, sizeV, frontage) {
     const [from, until] = [onFront(l, proud), onFront(r, proud)];
     upright(from[0], from[1], until[0], until[1], z0, high(box[1]), frontage.looks, flip ? [box[2], box[1], box[0], foot] : [box[0], box[1], box[2], foot], tinted, lamp);
   };
-  for (const rect of front.house.rects) laid(rect, PROUD, tint, 0);
+  // A piece of the face that stands out before the wall in the picture (a block of the house set forward, a
+  // balcony, a cornice) stands out here too, by as much (at the size the face is laid at): its picture on its
+  // front, plain wall on its two sides, a top and an underside.
+  const outOf = (rect) => (rect[4] ?? 0) * scale;
+  for (const rect of front.house.rects) {
+    const out = outOf(rect);
+    laid(rect, PROUD + out, tint, 0);
+    if (out < 0.03) continue;
+    const [l, r] = [along(rect[0]), along(rect[2])].sort((p, q) => p - q);
+    const [z0, z1] = [Math.max(high(rect[3]), 0), high(rect[1])];
+    if (z1 - z0 < 0.02) continue;
+    const [l0, l1, r0, r1] = [onFront(l), onFront(l, PROUD + out), onFront(r), onFront(r, PROUD + out)];
+    plainWall(l0[0], l0[1], l1[0], l1[1], z0, z1, [-frontage.along[0], -frontage.along[1], 0], 2);
+    plainWall(r1[0], r1[1], r0[0], r0[1], z0, z1, [frontage.along[0], frontage.along[1], 0], 2);
+    face([[...l1, z1], [...r1, z1], [...r0, z1], [...l0, z1]], [0, 0, 1], cornersOf(coping));
+    if (z0 > 0.3) face([[...l0, z0], [...r0, z0], [...r1, z0], [...l1, z0]], [0, 0, -1], cornersOf(coping));
+  }
+  // (A window or a lamp lies on whichever piece of the face it is in: the one that stands out furthest there.)
+  const outAt = (box) => {
+    const [u, v] = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
+    return front.house.rects.reduce((most, rect) => (u >= rect[0] && u <= rect[2] && v >= rect[1] && v <= rect[3] ? Math.max(most, outOf(rect)) : most), 0);
+  };
   // Its windows: each a pane of its own before the face, lit on some houses by night and dark on others. And
   // the lamps on its face, lit on all.
-  front.house.panes.forEach((pane, n) => laid(pane, PROUD * 2, tint, chance(40 + n) < WINDOWS_LIT ? 230 : 0));
-  for (const lamp of front.house.lamps ?? []) laid(lamp, PROUD * 2, plainTint, 255);
+  front.house.panes.forEach((pane, n) => laid(pane, PROUD * 2 + outAt(pane), tint, chance(40 + n) < WINDOWS_LIT ? 230 : 0));
+  for (const lamp of front.house.lamps ?? []) laid(lamp, PROUD * 2 + outAt(lamp), plainTint, 255);
 }
