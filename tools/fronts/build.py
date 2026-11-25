@@ -117,6 +117,9 @@ for front in spec['fronts']:
         if not within(lamp, strip):
             raise SystemExit('%s: a lamp of the wall at %s is not on its wall' % (front['name'], lamp))
     kept = {'wall': cut(image, strip, scale), 'house': cut(image, face, scale)}
+    # What stands over the wall's top with one of its pieces (a canopy of tiles over the gate, the tops of the
+    # gate's piers, a garage's lintel): each a piece of its own.
+    kept['over'] = [cut(image, over['box'], scale) for over in wall.get('over', [])]
     # Its plain piece: a piece of its own, evened (see evened; "even": false in fronts.json leaves it as it is, a
     # number is the reach in spots of the picture).
     plain = house['plain']
@@ -171,6 +174,16 @@ for front, scale, kept, tone in fronts:
             'v': [on_wall(0, rows[0])[1], on_wall(0, rows[1])[1]],
             'pieces': [[on_wall(u0, 0)[0], on_wall(u1, 0)[0], kind] for u0, u1, kind in wall['pieces']],
             'lamps': [box(on_wall, b) for b in wall.get('lamps', [])],
+            # Over the wall: its box in the picture; across: from where to where along the wall's strip it
+            # stands; rise: from how high to how high over the wall's top, in metres; lean: a little roof, its
+            # eaves so far out on either side of the wall (0: it stands upright); out: how far before the wall.
+            'over': [{
+                'box': box(place(piece), over['box']),
+                'across': [on_wall(over['box'][0], 0)[0], on_wall(over['box'][2], 0)[0]],
+                'rise': [round((rows[0] - over['box'][3]) / ((rows[1] - rows[0]) / wall['height']), 3), round((rows[0] - over['box'][1]) / ((rows[1] - rows[0]) / wall['height']), 3)],
+                'lean': over.get('lean', 0),
+                'out': over.get('out', 0),
+            } for over, piece in zip(wall.get('over', []), kept['over'])],
         },
         'house': {
             'perMetre': round(house['perMetre'] * scale, 3),
@@ -202,4 +215,5 @@ with open('../../js/kit.js', 'w') as out:
     out.write('// lies, and its measures. Written by tools/fronts/build.py out of tools/fronts/fronts.json: not by hand.\n')
     out.write('// (Places are in spots of that picture, across then down; see js/fronts.js for what is made of them.)\n\n')
     out.write('export const KIT = ' + json.dumps(kit, indent=1) + ';\n')
-print('fronts:', [f['name'] for f in kit['fronts']], '| the picture is filled down to', filled, 'of', SIZE[1])
+taken = sum((piece['image'].width + 2 * GUTTER) * (piece['image'].height + 2 * GUTTER) for piece in pieces)
+print('fronts:', [f['name'] for f in kit['fronts']], '| the picture is filled down to', filled, 'of', SIZE[1], '| %d%% of it is taken' % round(100 * taken / (SIZE[0] * SIZE[1])))

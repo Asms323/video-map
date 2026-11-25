@@ -109,10 +109,10 @@ test('each house is given a front that fits it: mostly one of its own style, lea
   // of them: no street is all one house.
   const beige = street(15, 12, '#d6c3a2');
   assert.ok(Object.keys(beige).length >= 9 && Object.values(beige).every((count) => count <= 133), JSON.stringify(beige));
-  // The paint leans the choice: of white houses, more than half are given one of the light fronts.
+  // The paint leans the choice: of white houses, many more are given one of the light fronts than of beige ones.
   const light = KIT.fronts.filter((front) => (front.tone[0] + front.tone[1] + front.tone[2]) / 3 > 0.84).map((front) => front.name);
   const white = street(16, 14, '#f2f1ee');
-  assert.ok(light.length >= 3 && share(white, light) > 0.5 && Object.keys(white).length >= 6, JSON.stringify(white));
+  assert.ok(light.length >= 3 && share(white, light) > 0.4 && share(white, light) > share(beige, light) + 0.1 && Object.keys(white).length >= 6, JSON.stringify(white));
   // The style decides most: three in four houses of a style are given a front made for it, yet not all, and
   // more than one such front comes up.
   for (const [style, paint] of [['plaster', '#cfae84'], ['stone', '#e3d6b8'], ['arched', '#e9e0c8'], ['modern', '#d9d4c8']]) {
@@ -435,4 +435,39 @@ test('what stands out of a house in its picture stands out of it here', () => {
     const [north, up] = [flat.positions[i * 3 + 1], flat.positions[i * 3 + 2]];
     if (north < -0.05 && north > -1.7 && up > 3.5) assert.ok(near(north, -0.06, 1e-4) || near(north, -0.12, 1e-4), String(north));
   }
+});
+
+test('what stands over a wall with its gate stands over it wherever the gate comes to lie', () => {
+  const only = (name) => ({ ...KIT, fronts: KIT.fronts.filter((front) => front.name === name) });
+  // The tan front: a canopy of clay tiles over its gate (a little roof, its eaves 0.8 m out on either side of
+  // the wall), and the beam under its eave.
+  const tan = KIT.fronts.find((front) => front.name === 'tan');
+  assert.equal(tan.wall.over.length, 2);
+  const [tiles, beam] = tan.wall.over;
+  assert.ok(tiles.lean === 0.8 && beam.lean === 0 && beam.out === 0.8 && near(beam.rise[0], 0, 0.01) && near(tiles.rise[0], beam.rise[1], 0.01) && tiles.rise[1] > 1 && tiles.rise[1] < 1.3);
+  const gate = tan.wall.pieces.find((piece) => piece[2] === 'fixed');
+  for (const over of tan.wall.over) assert.ok(over.across[0] >= gate[0] - 0.5 && over.across[1] <= gate[1] + 0.5 && over.box[2] > over.box[0] && over.box[3] > over.box[1]);
+  // On a house: over the street wall (3 m tall, 2.4 m before the house), where the gate lies, something
+  // stands up to a metre and more over the wall's top, out to 0.8 m before the wall and behind it; and
+  // nowhere else along the wall.
+  const house = houseOf(1, 20, 13);
+  const [mesh] = dressInFronts([house], origin, only('tan'));
+  const runs = layStrip(tan.wall.pieces, tan.wall.perMetre, 20 + 1 + 2.4, chanceOf(1)(7) < 0.5);
+  const gateRun = runs.find((run) => run.kind === 'fixed');
+  let [over, lowest, highest, nearest, furthest] = [0, Infinity, 0, Infinity, -Infinity];
+  for (let i = 0; i < mesh.corners; i += 1) {
+    const [east, north, up] = [mesh.positions[i * 3], mesh.positions[i * 3 + 1], mesh.positions[i * 3 + 2]];
+    // (Nearer the house than that, the house's own cornice reaches out, high up: not the wall's.)
+    if (!(north < -1.35 && up > 3.001)) continue;
+    over += 1;
+    assert.ok(east >= -1 + gateRun.a0 - 0.01 && east <= -1 + gateRun.a1 + 0.01, `${east} outside the gate's ${gateRun.a0} to ${gateRun.a1}`);
+    lowest = Math.min(lowest, up);
+    highest = Math.max(highest, up);
+    nearest = Math.min(nearest, north);
+    furthest = Math.max(furthest, north);
+  }
+  assert.ok(over === 10 && near(lowest, 3 + beam.rise[1], 0.01) && near(highest, 3 + tiles.rise[1], 0.01) && near(nearest, -2.4 - 0.06 - 0.8, 0.01) && near(furthest, -2.4 + 0.22 + 0.8, 0.01), [over, lowest, highest, nearest, furthest].join(' '));
+  // A front with nothing over its wall: nothing stands over it.
+  const [flat] = dressInFronts([houseOf(2, 20, 13)], origin, only('older'));
+  for (let i = 0; i < flat.corners; i += 1) if (flat.positions[i * 3 + 1] < -1.35) assert.ok(flat.positions[i * 3 + 2] <= 3.001);
 });

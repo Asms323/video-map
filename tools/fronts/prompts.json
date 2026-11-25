@@ -77,6 +77,32 @@
   "prompt": "Perfectly frontal elevation photograph of a new developer-built duplex villa in north Riyadh, Saudi Arabia: two storeys, beige stucco with vertical strips of beige stone cladding, tall windows with black aluminium frames, a small balcony with a glass balustrade, flat roof with parapet, a beige three metre boundary wall across the whole width of the picture with a closed beige sectional garage door and a closed dark wood-look door. Soft flat even light from a bright pale overcast sky, no cast shadows, pale sky background, 85mm lens, orthographic straight-on view, no perspective, no people, no cars, no trees, no text, no writing."
  },
  {
+  "name": "tan",
+  "by": "gamma",
+  "made": true,
+  "kind": "photo",
+  "size": "banner (16:9)",
+  "prompt": "Perfectly frontal elevation photograph of a two-storey family villa of the 1990s in Riyadh, Saudi Arabia: tan painted plaster walls in stepped box volumes, small windows with dark tinted glass and brown aluminium frames, cream trim bands, a flat roof with a parapet, a short canopy of red clay roof tiles over the gate, a tan three metre boundary wall across the whole width of the picture with a closed dark brown steel double gate between two piers with lanterns and a small closed brown steel door. Soft flat even light from a bright pale overcast sky, no cast shadows, pale sky background, 85mm lens, orthographic straight-on view, no perspective, no people, no cars, no trees, no text, no writing."
+ },
+ {
+  "name": "peach",
+  "by": "gamma",
+  "made": true,
+  "kind": "photo",
+  "size": "banner (16:9)",
+  "note": "asked twice: the first time a picture of something else altogether came back",
+  "prompt": "Perfectly frontal elevation photograph of a two-storey family villa of the early 2000s in Riyadh, Saudi Arabia: peach coloured painted plaster walls, windows with white precast mouldings and brown aluminium frames, two of them with round arched heads, a small balcony with a white precast balustrade, a skirt of red clay roof tiles along the top of the roof parapet, a peach three metre boundary wall across the whole width of the picture with a closed black wrought iron double gate with gold details and a closed cream roller garage door. Soft flat even light from a bright pale overcast sky, no cast shadows, pale sky background, 85mm lens, orthographic straight-on view, no perspective, no people, no cars, no trees, no text, no writing."
+ },
+ {
+  "name": "sand",
+  "by": "gamma",
+  "made": false,
+  "kind": "photo",
+  "size": "banner (16:9)",
+  "note": "asked once: a picture of something else altogether came back; not asked again",
+  "prompt": "Perfectly frontal elevation photograph of a simple two-storey house of the 1980s in an old district of Riyadh, Saudi Arabia: sand beige painted plaster walls a little faded by the sun, a regular row of windows with white aluminium frames and pale green tinted glass, some with closed white roller shutters, a plain flat roof parapet with a thin projecting ledge, a sand beige three metre boundary wall across the whole width of the picture with a closed pale green steel double gate and a small closed pale green steel door. Soft flat even light from a bright pale overcast sky, no cast shadows, pale sky background, 85mm lens, orthographic straight-on view, no perspective, no people, no cars, no trees, no text, no writing."
+ },
+ {
   "name": "roof-1",
   "seed": 21,
   "width": 1024,

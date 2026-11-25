@@ -53,12 +53,14 @@ the likelier. Along a street, neighbours are not given the same.
   claims no ownership of them and that they may be used. Read its current
   text at bfl.ai before the app is put to commercial use.
 - `pictures/older.jpg`, `stone.jpg`, `najdi.jpg`, `grey.jpg`, `plain.jpg`,
-  `slats.jpg`, `duplex.jpg`: made for this kit by Gamma's image generator
-  (gamma.app), asked by hand through the owner's account on 25 November
-  2026, as photographs 16 to 9; kept here at half their size (1376 by 768).
-  Each cost 70 of the account's credits. Gamma's terms on the pictures it
-  makes could not be read from where this was built: read them at
-  gamma.app/terms before the app is put to commercial use. None of them
+  `slats.jpg`, `duplex.jpg`, `tan.jpg`, `peach.jpg`: made for this kit by
+  Gamma's image generator (gamma.app), asked by hand through the owner's
+  account on 25 November 2026, as photographs 16 to 9; kept here at half
+  their size (1376 by 768). Each cost 70 of the account's credits. (Twice a
+  picture of something else altogether came back, and cost as much: look at
+  every picture before anything is built on it.) Gamma's terms on the
+  pictures it makes could not be read from where this was built: read them
+  at gamma.app/terms before the app is put to commercial use. None of them
   shows a real house.
 
 `prompts.json` has what was asked for each picture, of which generator.
@@ -78,7 +80,11 @@ the likelier. Along a street, neighbours are not given the same.
    gate, a plate with writing: nothing with a name on it goes into the
    app); `wall`: its `rows` (top, foot), its `height` in metres, its
    `pieces` from left to right (`plain`, `fixed`, `optional`; they need not
-   touch: what lies between two is left out), its `lamps`; `house`:
+   touch: what lies between two is left out), its `lamps`, and `over`:
+   what stands over the wall's top with its gate or its garage (`box`; it
+   stands upright, `out` metres before the wall if that is given; with
+   `lean` it is a little roof, a canopy of tiles, its eaves so many metres
+   out on either side of the wall); `house`:
    `perMetre` (spots to a metre on the house's own face, which stands
    further off than the wall and so shows smaller), `rects` (as many as its
    outline needs: what no rect covers is not drawn; a fifth number is how
@@ -101,6 +107,6 @@ the likelier. Along a street, neighbours are not given the same.
    picture, at least three fronts for every style).
 5. Look at a street of houses in the app, by day and by night.
 
-The kit's picture (4096 by 2048) is full with eleven fronts. For more, make
-the largest pieces smaller (`scale`), or shorten the walls' plain pieces.
-The plaster style has the fewest fronts (two, and the rare Najdi one).
+The kit's picture (4096 by 2048) is nearly full with thirteen fronts (the
+largest were made a little smaller to fit them: `scale`). For more, make
+pieces smaller again, or shorten the walls' plain pieces.

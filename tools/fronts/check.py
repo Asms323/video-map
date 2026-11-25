@@ -2,7 +2,7 @@
 """A front's measures drawn over its picture, to check them by eye: check.py <name> <out.jpg>   (run in tools/fronts)
 
 The wall's strip between its two rows, each piece in its colour (plain: green, one that keeps its size: red, one
-that may be left out: orange), its lamps white; the face of the house in light blue, its windows blue (those never
+that may be left out: orange), its lamps white, what stands over its top yellow; the face of the house in light blue, its windows blue (those never
 lit: violet), its lamps white; its plain piece pink. What a box does not cover is not drawn in the app; what it
 covers that is sky is drawn as house.
 """
@@ -36,6 +36,9 @@ top, foot = wall['rows']
 colours = {'plain': (0, 220, 0), 'fixed': (255, 0, 0), 'optional': (255, 150, 0)}
 for u0, u1, kind in wall['pieces']:
     draw.rectangle([u0, top, u1 - 1, foot - 1], outline=colours[kind], width=2)
+for over in wall.get('over', []):
+    b = over['box']
+    draw.rectangle([b[0], b[1], b[2] - 1, b[3] - 1], outline=(255, 230, 0), width=2)
 for b in wall.get('lamps', []) + house.get('lamps', []):
     draw.rectangle([b[0], b[1], b[2] - 1, b[3] - 1], outline=(255, 255, 255), width=1)
 for b in house['rects']:

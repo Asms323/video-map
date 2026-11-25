@@ -551,14 +551,35 @@ function dressOne(meshes, house, at, kit, sizeU, sizeV, frontage) {
     // Its lamps: wherever the piece each is on came to lie (a lamp on a plain piece, every time that piece is
     // laid with the lamp whole on it).
     const high = (v) => z0 + ((v1 - v) / (v1 - v0)) * wallTall;
+    const whereOn = (one) => (u) => one.a0 + ((u - one.u0) / (one.u1 - one.u0)) * (one.a1 - one.a0);
     for (const lamp of front.wall.lamps) {
       for (const one of runs) {
         if (lamp[0] < Math.min(one.u0, one.u1) || lamp[2] > Math.max(one.u0, one.u1)) continue;
-        const where = (u) => one.a0 + ((u - one.u0) / (one.u1 - one.u0)) * (one.a1 - one.a0);
-        const [l0, l1] = [where(lamp[0]), where(lamp[2])].sort((p, q) => p - q);
+        const [l0, l1] = [whereOn(one)(lamp[0]), whereOn(one)(lamp[2])].sort((p, q) => p - q);
         const [l, r] = [spot(l0, PROUD), spot(l1, PROUD)];
         // (On a piece laid in mirror image, the lamp in mirror image too.)
         upright(l[0], l[1], r[0], r[1], high(lamp[3]), high(lamp[1]), looks, one.u1 < one.u0 ? [lamp[2], lamp[1], lamp[0], lamp[3]] : lamp, plainTint, 255);
+      }
+    }
+    // What stands over the wall's top with its gate or its garage, wherever that piece came to lie: the tops
+    // of a gate's piers and its lintel, standing upright; or a canopy of tiles, a little roof whose ridge runs
+    // over the middle of the wall and whose eaves reach out on either side.
+    for (const over of front.wall.over ?? []) {
+      for (const one of runs) {
+        if (one.kind === 'plain' || over.across[0] < Math.min(one.u0, one.u1) - 0.5 || over.across[1] > Math.max(one.u0, one.u1) + 0.5) continue;
+        const [l0, l1] = [whereOn(one)(over.across[0]), whereOn(one)(over.across[1])].sort((p, q) => p - q);
+        const box = one.u1 < one.u0 ? [over.box[2], over.box[1], over.box[0], over.box[3]] : over.box;
+        const [low, top] = [z0 + wallTall + over.rise[0], z0 + wallTall + over.rise[1]];
+        if (over.lean > 0) {
+          for (const side of [1, -1]) {
+            const eave = side > 0 ? PROUD + over.lean : -WALL_THICK - over.lean;
+            const [e0, e1, r0, r1] = [spot(l0, eave), spot(l1, eave), spot(l0, -WALL_THICK / 2), spot(l1, -WALL_THICK / 2)];
+            face([[...e0, low], [...e1, low], [...r1, top], [...r0, top]], [looks[0] * side * 0.6, looks[1] * side * 0.6, 0.8], cornersOf(box));
+          }
+        } else {
+          const [l, r] = [spot(l0, PROUD + (over.out ?? 0)), spot(l1, PROUD + (over.out ?? 0))];
+          upright(l[0], l[1], r[0], r[1], low, top, looks, box);
+        }
       }
     }
   };
