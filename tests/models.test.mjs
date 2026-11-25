@@ -189,3 +189,30 @@ test('cutMesh: where a level plane cuts a model', () => {
   assert.equal(cutMesh(mesh, 25).length, 0);
   assert.equal(cutMesh(mesh, 10, (corner) => corner < 6).length, 2, 'only the first wall');
 });
+
+test('a mesh takes in another, moved to where it stands', () => {
+  // A model built about its own middle…
+  const own = new ModelMesh(16);
+  new Model(own).quad([0, 0, 0], [10, 0, 0], [10, 0, 30], [0, 0, 30], { kind: 'glass', colour: '#102030', storey: 4, bay: 3, lit: 0.5 }, { out: [0, -1, 0] });
+  assert.equal(own.count, 6);
+  // …is the same in a mesh that already holds something, but for where it lies.
+  const mesh = new ModelMesh(16);
+  new Model(mesh).facet([0, 0, 0], [1, 0, 0], [0, 0, 1], { kind: 'plain', colour: '#ffffff' });
+  mesh.add(own, 100, -50);
+  assert.deepEqual([mesh.count, mesh.faces], [9, 1 + own.faces]);
+  const [first, ...rest] = facesOf(mesh);
+  assert.equal(first.kind, 'plain');
+  const alone = facesOf(own);
+  assert.equal(rest.length, 2);
+  rest.forEach((face, i) => {
+    assert.deepEqual(face.corners, alone[i].corners.map(([east, north, up]) => [east + 100, north - 50, up]));
+    const { corners: _, ...there } = face;
+    const { corners: __, ...here } = alone[i];
+    assert.deepEqual(there, here);
+  });
+  // (It makes room for what it takes in.)
+  const many = new ModelMesh(4);
+  for (let i = 0; i < 500; i += 1) many.add(own, i, 0);
+  assert.equal(many.count, 3000);
+  assert.ok(Math.abs(many.positions[2999 * 3] - (499 + facesOf(own)[1].corners[2][0])) < 1e-3);
+});

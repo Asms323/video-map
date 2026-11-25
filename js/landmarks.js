@@ -1123,6 +1123,11 @@ export function landmarkSlabs() {
   return made;
 }
 
+// Each landmark's model, built once about its own middle. (The mesh they are laid into is made afresh
+// whenever the place it is measured from moves on, which it does as the map is moved: with a hundred
+// models and more, building every face again each time is what would be felt.)
+const built = new Map();
+
 /**
  * Build the landmarks that are true models into a mesh (a ModelMesh: see
  * models.js), each where it stands, measured in metres east and north of
@@ -1138,7 +1143,13 @@ export function landmarkModels(mesh, origin) {
     const east = (landmark.at[0] - origin.lng) * squeeze;
     const north = (landmark.at[1] - origin.lat) * METERS_PER_DEGREE;
     if (landmark.within && Math.hypot(east, north) > landmark.within) continue;
-    landmark.model(new Model(mesh, { east, north, turn: landmark.bearing }));
+    let own = built.get(landmark);
+    if (!own) {
+      own = new ModelMesh(256);
+      landmark.model(new Model(own, { turn: landmark.bearing }));
+      built.set(landmark, own);
+    }
+    mesh.add(own, east, north);
     models += 1;
   }
   return models;

@@ -56,13 +56,31 @@ export class ModelMesh {
   room(corners) {
     if (this.count + corners <= this.positions.length / 3) return;
     const most = Math.max((this.count + corners) * 2, 2048);
-    for (const [name, size] of [['positions', 3], ['normals', 4], ['surfaces', 4], ['edges', 4], ['tints', 4], ['lights', 4], ['more', 4]]) {
+    for (const [name, size] of PARTS) {
       const grown = new this[name].constructor(most * size);
       grown.set(this[name].subarray(0, this.count * size));
       this[name] = grown;
     }
   }
+
+  /**
+   * Take in all of another mesh, moved so far east and north: a model that was built about its own middle,
+   * put where it stands. (Its faces keep the numbers they have.)
+   */
+  add(other, east = 0, north = 0) {
+    this.room(other.count);
+    for (const [name, size] of PARTS) this[name].set(other[name].subarray(0, other.count * size), this.count * size);
+    for (let n = this.count; n < this.count + other.count; n += 1) {
+      this.positions[n * 3] += east;
+      this.positions[n * 3 + 1] += north;
+    }
+    this.count += other.count;
+    this.faces += other.faces;
+  }
 }
+
+/** What a mesh holds for each corner, and how many numbers of each. */
+const PARTS = [['positions', 3], ['normals', 4], ['surfaces', 4], ['edges', 4], ['tints', 4], ['lights', 4], ['more', 4]];
 
 const byte = (part) => Math.round(Math.min(Math.max(part, 0), 1) * 255);
 
