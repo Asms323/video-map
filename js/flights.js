@@ -291,6 +291,11 @@ export function parseOpenSky(answer) {
       track: Number.isFinite(state[10]) ? state[10] : 0,
       climb: Number.isFinite(state[11]) ? state[11] : 0,
       seen: Number.isFinite(state[3]) ? state[3] : Number.isFinite(state[4]) ? state[4] : answer.time ?? 0,
+      // (For its card: its height over the sea as aircraft give it, by the air's pressure, in metres; its
+      // squawk; the country it is registered in.)
+      aboveSea: Number.isFinite(state[7]) ? state[7] : Number.isFinite(state[13]) ? state[13] : null,
+      squawk: state[14] ?? null,
+      country: state[2] ?? null,
     });
   }
   return planes;
@@ -321,6 +326,13 @@ export function parseReceivers(answer) {
       track: Number.isFinite(one.track) ? one.track : 0,
       climb: Number.isFinite(one.baro_rate) ? (one.baro_rate * FEET) / 60 : Number.isFinite(one.geom_rate) ? (one.geom_rate * FEET) / 60 : 0,
       seen: now - (Number.isFinite(one.seen_pos) ? one.seen_pos : 0),
+      // (For its card: its registration, its type in words, its squawk, its height over the sea by the air's
+      // pressure, in metres; and how far it is banked, right wing down positive.)
+      registration: one.r ?? null,
+      description: one.desc ?? null,
+      squawk: one.squawk ?? null,
+      aboveSea: ground ? null : Number.isFinite(one.alt_baro) ? one.alt_baro * FEET : Number.isFinite(one.alt_geom) ? one.alt_geom * FEET : null,
+      roll: Number.isFinite(one.roll) ? one.roll : 0,
     });
   }
   return planes;
@@ -338,6 +350,10 @@ const HEARD_NEAR_AIRPORT_METERS = 60000;
 // The phone's clock is trusted, unless it is further off the feed's than this. (The feed's own clock gives
 // the moment its report is for, which is some seconds before it is had: that much is no fault of the phone.)
 const CLOCK_TRUSTED_SECONDS = 30;
+// The trail each live aircraft leaves on the radar: where the reports have had it, so many at the most,
+// and none older than this.
+const TRAIL_POINTS = 120;
+const TRAIL_SECONDS = 30 * 60;
 
 /** How far a place is from the airport, in metres. */
 const fromAirport = ([lng, lat]) => Math.hypot((lng - AIRPORT.at[0]) * squeezeAt(AIRPORT.at[1]), (lat - AIRPORT.at[1]) * METERS_PER_DEGREE);
@@ -355,6 +371,7 @@ export class Flights {
     this.reportedAt = 0;
     this.source = null;
     this.skew = 0; // how far the feed's clock is ahead of the phone's, where the phone's is not to be trusted
+    this.trails = new Map(); // by aircraft: where the reports have had it, oldest first: [lng, lat, height over the sea (m) or null, seconds]
   }
 
   /**
@@ -370,6 +387,58 @@ export class Flights {
     this.reportedAt = seconds;
     this.source = source ?? null;
     this.skew = Number.isFinite(now) && Math.abs(seconds - now) > CLOCK_TRUSTED_SECONDS ? seconds - now : 0;
+    // Where each has been, report by report: the trail it leaves on the radar.
+    for (const plane of this.live) {
+      const trail = this.trails.get(plane.id) ?? [];
+      if (!trail.length || trail.at(-1)[3] < plane.seen) trail.push([plane.lng, plane.lat, plane.aboveSea ?? null, plane.seen]);
+      while (trail.length > TRAIL_POINTS || plane.seen - trail[0][3] > TRAIL_SECONDS) trail.shift();
+      this.trails.set(plane.id, trail);
+    }
+    // (One no longer reported is let go of in time.)
+    for (const [id, trail] of this.trails) if (seconds - trail.at(-1)[3] > TRAIL_SECONDS) this.trails.delete(id);
+  }
+
+  /**
+   * The live aircraft alone, each as it is at a moment: moved on from its last report by its speed, course
+   * and climb (no more than a minute and a half). None, once the last report is two and a half minutes
+   * old. Each: { id, kind: 'live', phase, callsign, lng, lat, alt (over Riyadh's ground), aboveSea (as
+   * aircraft give it, or null), track, speed, climb, bank, wide, airline, tail, body, type, registration,
+   * description, squawk, country, heard (seconds since its place was given) }.
+   */
+  liveAt(seconds) {
+    const feed = seconds + this.skew; // the moment by the feed's clock
+    if (!(this.live.length > 0 && feed - this.reportedAt <= LIVE_FOR_SECONDS && feed >= this.reportedAt - CLOCK_TRUSTED_SECONDS)) return [];
+    return this.live.map((plane) => {
+      const since = Math.min(Math.max(feed - plane.seen, 0), MOVED_ON_MOST_SECONDS);
+      const course = plane.track * RADIANS;
+      const [lng, lat] = offset([plane.lng, plane.lat], Math.sin(course) * plane.speed * since, Math.cos(course) * plane.speed * since);
+      const airline = AIRLINES[CALL_SIGNS[plane.callsign.slice(0, 3)] ?? CALL_SIGNS[plane.callsign.slice(0, 2)] ?? 4];
+      const alt = Math.max(plane.alt + plane.climb * since, 0);
+      return {
+        id: plane.id,
+        kind: 'live',
+        phase: alt > 7500 ? 'cruise' : plane.climb < -1 ? 'landing' : 'takeoff',
+        callsign: plane.callsign,
+        lng,
+        lat,
+        alt,
+        aboveSea: Number.isFinite(plane.aboveSea) ? plane.aboveSea + plane.climb * since : null,
+        track: plane.track,
+        speed: plane.speed,
+        climb: plane.climb,
+        bank: plane.roll ?? 0,
+        wide: WIDE_TYPES.test(plane.type ?? ''),
+        airline: airline.name,
+        tail: airline.tail,
+        body: airline.body,
+        type: plane.type ?? null,
+        registration: plane.registration ?? null,
+        description: plane.description ?? null,
+        squawk: plane.squawk ?? null,
+        country: plane.country ?? null,
+        heard: Math.max(feed - plane.seen, 0),
+      };
+    });
   }
 
   /**
@@ -378,36 +447,13 @@ export class Flights {
    * half minutes has aircraft in it: each is moved on from where it last was, by its speed and course.
    */
   at(seconds, { windFrom } = {}) {
-    const feed = seconds + this.skew; // the moment by the feed's clock
-    if (this.live.length > 0 && feed - this.reportedAt <= LIVE_FOR_SECONDS && feed >= this.reportedAt - CLOCK_TRUSTED_SECONDS) {
-      const planes = this.live.map((plane) => {
-        const since = Math.min(Math.max(feed - plane.seen, 0), MOVED_ON_MOST_SECONDS);
-        const course = plane.track * RADIANS;
-        const [lng, lat] = offset([plane.lng, plane.lat], Math.sin(course) * plane.speed * since, Math.cos(course) * plane.speed * since);
-        const airline = AIRLINES[CALL_SIGNS[plane.callsign.slice(0, 3)] ?? CALL_SIGNS[plane.callsign.slice(0, 2)] ?? 4];
-        const alt = Math.max(plane.alt + plane.climb * since, 0);
-        return {
-          id: plane.id,
-          kind: 'live',
-          phase: alt > 7500 ? 'cruise' : plane.climb < -1 ? 'landing' : 'takeoff',
-          callsign: plane.callsign,
-          lng,
-          lat,
-          alt,
-          track: plane.track,
-          speed: plane.speed,
-          climb: plane.climb,
-          wide: WIDE_TYPES.test(plane.type ?? ''),
-          airline: airline.name,
-          tail: airline.tail,
-          body: airline.body,
-        };
-      });
+    const live = this.liveAt(seconds);
+    if (live.length > 0) {
       // (Where no receiver hears the airport, its own landings and take-offs as it flies them at this hour;
       // the airliners that typically pass over are not wanted: the real ones are there.)
-      const hearsAirport = planes.some((plane) => plane.alt < HEARD_LOW_METERS && fromAirport([plane.lng, plane.lat]) < HEARD_NEAR_AIRPORT_METERS);
+      const hearsAirport = live.some((plane) => plane.alt < HEARD_LOW_METERS && fromAirport([plane.lng, plane.lat]) < HEARD_NEAR_AIRPORT_METERS);
       const added = hearsAirport ? [] : typicalFlights(seconds, { windFrom }).filter((plane) => plane.phase !== 'cruise');
-      return { kind: 'live', source: this.source, planes: [...planes, ...added], live: planes.length, typical: added.length };
+      return { kind: 'live', source: this.source, planes: [...live, ...added], live: live.length, typical: added.length };
     }
     const planes = typicalFlights(seconds, { windFrom });
     return { kind: 'typical', source: null, planes, live: 0, typical: planes.length };

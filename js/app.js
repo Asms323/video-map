@@ -22,9 +22,11 @@ import {
   youtubeEmbedUrl,
 } from './lib.js';
 import { LIGHT_MODES, MAP_TYPES, MapView } from './map.js';
-import { aircraftFeed, cloudFieldAround, drivingRoute, placeAt, placeDetails, riyadhSignals, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
+import { aircraftFeed, cloudFieldAround, drivingRoute, placeAt, placeDetails, riyadhSignals, searchPlaces, setFlightServer, speedLimitsNear, weatherAt } from './services.js';
+import { airlineOf, typeName } from './aviation.js';
+import { compassPoint } from './sky.js';
 
-const VERSION = '1.14.0';
+const VERSION = '1.15.0';
 const STORE_PREFIX = 'video-map:';
 
 const $ = (id) => document.getElementById(id);
@@ -64,6 +66,7 @@ const DEFAULT_SETTINGS = {
   sharp: true, // the photo of the Satellite look as sharp as the screen can show it (more to download)
   detail: true, // walls drawn window by window, and shadows on walls and roofs (more work for the phone)
   follow: 'north', // how the map follows you: 'north' (the map does not turn) | 'heading'
+  flightServer: '', // a relay of one's own for live aircraft from adsb.fi (see tools/relay); none: the OpenSky Network
   splitPortrait: null,
   splitLandscape: null,
 };
@@ -84,6 +87,7 @@ function sanitizeSettings(saved) {
   for (const key of ['swap', 'keepAwake', 'roadInfo', 'weather', 'traffic', 'photo', 'sharp', 'detail']) {
     if (typeof saved[key] === 'boolean') out[key] = saved[key];
   }
+  if (typeof saved.flightServer === 'string' && saved.flightServer.length <= 300) out.flightServer = saved.flightServer;
   for (const key of ['splitPortrait', 'splitLandscape']) {
     if (typeof saved[key] === 'number' && Number.isFinite(saved[key])) {
       out[key] = clamp(saved[key], SPLIT_MIN, SPLIT_MAX);
@@ -141,6 +145,9 @@ const placeNote = $('placeNote');
 const placeActions = $('placeActions');
 const placeRouteBtn = $('placeRoute');
 const placeMaps = $('placeMaps');
+const placeWatchBtn = $('placeWatch');
+const radarBar = $('radarBar');
+const radarText = $('radarText');
 const searchForm = $('searchForm');
 const searchInput = $('searchInput');
 const searchNote = $('searchNote');
@@ -513,11 +520,104 @@ async function applyMapType() {
   syncWatch();
 }
 
-// ── Watching a flight ─────────────────────────────────────────────────────
+// ── The flight radar, and watching a flight ───────────────────────────────
 
-/** The button that watches a flight shows in the 3D city while the traffic (and so the aircraft) is on. */
+let radarOn = false;
+let watching = false;
+let shownFlight = null; // the flight picked on the radar, as last told
+
+/** The plane button: the flight radar, on every map. (Pressed while the radar shows or a flight is watched.) */
 function syncWatch() {
-  watchBtn.hidden = !(activeMapType() === 'city' && settings.traffic);
+  watchBtn.hidden = false;
+  watchBtn.setAttribute('aria-pressed', String(radarOn || watching));
+}
+
+/** A row of the card: its words, and where it leads, if anywhere. */
+function fillRows(rows) {
+  placeRows.replaceChildren();
+  for (const row of rows) {
+    const label = document.createElement('dt');
+    label.textContent = row.label;
+    const value = document.createElement('dd');
+    if (row.href) {
+      const link = document.createElement('a');
+      link.href = row.href;
+      link.textContent = row.value;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      value.append(link);
+    } else {
+      value.textContent = row.value;
+    }
+    placeRows.append(label, value);
+  }
+  placeRows.hidden = rows.length === 0;
+}
+
+/**
+ * The flight picked on the radar, in the card: its call sign, airline, aircraft and registration; how high,
+ * how fast, which way and climbing or not; its squawk; how far it is; and when and from where it was heard.
+ */
+function renderFlight(plane) {
+  shownPlace = null;
+  placeTitle.textContent = plane.callsign || plane.registration || plane.id.toUpperCase();
+  const airline = airlineOf(plane.callsign);
+  placeAlt.textContent = airline ?? '';
+  placeAlt.hidden = !airline;
+  placeKindEl.textContent = [typeName(plane.type, plane.description), plane.registration].filter(Boolean).join(' · ') || 'The feed does not say what aircraft it is';
+  const rows = [];
+  if (Number.isFinite(plane.aboveSea)) rows.push({ label: 'Height', value: `${(Math.round(plane.aboveSea / 0.3048 / 25) * 25).toLocaleString('en-US')} ft · ${(Math.round(plane.aboveSea / 10) * 10).toLocaleString('en-US')} m` });
+  const speed = formatSpeed(plane.speed, settings.unit);
+  rows.push({ label: 'Speed', value: `${speed.value} ${speed.unit} · ${Math.round(plane.speed / 0.514444)} knots` });
+  rows.push({ label: 'Heading', value: `${Math.round(plane.track)}° (${compassPoint(plane.track)})` });
+  const fpm = Math.round((plane.climb * 196.85) / 50) * 50;
+  rows.push({ label: 'Climb', value: Math.abs(fpm) < 100 ? 'Level' : `${fpm > 0 ? 'Climbing' : 'Descending'} ${Math.abs(fpm).toLocaleString('en-US')} ft a minute` });
+  if (plane.squawk) rows.push({ label: 'Squawk', value: plane.squawk });
+  if (plane.country) rows.push({ label: 'Registered in', value: plane.country });
+  if (lastFix) rows.push({ label: 'From you', value: formatDistance(distanceMeters(lastFix, plane), settings.unit) });
+  const fromFi = mapView?.flights.source === 'adsb.fi';
+  rows.push({ label: 'Heard', value: `${Math.round(plane.heard)} s ago, by ${fromFi ? 'adsb.fi' : 'The OpenSky Network'}`, href: fromFi ? 'https://adsb.fi' : 'https://opensky-network.org' });
+  fillRows(rows);
+  placeNote.hidden = true;
+  placeActions.hidden = false;
+  placeRouteBtn.hidden = true;
+  placeMaps.hidden = true;
+  placeWatchBtn.hidden = activeMapType() !== 'city';
+  placeEl.hidden = false;
+}
+
+/** What the radar shows: how many live flights, from where; and the one picked, in the card. Null: it is put away. */
+function showRadar(state) {
+  radarOn = Boolean(state);
+  mapPane.classList.toggle('radar', radarOn);
+  radarBar.hidden = !radarOn;
+  syncWatch();
+  if (!state) {
+    if (shownFlight) {
+      shownFlight = null;
+      placeEl.hidden = true;
+    }
+    return;
+  }
+  const feed = aircraftFeed();
+  const quiet = { spent: "Today's live questions are used up", failed: 'The live feed is not answering', none: 'No live flights heard here just now' }[feed.heard] ?? 'Asking for live flights…';
+  // (The feed the flights come from, named and linked to, as adsb.fi asks to be.)
+  const source = state.source ?? feed.source;
+  const link = document.createElement('a');
+  link.href = source === 'adsb.fi' ? 'https://adsb.fi' : 'https://opensky-network.org';
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.textContent = source;
+  if (state.count > 0) radarText.replaceChildren(`${state.count} live flight${state.count === 1 ? '' : 's'} · `, link);
+  else radarText.replaceChildren(quiet);
+  if (state.picked) {
+    shownFlight = state.picked;
+    renderFlight(state.picked);
+  } else if (shownFlight) {
+    // (The one picked is let go of: tapped beside it, or no longer heard.)
+    shownFlight = null;
+    placeEl.hidden = true;
+  }
 }
 
 /** Watch a flight with the camera: the one told (by its id), or the one best worth watching just now. */
@@ -535,12 +635,15 @@ function watchFlight(id = null) {
 
 /** What the flight being watched is doing, in words: who, how high, how fast. Null: none is watched. */
 function showWatched(flight) {
-  mapPane.classList.toggle('watching', Boolean(flight));
-  watchBtn.setAttribute('aria-pressed', String(Boolean(flight)));
+  watching = Boolean(flight);
+  mapPane.classList.toggle('watching', watching);
+  syncWatch();
   flightBar.hidden = !flight;
   if (!flight) return;
   const who = flight.callsign || (flight.phase === 'landing' ? 'Landing' : flight.phase === 'takeoff' ? 'Taking off' : 'Passing over');
-  const height = settings.unit === 'mph' ? `${(Math.round((flight.alt * 3.28084) / 50) * 50).toLocaleString('en-US')} ft` : `${(Math.round(flight.alt / 10) * 10).toLocaleString('en-US')} m`;
+  // (A live one's height is the one it gives, over the sea; one of the airport's usual flights, its height over the ground.)
+  const up = Number.isFinite(flight.aboveSea) ? flight.aboveSea : flight.alt;
+  const height = settings.unit === 'mph' ? `${(Math.round((up * 3.28084) / 50) * 50).toLocaleString('en-US')} ft` : `${(Math.round(up / 10) * 10).toLocaleString('en-US')} m`;
   const where = flight.alt < 1 ? (flight.phase === 'landing' ? 'on the runway' : 'taking off') : height;
   const speed = formatSpeed(flight.speed, settings.unit);
   flightText.textContent = `${who} · ${where} · ${speed.value} ${speed.unit}`;
@@ -551,10 +654,19 @@ function showWatched(flight) {
 
 watchBtn.addEventListener('click', () => {
   if (!mapView) return;
-  if (watchBtn.getAttribute('aria-pressed') === 'true') mapView.followFlight(null);
-  else watchFlight();
+  if (watching) mapView.followFlight(null);
+  else mapView.setRadar(!radarOn);
 });
 $('flightStop').addEventListener('click', () => mapView?.followFlight(null));
+$('radarClose').addEventListener('click', () => mapView?.setRadar(false));
+placeWatchBtn.addEventListener('click', () => {
+  const id = shownFlight?.id;
+  if (!id || !mapView) return;
+  shownFlight = null;
+  placeEl.hidden = true;
+  setFollow('off');
+  if (!mapView.followFlight(id)) setStatus('This flight cannot be watched just now.');
+});
 
 /** Say what the follow button does now. The view that does not turn is isometric in the 3D city, north up elsewhere. */
 function labelFollow() {
@@ -841,6 +953,9 @@ function renderPlace() {
   placeNote.hidden = !place.note;
 
   placeActions.hidden = Boolean(place.me);
+  placeRouteBtn.hidden = false;
+  placeMaps.hidden = false;
+  placeWatchBtn.hidden = true;
   placeRouteBtn.textContent = place.route ? 'Clear route' : 'Show route';
   placeMaps.href = mapsLink(place);
   placeEl.hidden = false;
@@ -889,6 +1004,10 @@ async function showPlace(place, { fly = false } = {}) {
 function closePlace() {
   if (placeRequest) placeRequest.abort();
   shownPlace = null;
+  if (shownFlight) {
+    shownFlight = null;
+    mapView?.pickRadar(null);
+  }
   if (mapView) {
     mapView.setPin(null);
     mapView.setRoute(null);
@@ -1099,6 +1218,20 @@ optWeather.addEventListener('change', () => {
   updateWeather();
 });
 
+const optFlightServer = $('optFlightServer');
+const flightServerNote = $('flightServerNote');
+/** The relay for live aircraft, as set: kept, and told to the feed; and whether it is an address that can be asked. */
+function applyFlightServer() {
+  const kept = setFlightServer(settings.flightServer);
+  flightServerNote.hidden = !settings.flightServer || Boolean(kept);
+}
+optFlightServer.addEventListener('change', () => {
+  settings.flightServer = optFlightServer.value.trim();
+  saveSettings();
+  applyFlightServer();
+});
+applyFlightServer();
+
 optTraffic.addEventListener('change', () => {
   settings.traffic = optTraffic.checked;
   saveSettings();
@@ -1147,6 +1280,7 @@ function initMap() {
         onUserPan: () => setFollow('off'),
         onPlaneTap: (id) => watchFlight(id),
         onFollowFlight: (flight) => showWatched(flight),
+        onRadar: (state) => showRadar(state),
         onViewChange: (view) => store.set('mapView', view),
         onPlaceTap: (place) => showPlace(place),
         onLongPress: (point) => showPlace({ title: 'Dropped pin', lat: point.lat, lng: point.lng, lookup: true }),
@@ -1258,6 +1392,7 @@ function syncForms() {
   optPhoto.checked = settings.photo;
   optSharp.checked = settings.sharp;
   optDetail.checked = settings.detail;
+  optFlightServer.value = settings.flightServer;
   for (const radio of document.querySelectorAll('input[name="unit"]')) {
     radio.checked = radio.value === settings.unit;
   }

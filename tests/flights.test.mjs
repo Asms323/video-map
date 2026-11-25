@@ -142,8 +142,8 @@ test('live aircraft are read out of what the feeds answer', () => {
   });
   assert.deepEqual(sky, [
     // (Its height above the sea, 1,310.6 m, made a height above Riyadh's ground: the airport's lies 625 m up.)
-    { id: 'c04049', callsign: 'SVA1023', lng: 46.73, lat: 24.83, alt: 1310.6 - 625, ground: false, speed: 82.5, track: 330.2, climb: -4.2, seen: 1507203246 },
-    { id: '710105', callsign: 'FAD301', lng: 46.7, lat: 24.95, alt: 0, ground: true, speed: 6.1, track: 150, climb: 0, seen: 1507203240 },
+    { id: 'c04049', callsign: 'SVA1023', lng: 46.73, lat: 24.83, alt: 1310.6 - 625, ground: false, speed: 82.5, track: 330.2, climb: -4.2, seen: 1507203246, aboveSea: 1280.2, squawk: '1000', country: 'Saudi Arabia' },
+    { id: '710105', callsign: 'FAD301', lng: 46.7, lat: 24.95, alt: 0, ground: true, speed: 6.1, track: 150, climb: 0, seen: 1507203240, aboveSea: null, squawk: null, country: 'Saudi Arabia' },
   ]);
   assert.deepEqual(parseOpenSky({ time: 1, states: null }), []);
   assert.deepEqual(parseOpenSky(null), []);
@@ -238,4 +238,30 @@ test("a phone whose clock is well off the feed's still shows the live aircraft w
   const behind = new Flights();
   behind.report([plane], T0, 'The OpenSky Network', { now: T0 - 12 });
   assert.equal(behind.at(T0 - 12).kind, 'live');
+});
+
+test('live aircraft alone, as they are this moment, with what the feeds say of them; and the trail each leaves behind it', async () => {
+  const { airlineOf, typeName, isWide } = await import('../js/aviation.js');
+  // Names out of codes: the airline by the letters its call signs begin with, the aircraft by its type.
+  assert.ok(airlineOf('SVA1023') === 'Saudia' && airlineOf('RXI9676') === 'Riyadh Air' && airlineOf('QTR1154 ') === 'Qatar Airways' && airlineOf('HZ-SKY') === null && airlineOf('') === null);
+  assert.ok(typeName('B789') === 'Boeing 787-9' && typeName('A339', 'AIRBUS A-330-900') === 'Airbus A330-900' && typeName('ZZZZ', 'AIRBUS A-330-900') === 'Airbus A330-900' && typeName('ZZZZ') === 'ZZZZ' && typeName(null) === null);
+  assert.ok(isWide('B77W') && isWide('A359') && !isWide('A20N'));
+  // What adsb.fi says of an aircraft is kept: its registration, its type in words, its squawk, its height over the sea, its bank.
+  const [one] = parseReceivers({ now: T0 * 1000, ac: [{ hex: '706073', flight: 'KAC156  ', r: '9K-APM', t: 'A339', desc: 'AIRBUS A-330-900', alt_baro: 14375, alt_geom: 15125, gs: 396.7, track: 44.49, roll: -0.18, baro_rate: -1024, squawk: '2371', lat: 28.667587, lon: 47.702056, seen_pos: 3.7 }] });
+  assert.ok(one.registration === '9K-APM' && one.description === 'AIRBUS A-330-900' && one.squawk === '2371' && near(one.aboveSea, 14375 * 0.3048, 0.01) && one.roll === -0.18);
+  const flights = new Flights();
+  assert.deepEqual(flights.liveAt(T0), []);
+  flights.report([one], T0, 'adsb.fi', { now: T0 });
+  const [moved] = flights.liveAt(T0 + 10);
+  assert.ok(moved.kind === 'live' && moved.registration === '9K-APM' && moved.type === 'A339' && moved.wide && moved.bank === -0.18 && near(moved.heard, 13.7, 0.01));
+  // (Its height over the sea goes on with its climb: 1,024 ft a minute down, for 13.7 s.)
+  assert.ok(near(moved.aboveSea, 14375 * 0.3048 - ((1024 * 0.3048) / 60) * 13.7, 0.01));
+  // Report by report, the trail: each place it was given, oldest first; none twice; a plane no longer heard is let go of after half an hour.
+  flights.report([{ ...one, lat: one.lat + 0.02, seen: one.seen + 15 }], T0 + 15, 'adsb.fi', { now: T0 + 15 });
+  flights.report([{ ...one, lat: one.lat + 0.02, seen: one.seen + 15 }], T0 + 20, 'adsb.fi', { now: T0 + 20 });
+  const trail = flights.trails.get('706073');
+  assert.ok(trail.length === 2 && trail[0][1] < trail[1][1] && near(trail[0][2], 14375 * 0.3048, 0.01));
+  flights.report([], T0 + 31 * 60, 'adsb.fi', { now: T0 + 31 * 60 });
+  assert.equal(flights.trails.size, 0);
+  assert.deepEqual(flights.liveAt(T0 + 31 * 60), []);
 });

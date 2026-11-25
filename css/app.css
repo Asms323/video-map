@@ -329,7 +329,19 @@ button { cursor: pointer; }
   background: none;
 }
 .flight-stop .icon { width: 18px; height: 18px; }
-.pane-map.watching .road { display: none !important; }
+.pane-map.watching .road,
+.pane-map.radar .road { display: none !important; }
+.setting-column { display: grid; gap: 8px; }
+.text-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2, rgb(255 255 255 / 0.06));
+  color: var(--text);
+  font-size: 15px;
+}
+.setting-warn { color: #ff8a65; }
 .map-btn[aria-pressed="true"] { background: var(--accent, #f5b301); color: #111; }
 
 /* The live aircraft by name, each just above where it flies. */

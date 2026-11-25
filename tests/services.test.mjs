@@ -79,3 +79,37 @@ test("the live aircraft: asked every 15 s while there are any, every 2 minutes w
     mock.timers.reset();
   }
 });
+
+test('with a relay of its own set, the live aircraft come from adsb.fi through it, every 5 s, round the place asked about', async () => {
+  const start = Date.UTC(2026, 10, 25, 20, 0, 0);
+  mock.timers.enable({ apis: ['Date'], now: start });
+  const realFetch = globalThis.fetch;
+  globalThis.localStorage = { getItem: () => null, setItem: () => {} };
+  const asked = [];
+  globalThis.fetch = async (url) => {
+    asked.push(String(url));
+    return { ok: true, status: 200, json: async () => ({ now: Date.now(), ac: [{ hex: '7104c1', flight: 'KNE423  ', t: 'A20N', r: 'HZ-NS41', lat: 24.6, lon: 46.6, alt_baro: 36000, gs: 450, track: 297, seen_pos: 1 }] }) };
+  };
+  try {
+    const { aircraftFeed, liveAircraft, setFlightServer } = await import('../js/services.js?relay');
+    // (Only an address that begins with https:// is taken; a trailing slash is dropped.)
+    assert.equal(setFlightServer('http://example.org'), null);
+    assert.equal(setFlightServer('https://relay.example/'), 'https://relay.example');
+    const found = await liveAircraft({ lat: 25.123, lng: 47.456, wide: true });
+    assert.equal(asked[0], 'https://relay.example/v3/lat/25.12/lon/47.46/dist/250');
+    assert.ok(found.source === 'adsb.fi' && found.planes[0].registration === 'HZ-NS41' && aircraftFeed().source === 'adsb.fi');
+    assert.equal(await liveAircraft(), null, 'not again at once');
+    mock.timers.tick(5000);
+    assert.ok(await liveAircraft());
+    assert.equal(asked.length, 2);
+    // Without it, the OpenSky Network again, for a box as wide as the radar shows (one question's worth: under 25 square degrees).
+    setFlightServer('');
+    await liveAircraft({ lat: 25.123, lng: 47.456, wide: true });
+    const box = Object.fromEntries(new URL(asked.at(-1)).searchParams);
+    assert.ok(asked.at(-1).startsWith('https://opensky-network.org/') && (box.lamax - box.lamin) * (box.lomax - box.lomin) <= 25 && box.lamin === '22.9' && box.lomax === '50.1', JSON.stringify(box));
+  } finally {
+    globalThis.fetch = realFetch;
+    delete globalThis.localStorage;
+    mock.timers.reset();
+  }
+});

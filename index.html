@@ -81,10 +81,17 @@
         <button class="map-btn" type="button" data-open="map" aria-label="Map type and places" title="Map type and places">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4 8.5 4.5L12 13 3.5 8.5z"/><path d="m4.5 12.5 7.5 4 7.5-4"/><path d="m4.5 16 7.5 4 7.5-4"/></svg>
         </button>
-        <button id="watchBtn" class="map-btn" type="button" aria-label="Watch a flight" title="Watch a flight" aria-pressed="false" hidden>
+        <button id="watchBtn" class="map-btn" type="button" aria-label="Flight radar: the live flights round you" title="Flight radar" aria-pressed="false" hidden>
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c.9 0 1.3.8 1.3 1.8v4.4l7.2 4.1v1.9l-7.2-2.2v4.3l2.1 1.6v1.4L12 20l-3.4.8v-1.4l2.1-1.6v-4.3l-7.2 2.2v-1.9l7.2-4.1V5.3c0-1 .4-1.8 1.3-1.8z"/></svg>
         </button>
         <div id="weather" class="weather" hidden></div>
+      </div>
+
+      <div id="radarBar" class="flight-bar" role="status" hidden>
+        <span id="radarText" class="flight-text"></span>
+        <button id="radarClose" class="flight-stop" type="button" aria-label="Close the flight radar" title="Close the flight radar">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>
+        </button>
       </div>
 
       <div id="flightBar" class="flight-bar" role="status" hidden>
@@ -138,6 +145,7 @@
         <div id="placeActions" class="place-actions">
           <button id="placeRoute" class="btn" type="button">Show route</button>
           <a id="placeMaps" class="btn btn-primary" target="_blank" rel="noopener">Open in Maps</a>
+          <button id="placeWatch" class="btn btn-primary" type="button" hidden>Watch in 3D</button>
         </div>
       </aside>
     </section>
@@ -252,6 +260,15 @@
           <span class="setting-note">Riyadh's own cars on the 3D city's streets (white saloons and 4x4s, pick-ups, green taxis, lorries by night), stopping at traffic lights that are run the way Riyadh runs its own; people on the pavements, most of them in the evening; buses along the streets with bus stops, and metro trains at the hours and as often as they really run. A simulation, not live traffic or a timetable: a light on the map never shows what the real signal is showing. And aircraft in its sky: where they really are when the open feed has any over Riyadh, otherwise as many as the airport has at that hour.</span>
         </label>
         <input id="optTraffic" class="switch" type="checkbox" role="switch">
+      </div>
+
+      <div class="setting setting-column">
+        <label class="setting-text" for="optFlightServer">
+          <span class="setting-name">Live flights relay (optional)</span>
+          <span class="setting-note">The flight radar hears live aircraft from the OpenSky Network, which has few receivers over Saudi Arabia and allows about an hour and a half a day. A relay of your own for adsb.fi hears many more round the Gulf: its address goes here (how to set one up, free: tools/relay in the app's code). adsb.fi's data is for personal, non-commercial use.</span>
+        </label>
+        <input id="optFlightServer" class="text-input" type="url" inputmode="url" placeholder="https://…" autocomplete="off" spellcheck="false">
+        <p id="flightServerNote" class="setting-note setting-warn" hidden>That is not an address the app can ask: it must begin with https://</p>
       </div>
 
       <div class="setting">

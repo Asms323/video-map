@@ -55,7 +55,7 @@ import { drawFootbridges, drawRoadside, drawSigns, medianPalms } from './roadsid
 import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
 import { SceneLayer } from './scene.js';
 import { AIRLINERS } from './airliner.js';
-import { aircraftOverRiyadh, buildingArchive, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
+import { aircraftOverRiyadh, buildingArchive, liveAircraft, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
 import { footprintGrid, heightsFromShadows, passSuns, pavedGrid, photoGrid, roofColours, tilesFor, treesInPhoto } from './sight.js';
 import { CasterMesh, groundCasters, shadowCasters, shadowFall, shadowMapSize } from './shade.js';
 import { Flights } from './flights.js';
@@ -144,6 +144,25 @@ const FOLLOW_TURN = -28; // from behind it and a little to its left
 const FOLLOW_GLIDE_MS = 1500; // and the camera's way back down to the ground once it lets go
 const FOLLOW_TELL_MS = 500; // how often what it is doing is told (see handlers.onFollowFlight)
 const PLANE_TAP_REACH_PX = 34; // a tap this near an aircraft on the screen (or on it) picks it
+// The flight radar (see setRadar()): the live flights on a map seen from straight above, as far round as
+// the feed hears them.
+const RADAR_ZOOM = 5.8; // some 250 km either side of the middle, on a phone: about as far round as the feed hears
+const RADAR_MIN_ZOOM = 4;
+const RADAR_STEP_MS = 400; // how often the aircraft are moved on there
+const RADAR_ASK_MS = 5000; // and how often the feed is given the chance to be asked (it keeps its own pace)
+const RADAR_TAP_PX = 22; // a tap this near an aircraft picks it
+// The colour an aircraft is drawn in by its height over the sea, in metres: orange low, through yellow and
+// green, to blue and violet in the cruise. (Its trail the same.) The one picked: red.
+const RADAR_BANDS = [
+  [0, '#ff7b2e'],
+  [1000, '#ffb020'],
+  [3000, '#e3dc2a'],
+  [6000, '#5ccf54'],
+  [9000, '#36b6ff'],
+  [11000, '#a07cff'],
+];
+const RADAR_PICKED = '#ff3d3d';
+const RADAR_LAYERS = ['radar-trails', 'radar-planes'];
 const PLACES_GONE_PITCH = 82; // tilted this far the places' markers are put away; four degrees short of it they are all there
 
 // Shadows are worked out for what is on screen and a margin around it, and
@@ -249,6 +268,27 @@ const BLANK_STYLE = {
   layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#dde4e8' } }],
 };
 const EMPTY = { type: 'FeatureCollection', features: [] };
+const AIRPORT_ELEVATION_METERS = 625; // (the ground of Riyadh over the sea, at King Khalid International Airport)
+
+/** An airliner seen from above, nose up, in a colour with a dark rim: a picture of 48 by 48 for the radar (at twice the pixels). */
+function planeIcon(colour) {
+  const size = 48;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const g = canvas.getContext('2d');
+  // (One half, nose to tail; the other is its mirror.)
+  const half = [[24, 2], [26.2, 6], [26.6, 17], [45, 27.5], [45, 31], [26.6, 26], [26, 37], [33.5, 43], [33.5, 46], [25, 44], [24, 46.5]];
+  const outline = [...half, ...half.slice(1, -1).reverse().map(([x, y]) => [size - x, y])];
+  g.beginPath();
+  outline.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y)));
+  g.closePath();
+  g.fillStyle = colour;
+  g.fill();
+  g.lineWidth = 1.6;
+  g.strokeStyle = 'rgba(12, 16, 22, 0.85)';
+  g.stroke();
+  return g.getImageData(0, 0, size, size);
+}
 
 const CREDITS_SHOWN_MS = 8000;
 const LONG_PRESS_MS = 600;
@@ -586,6 +626,7 @@ export class MapView {
     this.planeFollowed = null; // the one the camera is following: { id, turn, plane, told }
     this.followFrame = 0;
     this.glideToken = 0;
+    this.radar = null; // the flight radar, while it is shown: { before (the camera to go back to), picked, timer, askedAt }
     // For anyone looking at the scene from outside (the tests do): what it holds.
     this.scene.counts = () => ({ life: this.lifeCounts(), photo: this.photoCounts(), buildings: this.buildingCounts(), detail: this.detailCounts(), night: this.nightCounts(), busy: { ...this.busy } });
     // How often each piece of work has been done, for anyone wondering what keeps the map from coming to rest.
@@ -893,6 +934,7 @@ export class MapView {
     const request = ++this.styleRequest;
     this.clearPlaneTags();
     this.followFlight(null, { glide: false });
+    this.setRadar(false);
     let base;
     let buildings = null;
     let cityBase = null;
@@ -2836,7 +2878,7 @@ export class MapView {
     }
     const now = Date.now();
     const seconds = now / 1000;
-    if (Math.abs(now - this.flightsAskedAt) > FLIGHTS_ASK_MS && !document.hidden) {
+    if (!this.radar && Math.abs(now - this.flightsAskedAt) > FLIGHTS_ASK_MS && !document.hidden) {
       this.flightsAskedAt = now;
       aircraftOverRiyadh().then((found) => {
         if (found) this.flights.report(found.planes, found.seconds, found.source, { now: Date.now() / 1000 });
@@ -2861,11 +2903,13 @@ export class MapView {
     }
     // The live ones by name, the nearest first: each where it is drawn this moment. (The airport's typical
     // traffic has no name: it is not any flight in particular.)
+    // (A live one's height is the one it gives, over the sea, as on its card.)
+    const byId = new Map(flying.planes.map((plane) => [plane.id, plane]));
     this.planeTagsWanted = shown
       .filter((one) => one.kind === 'live' && one.callsign && one.seen >= PLANE_TAG_SEEN_FROM)
       .sort((a, b) => a.far - b.far)
       .slice(0, PLANE_TAGS_MOST)
-      .map((one) => ({ id: one.id || one.callsign, name: one.callsign, height: this.heightText(one.alt), at: one.at, seen: one.seen }));
+      .map((one) => ({ id: one.id || one.callsign, name: one.callsign, height: this.heightText(byId.get(one.id)?.aboveSea ?? one.alt), at: one.at, seen: one.seen }));
     // Where each one drawn is, for a tap on it (see planeAt()); and all there are.
     this.planesShown = shown;
     this.planesNow = flying.planes;
@@ -2887,6 +2931,145 @@ export class MapView {
       cover,
     };
     if (this.planeFollowed) this.keepFollowing(flying.planes);
+  }
+
+  // ── The flight radar ────────────────────────────────────────────────────
+
+  /**
+   * Show the flight radar (or put it away): the map seen from straight above, out to some 250 km, with
+   * every live aircraft the feed hears drawn where it is this moment, turned to its course and coloured by
+   * its height, its call sign beside it and the trail it has left behind it; moved on smoothly between
+   * reports. A tap picks one (see handlers.onRadar). Put away, the camera goes back where it was (unless
+   * told not to, as when a flight picked there is to be watched in 3D).
+   */
+  setRadar(on, { restore = true } = {}) {
+    const map = this.map;
+    if (Boolean(on) === Boolean(this.radar)) return;
+    if (on) {
+      this.followFlight(null, { glide: false });
+      this.radar = { before: { center: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }, picked: null, timer: 0, askedAt: 0 };
+      this.clearPlaneTags();
+      map.setMaxBounds(null);
+      map.setMinZoom(RADAR_MIN_ZOOM);
+      this.addRadarLayers();
+      map.easeTo({ zoom: Math.min(map.getZoom(), RADAR_ZOOM), pitch: 0, bearing: 0, duration: 900 });
+      this.radarStep();
+      return;
+    }
+    clearTimeout(this.radar.timer);
+    const before = this.radar.before;
+    this.radar = null;
+    for (const id of RADAR_LAYERS) {
+      if (map.getLayer(id)) map.removeLayer(id);
+      if (map.getSource(id)) map.removeSource(id);
+    }
+    map.setMinZoom(8);
+    if (restore) {
+      map.jumpTo(before);
+      map.setMaxBounds(this.cityBounds);
+    }
+    this.handlers.onRadar?.(null);
+  }
+
+  /** The radar's two layers, under the place names: the trails, and the aircraft with their call signs. */
+  addRadarLayers() {
+    const map = this.map;
+    if (map.getLayer('radar-planes')) return;
+    for (const id of RADAR_LAYERS) {
+      if (map.getLayer(id)) map.removeLayer(id);
+      if (map.getSource(id)) map.removeSource(id);
+    }
+    for (const [index, [, colour]] of RADAR_BANDS.entries()) if (!map.hasImage(`radar-plane-${index}`)) map.addImage(`radar-plane-${index}`, planeIcon(colour), { pixelRatio: 2 });
+    if (!map.hasImage('radar-plane-picked')) map.addImage('radar-plane-picked', planeIcon(RADAR_PICKED), { pixelRatio: 2 });
+    const byHeight = ['step', ['get', 'high'], RADAR_BANDS[0][1], ...RADAR_BANDS.slice(1).flatMap(([from, colour]) => [from, colour])];
+    map.addSource('radar-trails', { type: 'geojson', data: EMPTY });
+    map.addSource('radar-planes', { type: 'geojson', data: EMPTY });
+    map.addLayer({
+      id: 'radar-trails',
+      type: 'line',
+      source: 'radar-trails',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ['case', ['get', 'picked'], RADAR_PICKED, byHeight], 'line-width': ['case', ['get', 'picked'], 3, 1.6], 'line-opacity': ['case', ['get', 'picked'], 0.95, 0.6] },
+    });
+    map.addLayer({
+      id: 'radar-planes',
+      type: 'symbol',
+      source: 'radar-planes',
+      layout: {
+        'icon-image': ['case', ['get', 'picked'], 'radar-plane-picked', ['step', ['get', 'high'], 'radar-plane-0', ...RADAR_BANDS.slice(1).flatMap(([from], index) => [from, `radar-plane-${index + 1}`])]],
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 4, ['case', ['get', 'wide'], 0.62, 0.5], 9, ['case', ['get', 'wide'], 1, 0.82], 12, ['case', ['get', 'wide'], 1.3, 1.05]],
+        'icon-rotate': ['get', 'track'],
+        'icon-rotation-alignment': 'map',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'text-field': ['step', ['zoom'], ['case', ['get', 'picked'], ['get', 'label'], ''], 6.5, ['get', 'label']],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 11,
+        'text-offset': [0, 1.4],
+        'text-anchor': 'top',
+        'text-optional': true,
+      },
+      paint: { 'text-color': '#ffffff', 'text-halo-color': 'rgba(10, 14, 20, 0.9)', 'text-halo-width': 1.4 },
+    });
+  }
+
+  /** The radar moved on: the aircraft where they are this moment; the feed asked now and then; whoever wants to know told. */
+  radarStep() {
+    const radar = this.radar;
+    if (!radar) return;
+    const map = this.map;
+    const now = Date.now();
+    // (A new style for the map takes the radar's layers with the old one: they are laid again.)
+    if (!map.getLayer('radar-planes') && map.isStyleLoaded()) this.addRadarLayers();
+    if (now - radar.askedAt > RADAR_ASK_MS && !document.hidden) {
+      radar.askedAt = now;
+      const middle = map.getCenter();
+      liveAircraft({ lat: middle.lat, lng: middle.lng, wide: true }).then((found) => {
+        if (found && this.radar) this.flights.report(found.planes, found.seconds, found.source, { now: Date.now() / 1000 });
+      });
+    }
+    const planes = this.flights.liveAt(now / 1000);
+    const high = (plane) => plane.aboveSea ?? plane.alt + AIRPORT_ELEVATION_METERS;
+    map.getSource('radar-planes')?.setData({
+      type: 'FeatureCollection',
+      features: planes.map((plane) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [plane.lng, plane.lat] },
+        properties: { id: plane.id, label: plane.callsign || plane.registration || plane.id.toUpperCase(), track: plane.track, high: high(plane), wide: plane.wide, picked: plane.id === radar.picked },
+      })),
+    });
+    map.getSource('radar-trails')?.setData({
+      type: 'FeatureCollection',
+      features: planes
+        .map((plane) => {
+          const trail = (this.flights.trails.get(plane.id) ?? []).map(([lng, lat]) => [lng, lat]);
+          return { type: 'Feature', geometry: { type: 'LineString', coordinates: [...trail, [plane.lng, plane.lat]] }, properties: { high: high(plane), picked: plane.id === radar.picked } };
+        })
+        .filter((feature) => feature.geometry.coordinates.length > 1),
+    });
+    this.radarPlanes = planes;
+    const picked = radar.picked ? (planes.find((plane) => plane.id === radar.picked) ?? null) : null;
+    this.handlers.onRadar?.({ count: planes.length, source: this.flights.source, picked, lost: Boolean(radar.picked && !picked) });
+    radar.timer = setTimeout(() => this.radarStep(), RADAR_STEP_MS);
+  }
+
+  /** The aircraft on the radar under a point of the screen, or within reach of a finger of it: its id, or null. */
+  radarPlaneAt(point) {
+    let best = null;
+    for (const plane of this.radarPlanes ?? []) {
+      const at = this.map.project([plane.lng, plane.lat]);
+      const off = Math.hypot(at.x - point.x, at.y - point.y);
+      if (off < RADAR_TAP_PX && (!best || off < best.off)) best = { off, id: plane.id };
+    }
+    return best?.id ?? null;
+  }
+
+  /** Pick an aircraft on the radar (or none): it is drawn in red, its trail bold, and told of with every step. */
+  pickRadar(id) {
+    if (!this.radar) return;
+    this.radar.picked = id ?? null;
+    clearTimeout(this.radar.timer);
+    this.radarStep();
   }
 
   /** The aircraft drawn under a point of the screen ({ x, y } in pixels), or within reach of a finger of it: its id, or null. */
@@ -2972,8 +3155,9 @@ export class MapView {
       requestAnimationFrame(step);
       return false;
     }
-    const plane = this.planesNow.find((one) => one.id === id);
+    const plane = this.flights.at(Date.now() / 1000, { windFrom: this.weather?.windFrom }).planes.find((one) => one.id === id);
     if (!plane || this.type !== 'city') return false;
+    if (this.radar) this.setRadar(false, { restore: false });
     this.glideToken += 1;
     const size = AIRLINERS[plane.wide ? 'wide' : 'narrow'];
     this.planeFollowed = { id, turn: FOLLOW_TURN, plane, told: 0 };
@@ -3032,7 +3216,7 @@ export class MapView {
     const time = Date.now();
     if (!followed || (!now && time - followed.told < FOLLOW_TELL_MS)) return;
     followed.told = time;
-    this.handlers.onFollowFlight?.({ id: plane.id, kind: plane.kind, callsign: plane.callsign ?? null, phase: plane.phase, alt: plane.alt, speed: plane.speed, wide: Boolean(plane.wide), airline: plane.airline ?? null });
+    this.handlers.onFollowFlight?.({ id: plane.id, kind: plane.kind, callsign: plane.callsign ?? null, phase: plane.phase, alt: plane.alt, aboveSea: plane.aboveSea ?? null, speed: plane.speed, wide: Boolean(plane.wide), airline: plane.airline ?? null });
   }
 
   /**
@@ -3268,6 +3452,11 @@ export class MapView {
   handleTap(event) {
     // Lifting the finger after a press-and-hold also counts as a tap; that one is not meant.
     if (Date.now() < this.ignoreTapsUntil) return;
+    // On the radar: the aircraft tapped is picked (or, tapped beside them all, none is).
+    if (this.radar) {
+      this.pickRadar(this.radarPlaneAt(event.point));
+      return;
+    }
     // An aircraft tapped: its flight is to be watched.
     const plane = this.planeAt(event.point);
     if (plane) {

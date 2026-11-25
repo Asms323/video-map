@@ -471,18 +471,41 @@ map opens on the city and keeps to it, and places are looked for in it.
   flashes) and, coming in or going out, its landing lamps. Further off it
   is drawn into the sky, larger than life or it would be a speck, the high
   ones leaving trails.
-- **Watch a flight.** The plane button among the map's buttons (in the 3D
-  city, with the traffic on) takes the camera up to a flight and flies with
-  it: a live one within 60 km if the feed has one, else the nearest flight
-  coming in to land, else one climbing away. Tapping an aircraft on the
-  map, or a live one's tag, watches that one. The camera stays beside it,
+- **The flight radar.** The plane button among the map's buttons opens it,
+  on every map: the map lies flat, north up, and widens to some 250 km
+  round, and every live aircraft the feed hears is a plane on it, turned
+  the way it flies and moved on every moment by its own speed and course,
+  coloured by how high it is (orange low, then yellow, green and blue, and
+  violet at the height airliners cruise), with the line it has flown in the
+  last half hour behind it, and its call sign beside it once you zoom in.
+  Tap one for its card: its call sign, airline, aircraft and registration;
+  how high, how fast, which way and whether it is climbing; its squawk; how
+  far it is from you; and how long ago it was heard, and by which network.
+  In the 3D city, **Watch in 3D** on the card flies the camera with it. The
+  bar at the top says how many live flights are heard, and from which
+  network; its cross, or the plane button again, puts the radar away and
+  the map back as it was. It hears them from the OpenSky Network, or, with
+  a relay set up (see below), from adsb.fi, which hears many more round the
+  Gulf, every 5 seconds. Neither hears the aircraft low over King Khalid
+  International Airport, and where a flight comes from or goes to is not
+  shown (see Limits).
+- **A relay for the radar (optional).** adsb.fi does not let a web page ask
+  it directly. `tools/relay` holds a small relay to put on a free
+  Cloudflare account (about ten minutes, step by step in
+  `tools/relay/README.md`); its address goes under **Live flights relay**
+  in the app's settings. adsb.fi's data is for personal, non-commercial use
+  only, and is to be credited to it with a link: the app names and links
+  it in the radar's bar and on every card.
+- **Watch a flight.** Tapping an aircraft in the 3D city, or a live one's
+  tag, or **Watch in 3D** on the radar, takes the camera up to that flight
+  and flies with it. The camera stays beside it,
   behind and a little above at first, and turns as it turns: pinch to come
   nearer or go further off, twist to see it from another side, tilt to see
   it from higher or lower. The bar at the top says what it is doing: its
   call sign (live) or what it is (landing, taking off, passing over), how
   high and how fast. It follows it out over the desert if need be, and lets
   go when it lands and leaves the runway, when it flies out of the sky the
-  app keeps, on a drag, on the button again, or on the cross in the bar;
+  app keeps, on a drag, on the plane button, or on the cross in the bar;
   the camera then comes back down to the ground.
 - Drawing the walls window by window and working out the shadows on them is
   more work for the phone with every picture. If the map moves slowly, both
@@ -562,6 +585,8 @@ Everything is free and needs no account or key.
 | Weather, and for the sky: how much cloud in each of three layers, the wind, how far one can see | [Open-Meteo](https://open-meteo.com) | The weather where you are: asked at most every half hour |
 | The clouds round the city, place by place, and the winds at their heights | [Open-Meteo](https://open-meteo.com) (its forecast models' values for this quarter of an hour; the winds at 250, 500 and 700 hPa) | 25 places on a fixed lattice a third of a degree apart round the city (the same lattice whoever asks, so where you are goes no closer than that), asked at most every quarter of an hour while the app is open, and kept for two hours |
 | Live aircraft positions over Riyadh | [The OpenSky Network](https://opensky-network.org) | Its open feed, asked for one fixed box 150 km round the city (the same whoever asks, so nothing about you goes with the question): every 15 seconds while it has aircraft there, every 2 minutes while it has none, and at most 380 times a day (it allows 400 a day to anyone without an account; the app counts them on the phone, and stops until the next day). It is fed by volunteers' receivers, which round Riyadh stand far off: it hears the high aircraft, not the low ones over the airport |
+| Live aircraft round the map, for the flight radar | [The OpenSky Network](https://opensky-network.org), or [adsb.fi](https://adsb.fi) through your own relay | The radar asks about a box some 250 km round the middle of the map, to a tenth of a degree (so where the map is looking goes with the question; with the map on you, that is roughly where you are): the OpenSky Network within the same 380 a day; adsb.fi, through the relay, every 5 seconds while the radar is open. adsb.fi: personal, non-commercial use only; credited with a link wherever its flights are shown |
+| Airline and aircraft names | Written into the app (`js/aviation.js`): the airlines and aircraft most often over Riyadh and the Gulf, by their ICAO codes | Nothing is asked of anyone; any other is shown as the feed gives it |
 | Where the stars are, how bright and what colour | The Hipparcos catalogue as extended by Anderson and Francis (XHIP, 2012) | Comes with the app (`js/stars.js`); nothing is asked of anyone. The moon and the planets are worked out on the phone, and checked against [Astropy](https://www.astropy.org) |
 
 These public services are run for light, fair use, which one person's app is.
@@ -1097,9 +1122,14 @@ Watch video only when parked, or let a passenger watch.
   named in the sheet your dot opens.
 - The aircraft: no free source that a web page may read hears all of the
   aircraft over Riyadh. The open networks of receivers (adsb.lol, adsb.fi)
-  do not let a web page ask them; airplanes.live turns such questions away;
-  the OpenSky Network may be asked, and is, but its receivers that reach
-  Riyadh stand far off, round the Gulf, and hear only the high aircraft.
+  do not let a web page ask them (adsb.fi may be asked through a relay of
+  your own: see the flight radar); airplanes.live turns such questions
+  away; the OpenSky Network may be asked, and is, but its receivers that
+  reach Riyadh stand far off, round the Gulf, and hear only the high
+  aircraft. None has a receiver in Riyadh: a receiver at home (a small
+  computer, a radio stick and an aerial, feeding adsb.fi) would hear the
+  airport's own traffic. The flight radar does not say where a flight comes
+  from or goes to: no free source the app may ask gives the routes.
   So the landings and take-offs at the airport are nearly always its usual
   traffic: the real number of flights for the hour (296,800 flights in 2025,
   by the General Authority for Statistics), the real runways, the real wind
@@ -1181,6 +1211,7 @@ js/sky.js               the sky: clouds, sun, moon, stars, planets, aircraft
 js/stars.js             the stars that rise over Riyadh
 js/flights.js           the aircraft: live ones, or the airport's usual traffic
 js/airliner.js          the airliners themselves, true to size, as triangles
+js/aviation.js          airline and aircraft names, by their ICAO codes
 js/services.js          the open data services
 js/lib.js               everything that needs no browser: parsing, distances,
                         road matching, place categories, map styles by day
@@ -1191,6 +1222,7 @@ manifest.webmanifest    Home Screen name and icons
 icons/                  made by tools/make_icons.py
 firebase.json           what Firebase Hosting publishes, and how it is cached
 tools/firebase-deploy.sh  publishes to Firebase, refusing to replace another site
+tools/relay/            the optional relay for the flight radar (Cloudflare Workers)
 vendor/maplibre/        MapLibre GL JS 5.24.1 and the right-to-left text add-on
 vendor/pmtiles/         PMTiles 4.5.0, which reads the buildings archive
 vendor/earcut/          Earcut 3.2.4, which cuts a roof's outline into triangles

@@ -32,7 +32,7 @@ import {
   weatherSummary,
   cloudField,
 } from './lib.js';
-import { parseOpenSky } from './flights.js';
+import { parseOpenSky, parseReceivers } from './flights.js';
 
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/';
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
@@ -413,9 +413,30 @@ export async function cloudFieldAround(position) {
 // The sky over Riyadh and its airport: one fixed box, the same whoever asks and wherever in the city they
 // are, so that nothing about the asker goes with the question.
 const AIRCRAFT_URL = 'https://opensky-network.org/api/states/all';
-// (As far round the city as an aircraft is drawn from: 150 km. A box this size, 8 square degrees, costs
-// the feed's least, one question, as a smaller one does.)
-const AIRCRAFT_BOX = { lamin: '23.4', lomin: '45.2', lamax: '26.1', lomax: '48.2' };
+// The box the feed is asked for, round the place told: as far round the city as an aircraft is drawn from
+// in the 3D city (150 km), or as far as a radar shows (some 250 km). Either costs the feed's least, one
+// question: a box of up to 25 square degrees does.
+const AIRCRAFT_CITY = { lat: 24.75, lng: 46.7 };
+const AIRCRAFT_REACH = { near: [1.35, 1.5], wide: [2.2, 2.6] }; // degrees north and south, east and west
+// A relay of one's own (see tools/relay): it asks adsb.fi, whose receivers round the Gulf hear many more
+// aircraft than the OpenSky Network's there, but which a web page may not ask itself. Asked every 5 s
+// (the relay keeps each answer that long for everyone), out to 250 nautical miles.
+const RELAY_AGAIN_MS = 5 * 1000;
+const RELAY_FAILED_AGAIN_MS = 60 * 1000;
+const RELAY_NM = 250;
+let flightServer = null;
+
+/** The relay to ask for live aircraft instead of the OpenSky Network (see tools/relay): its address (https), or none. Returns it as kept. */
+export function setFlightServer(url) {
+  const text = typeof url === 'string' ? url.trim().replace(/\/+$/, '') : '';
+  const clean = /^https:\/\/[^\s/?#]+(\/[^\s?#]*)?$/.test(text) ? text : null;
+  if (clean !== flightServer) {
+    flightServer = clean;
+    aircraftRetryAt = 0;
+    aircraftHeard = null;
+  }
+  return flightServer;
+}
 // The feed tells where each aircraft was every ten seconds to anyone who asks without an account, and
 // allows such a one 400 questions a day (one for a box this small): asked every 15 s while it has
 // aircraft to follow, every 2 minutes while it has none; and once the day's questions are near spent, not
@@ -457,14 +478,31 @@ const nextDay = () => {
 };
 
 /**
- * The aircraft in the air over Riyadh right now, from the OpenSky Network's
- * open feed: { planes, seconds, source }, or null when it is not to be had
- * (or was asked for too lately: it is asked every 15 s at the most while it
- * has aircraft, less often while it has nothing or does not answer, and not
- * at all once the day's allowance of questions is spent).
+ * The aircraft in the air round a place right now (round the city, if none is told; as far as a radar
+ * shows, with wide): { planes, seconds, source }, or null when they are not to be had (or were asked for
+ * too lately). From a relay of one's own, if one is set (see setFlightServer): every 5 s. Else from the
+ * OpenSky Network's open feed: every 15 s at the most while it has aircraft, less often while it has
+ * nothing or does not answer, and not at all once the day's allowance of questions is spent.
  */
-export async function aircraftOverRiyadh() {
+export async function liveAircraft({ lat = AIRCRAFT_CITY.lat, lng = AIRCRAFT_CITY.lng, wide = false } = {}) {
   if (aircraftBusy || Date.now() < aircraftRetryAt) return null;
+  if (flightServer) {
+    aircraftBusy = true;
+    try {
+      const answer = await fetchJson(`${flightServer}/v3/lat/${lat.toFixed(2)}/lon/${lng.toFixed(2)}/dist/${RELAY_NM}`, { timeout: 12000, credentials: 'omit', referrerPolicy: 'no-referrer' });
+      const planes = parseReceivers(answer);
+      aircraftRetryAt = Date.now() + RELAY_AGAIN_MS;
+      aircraftHeard = planes.some((plane) => !plane.ground) ? 'aircraft' : 'none';
+      const now = Number(answer?.now);
+      return { planes, seconds: now > 1e11 ? now / 1000 : now || Date.now() / 1000, source: 'adsb.fi' };
+    } catch {
+      aircraftRetryAt = Date.now() + RELAY_FAILED_AGAIN_MS;
+      aircraftHeard = 'failed';
+      return null;
+    } finally {
+      aircraftBusy = false;
+    }
+  }
   if (aircraftAsked() >= AIRCRAFT_A_DAY) {
     aircraftRetryAt = nextDay();
     aircraftHeard = 'spent';
@@ -473,7 +511,11 @@ export async function aircraftOverRiyadh() {
   aircraftBusy = true;
   try {
     aircraftAsked(1);
-    const answer = await fetchJson(`${AIRCRAFT_URL}?${new URLSearchParams(AIRCRAFT_BOX)}`, { timeout: 12000, credentials: 'omit', referrerPolicy: 'no-referrer' });
+    // (The box on a lattice of a tenth of a degree: the same for everyone round there.)
+    const [north, east] = AIRCRAFT_REACH[wide ? 'wide' : 'near'];
+    const tenth = (value) => (Math.round(value * 10) / 10).toFixed(1);
+    const box = { lamin: tenth(lat - north), lomin: tenth(lng - east), lamax: tenth(lat + north), lomax: tenth(lng + east) };
+    const answer = await fetchJson(`${AIRCRAFT_URL}?${new URLSearchParams(box)}`, { timeout: 12000, credentials: 'omit', referrerPolicy: 'no-referrer' });
     const planes = parseOpenSky(answer);
     aircraftRetryAt = Date.now() + (planes.length > 0 ? AIRCRAFT_AGAIN_MS : AIRCRAFT_EMPTY_AGAIN_MS);
     aircraftHeard = planes.some((plane) => !plane.ground) ? 'aircraft' : 'none';
@@ -489,13 +531,16 @@ export async function aircraftOverRiyadh() {
   }
 }
 
+/** The aircraft round the city: see liveAircraft(). */
+export const aircraftOverRiyadh = () => liveAircraft();
+
 /**
- * How the feed of live aircraft stands: { heard: what it last answered ('aircraft', 'none', 'spent',
- * 'failed', or null before it is first asked), asked: how many times today, allowed: how many a day,
- * again: when it is next to be asked, in ms }.
+ * How the feed of live aircraft stands: { source: which it is, heard: what it last answered ('aircraft',
+ * 'none', 'spent', 'failed', or null before it is first asked), asked: how many times today, allowed: how
+ * many a day (OpenSky's), again: when it is next to be asked, in ms }.
  */
 export function aircraftFeed() {
-  return { heard: aircraftHeard, asked: aircraftAsked(), allowed: AIRCRAFT_A_DAY, again: aircraftRetryAt };
+  return { source: flightServer ? 'adsb.fi' : 'The OpenSky Network', heard: aircraftHeard, asked: aircraftAsked(), allowed: AIRCRAFT_A_DAY, again: aircraftRetryAt };
 }
 
 // ── OSRM ──────────────────────────────────────────────────────────────────

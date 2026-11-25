@@ -3,7 +3,7 @@
 // Only the app's own files are handled here. The map, place data, YouTube
 // and video links are on other sites and always go straight to the network.
 
-const VERSION = '1.14.0';
+const VERSION = '1.15.0';
 const CACHE = `video-map-${VERSION}`;
 const SHELL = [
   './',
@@ -19,6 +19,7 @@ const SHELL = [
   './js/roadside.js',
   './js/cuttings.js',
   './js/airliner.js',
+  './js/aviation.js',
   './js/sky.js',
   './js/stars.js',
   './js/flights.js',
