@@ -16,7 +16,7 @@
 // Nothing here touches the browser. Measurements are in metres.
 
 import { WORLD_PARTS, worldPlace } from './boulevard.js';
-import { FAMOUS, majdoulAnnex, majdoulTower } from './famous.js';
+import { FAMOUS, majdoulAnnex, majdoulTower, rafalTower } from './famous.js';
 import { KAFD_PARTS, kafdPlace } from './kafd.js';
 import { Model, ModelMesh } from './models.js';
 import { PROPS } from './props.js';
@@ -30,8 +30,6 @@ const METERS_PER_DEGREE = 111320;
 
 /** A circle of radius r as an outline of n corners, the first one turned by `turn` radians. */
 const circle = (r, n = 20, turn = 0) => Array.from({ length: n }, (_, i) => [Math.cos(turn + (i / n) * TAU) * r, Math.sin(turn + (i / n) * TAU) * r]);
-/** An ellipse with half-axes a (along) and b (across). */
-const oval = (a, b, n = 28) => Array.from({ length: n }, (_, i) => [Math.cos((i / n) * TAU) * a, Math.sin((i / n) * TAU) * b]);
 /** A rectangle, by its half-sizes and its middle. */
 const block = (halfU, halfV, atU = 0, atV = 0) => [[atU - halfU, atV - halfV], [atU + halfU, atV - halfV], [atU + halfU, atV + halfV], [atU - halfU, atV + halfV]];
 /** A square with its corners cut off, by its half-size and the size of the cut. */
@@ -862,41 +860,6 @@ function pifTower(model) {
 }
 
 /**
- * Burj Rafal, 308 m: a slim tower, oval in plan, in pale blue glass. Its top
- * is notched in the middle, which leaves a rounded horn at either end, each
- * carrying a mast.
- */
-function burjRafal() {
-  const slabs = [];
-  const a = 29.1;
-  const b = 18.4;
-  const height = 308;
-  const shoulder = 284;
-  const glass = ['#84b4c9', '#96c2d4'];
-  stack(slabs, 0, shoulder, 4, () => oval(a, b, 28), glass);
-  // The horns: what is left of the oval beyond a gap that widens to the top.
-  const edge = (u) => b * Math.sqrt(Math.max(1 - (u / a) ** 2, 0));
-  const horn = (inner, side) => {
-    const near = [];
-    const far = [];
-    for (let i = 0; i <= 5; i += 1) {
-      const u = inner + ((a - inner) * i) / 5;
-      if (i === 5) near.push([side * u, 0]);
-      else {
-        near.push([side * u, -edge(u)]);
-        far.push([side * u, edge(u)]);
-      }
-    }
-    return [...near, ...far.reverse()];
-  };
-  for (const side of [1, -1]) {
-    stack(slabs, shoulder, height, 4, (z) => horn(4 + ((z - shoulder) / (height - shoulder)) * 17, side), glass);
-    slabs.push({ outline: block(0.7, 0.7, side * 24, 0), base: height, top: height + 22, paint: '#dfe5e8' });
-  }
-  return slabs;
-}
-
-/**
  * Riyadh TV Tower, 170 m: a sand-coloured shaft on a base of fins, with a
  * faceted glass lantern near the top like a cut stone in its setting.
  */
@@ -1031,7 +994,9 @@ export const LANDMARKS = [
   { id: 'olaya-tower', name: 'Olaya Towers (north)', at: [46.682347, 24.697437], bearing: 10, height: 203, clear: 34, build: olayaPodium, model: olayaTall, nights: { '#c9cdd0': '#3c4148' } },
   { id: 'olaya-tower-2', name: 'Olaya Towers (south)', at: [46.68221, 24.696875], bearing: 10, height: 166, clear: 34, build: olayaPodium, model: olayaShort, nights: { '#c9cdd0': '#3c4148' } },
   { id: 'pif-tower', name: 'PIF Tower', at: [46.641519, 24.763701], bearing: 0, height: 385, clear: 36, model: pifTower },
-  { id: 'burj-rafal', name: 'Burj Rafal', at: [46.632342, 24.792398], bearing: 81.6, height: 308, clear: 32, build: burjRafal, nights: { '#84b4c9': '#1a3340', '#96c2d4': '#27485a', '#dfe5e8': '#95a5af' } },
+  // (With the tower's own outline goes its podium's, 60 m off. ghosts: an outline the buildings data has where the tower
+  // only lies across the road in a photograph: that goes altogether, with its shadow. See ghostsOfLandmarks.)
+  { id: 'burj-rafal', name: 'Burj Rafal', at: [46.632342, 24.792398], bearing: 83, height: 308, clear: 62, reach: 105, model: rafalTower, ghosts: [[-47.5, 19.3]] },
   // (The buildings data has the tower's foot, its canopy and its low wing as one outline, 69 m from its middle to its far end: that is cleared with the tower's own.)
   { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20.5, height: 244, clear: 44, build: majdoulAnnex, model: majdoulTower, nights: { '#e9e6dc': '#57534a' } },
   {
@@ -1237,6 +1202,37 @@ export function landmarkShades() {
     }
   }
   return shades;
+}
+
+/**
+ * Outlines the buildings data has where nothing stands at all: a tall tower
+ * seen lying on its side in the photograph the data was traced from. A
+ * landmark says where such lie (ghosts: [[east, north], …], in metres from
+ * its middle); an outline whose middle is within ten metres of one goes
+ * altogether: it is not drawn, and it throws no shadow.
+ *
+ * outlines: [{ id, ring: [[lng, lat], …] }]. Returns the ids.
+ */
+export function ghostsOfLandmarks(outlines) {
+  const out = new Set();
+  for (const landmark of LANDMARKS) {
+    if (!landmark.ghosts) continue;
+    const squeeze = Math.cos((landmark.at[1] * Math.PI) / 180) * METERS_PER_DEGREE;
+    for (const { id, ring } of outlines) {
+      if (id === undefined || id === null || !ring || ring.length < 4) continue;
+      if (Math.abs(ring[0][1] - landmark.at[1]) > 0.01 || Math.abs(ring[0][0] - landmark.at[0]) > 0.01) continue;
+      let east = 0;
+      let north = 0;
+      for (let i = 1; i < ring.length; i += 1) {
+        east += (ring[i][0] - landmark.at[0]) * squeeze;
+        north += (ring[i][1] - landmark.at[1]) * METERS_PER_DEGREE;
+      }
+      east /= ring.length - 1;
+      north /= ring.length - 1;
+      if (landmark.ghosts.some(([ghostEast, ghostNorth]) => Math.hypot(east - ghostEast, north - ghostNorth) < 10)) out.add(id);
+    }
+  }
+  return out;
 }
 
 /**

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { FAMOUS, LIBRARY, MAJDOUL, MASMAK, MINISTRY, inset, majdoulAnnex, majdoulSquare, majdoulTower, stepped } from '../js/famous.js';
+import { FAMOUS, LIBRARY, MAJDOUL, MASMAK, MINISTRY, RAFAL, inset, majdoulAnnex, majdoulSquare, majdoulTower, rafalHalf, rafalRim, rafalTower, stepped } from '../js/famous.js';
 import { LANDMARKS, landmarkBeacons, landmarkModels, landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
 import { facesOf } from './model-faces.mjs';
@@ -434,4 +434,70 @@ test('Al Majdoul Tower: a square that turns a quarter turn clockwise as it rises
     const own = [east * Math.cos(turn) - north * Math.sin(turn), east * Math.sin(turn) + north * Math.cos(turn)];
     assert.ok(Math.max(Math.abs(own[0]), Math.abs(own[1])) > 18.8 && own[0] > 0 && own[1] > 0, JSON.stringify(own));
   }
+});
+
+test('Burj Rafal: a long tower of glass with bowed sides, a hollow between two horns, each with its mast; on a podium of stone', () => {
+  const T = RAFAL;
+  // Its plan: 58 m long; 30 m wide in the middle and 17 m at its two flat ends.
+  assert.deepEqual([rafalHalf(0), rafalHalf(29), rafalHalf(-29)], [15, 8.5, 8.5]);
+  assert.ok(rafalHalf(14.5) > 13 && rafalHalf(14.5) < 14);
+  // The screen round its roof: 5 m over the roof in the middle of the tower, 22 m at its ends.
+  assert.deepEqual([rafalRim(0), rafalRim(29), rafalRim(-29)], [281, 298, 298]);
+  assert.ok(rafalRim(14.5) > 281 && rafalRim(14.5) < 289.5, 'a hollow, steeper towards the ends');
+
+  const mesh = new ModelMesh();
+  const made = rafalTower(new Model(mesh));
+  const faces = facesOf(mesh);
+  // The glass: sixty-eight floors between the podium's height and the roof, right round; silvered.
+  const glass = faces.filter((face) => face.kind === 'glass' && face.colour === '#7f9db3');
+  assert.equal(glass.length, (12 * 2 + 2) * 2);
+  assert.ok(glass.every((face) => near(face.storey, 276 / 68, 1e-3) && near(face.mirror, 0.7, 0.01) && face.corners.every((corner) => corner[2] >= T.podium - 1e-3 && corner[2] <= T.deck + 1e-3)));
+  // (Its long sides are lit as the curves they are: the light does not fall alike on the two ends of a piece.)
+  const bowed = glass.filter((face) => Math.abs(face.normal[0]) > 0.9);
+  assert.equal(bowed.length, 48);
+  assert.ok(bowed.some((face) => Math.hypot(face.normals[0][1] - face.normals[1][1], face.normals[1][1] - face.normals[2][1]) > 0.01));
+  for (const face of bowed) for (const [east, north] of face.corners) assert.ok(near(Math.abs(east), rafalHalf(north), 1e-3));
+  // The screen: the same glass on past the roof, up to its own top; lit by night; dark glass on its inner side.
+  const screen = faces.filter((face) => face.colour === '#93afc2');
+  assert.equal(screen.length, 52);
+  for (const face of screen) {
+    assert.ok(face.glow > 0.5 && face.lit === 0);
+    for (const [, north, up] of face.corners) assert.ok(near(up, T.deck, 1e-3) || near(up, Math.abs(north) > 28.99 ? T.horns : rafalRim(north), 1e-3));
+  }
+  assert.equal(faces.filter((face) => face.colour === '#34424d' && face.open).length, 52);
+  // At its foot, to the podium's height: stone piers with tall openings between them.
+  const piers = faces.filter((face) => face.kind === 'pierced' && face.colour === '#ddd0b0');
+  assert.ok(piers.length === 52 && piers.every((face) => near(face.storey, T.podium, 1e-4) && face.corners.every((corner) => corner[2] <= T.podium + 1e-3)));
+  // A mast on each horn, to 308 m, with its red lamp.
+  assert.ok(near(Math.max(...heights(faces)), 308, 1e-3));
+  assert.deepEqual(made.beacons, [[0, 28.4, 308.6], [0, -28.4, 308.6]]);
+
+  // The podium: six storeys of pale stone with windows, on the outline the buildings data has, east and north of the tower.
+  const podium = faces.filter((face) => face.kind === 'pierced' && face.colour === '#d8c7a2');
+  assert.equal(podium.length, T.base.length * 2);
+  assert.ok(podium.every((face) => near(face.storey, T.podium / 6, 1e-6) && face.glow > 0.3));
+  assert.ok(squareMeters(T.base) > 4900 && squareMeters(T.base) < 5200, 'anticlockwise, and half a hectare');
+  const turn = (83 * Math.PI) / 180;
+  const onMap = ([east, north]) => [east * Math.cos(turn) + north * Math.sin(turn), north * Math.cos(turn) - east * Math.sin(turn)];
+  const spots = podium.flatMap((face) => face.corners).map(onMap);
+  assert.ok(near(Math.max(...spots.map((spot) => spot[0])), 88, 0.01) && near(Math.max(...spots.map((spot) => spot[1])), 84.1, 0.01), 'where the data has it');
+  // Under its top a row of three-cornered openings, right round: some eighty of them.
+  const openings = faces.filter((face) => face.colour === '#4b3d2c');
+  assert.ok(openings.length > 70 && openings.length < 100, String(openings.length));
+  assert.ok(openings.every((face) => face.corners.every((corner) => corner[2] >= T.podium - 2.91 && corner[2] <= T.podium - 1.49)));
+  // On its roof: the tennis court, blue in green, 36 m by 18 m; five slatted shades; the round white tent.
+  const court = faces.filter((face) => face.colour === '#3f7d5a');
+  const acres = court.reduce((sum, { corners: [a, b, c] }) => sum + Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2, 0);
+  assert.ok(near(acres, 36 * 18, 0.01) && court.every((face) => face.normal[2] > 0.99));
+  const middle = onMap(court.flatMap((face) => face.corners).reduce((sum, corner) => [sum[0] + corner[0] / 6, sum[1] + corner[1] / 6], [0, 0]));
+  assert.ok(near(middle[0], 63, 0.5) && near(middle[1], 45, 0.5), JSON.stringify(middle));
+  assert.equal(faces.filter((face) => face.colour === '#3b5fa8').length, 2);
+  assert.equal(faces.filter((face) => face.colour === '#6f553f').length, 5 * 2);
+  const tent = faces.filter((face) => face.colour === '#f4f2ea');
+  assert.ok(tent.length === 16 * 2 * 2 && near(Math.max(...heights(tent)), T.podium + 6.4, 1e-3));
+  // Before the door: the round fountain, 33 m south of the tower's middle, with its water lit by night; and the canopy between it and the tower.
+  const water = faces.filter((face) => face.colour === '#3f8f86');
+  assert.ok(water.length === 22 && water.every((face) => face.glow > 0.4));
+  const pool = onMap(water.flatMap((face) => face.corners).reduce((best, corner) => [Math.min(best[0], corner[0]), Math.max(best[1], corner[0]), Math.min(best[2], corner[1]), Math.max(best[3], corner[1])], [9e9, -9e9, 9e9, -9e9]).reduce((pair, value, i, all) => (i === 3 ? [(all[0] + all[1]) / 2, (all[2] + all[3]) / 2] : pair), [0, 0]));
+  assert.ok(near(pool[0], 0, 0.1) && near(pool[1], -33, 0.1), JSON.stringify(pool));
 });

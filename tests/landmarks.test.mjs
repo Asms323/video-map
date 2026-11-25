@@ -4,8 +4,8 @@ import { test } from 'node:test';
 import { WORLD_PARTS } from '../js/boulevard.js';
 import { FAMOUS } from '../js/famous.js';
 import { KAFD_PARTS } from '../js/kafd.js';
-import { LANDMARKS, STAYED_BRIDGES, landmarkBeacons, landmarkModels, landmarkRoofs, landmarkShades, landmarkSlabs, replacedByLandmarks } from '../js/landmarks.js';
-import { ModelMesh, cutMesh } from '../js/models.js';
+import { LANDMARKS, STAYED_BRIDGES, ghostsOfLandmarks, landmarkBeacons, landmarkModels, landmarkRoofs, landmarkShades, landmarkSlabs, replacedByLandmarks } from '../js/landmarks.js';
+import { Model, ModelMesh, cutMesh } from '../js/models.js';
 import { PROPS } from '../js/props.js';
 import { RoofMesh, roofDecks, roofingOf } from '../js/roofs.js';
 import { facesOf } from './model-faces.mjs';
@@ -34,6 +34,14 @@ function cut(id, z) {
     .sort((a, b) => a.from - b.from);
 }
 const near = (a, b, by) => Math.abs(a - b) <= by;
+/** One landmark's own model, built about its middle (turned as it stands): the mesh, to be cut at a level. */
+function modelMesh(id) {
+  const one = landmark(id);
+  const mesh = new ModelMesh();
+  one.model(new Model(mesh, { turn: one.bearing }));
+  return mesh;
+}
+
 /** The landmarks that are true models, built with one of them at the middle of the mesh: its triangles (see facesOf). */
 function modelOf(id) {
   const one = landmark(id);
@@ -53,10 +61,10 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   // And last the famous buildings that are not towers: see famous.test.mjs.)
   const world = [...WORLD_PARTS.map((one) => one.id), ...KAFD_PARTS.map((one) => one.id), ...FAMOUS.map((one) => one.id)];
   assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station', ...world]);
-  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'al-majdoul', ...world.filter((id) => id !== 'kafd')]);
+  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', ...world.filter((id) => id !== 'kafd')]);
   // (The towers of the city that are true models: built for a view from anywhere.)
   const city = LANDMARKS.filter((one) => one.model && !world.includes(one.id)).length;
-  assert.equal(city, 10);
+  assert.equal(city, 11);
   for (const one of LANDMARKS) {
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
     if (world.includes(one.id)) continue;
@@ -71,11 +79,12 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
       assert.equal(Math.min(...corners.map((corner) => corner[2])), 0, one.id);
       const top = Math.max(...corners.map((corner) => corner[2]));
       assert.ok(top >= one.height - 0.01 && top <= one.height + 25, `${one.id}: ${top} m for ${one.height} m`);
-      assert.ok(Math.max(...corners.map(([east, north]) => Math.hypot(east, north))) < 48, one.id);
+      // (One that is built with its podium says how far that reaches.)
+      assert.ok(Math.max(...corners.map(([east, north]) => Math.hypot(east, north))) < (one.reach ?? 48), one.id);
       // Every triangle is a real one, knows which way it looks, and is made of something.
       for (const face of faces) {
         assert.ok(near(Math.hypot(...face.normal), 1, 1e-4));
-        assert.ok(['plain', 'glass', 'lamp'].includes(face.kind) && /^#[0-9a-f]{6}$/.test(face.colour));
+        assert.ok(['plain', 'glass', 'lamp', 'pierced'].includes(face.kind) && /^#[0-9a-f]{6}$/.test(face.colour));
         if (face.kind === 'glass') assert.ok(face.storey > 3 && face.storey < 7 && face.bay > 1 && face.bay < 5, JSON.stringify([face.storey, face.bay]));
       }
       continue;
@@ -115,8 +124,9 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   // (The PIF Tower stands 2.9 km west and 7.1 km north of there; Kingdom Centre 0.4 km east and 1.3 km north; Hamad Tower 1.3 km east and 0.9 km south.)
   for (const corner of facesOf(mesh).flatMap((face) => face.corners)) {
     // (And the two Al Anoud Towers across the road from that one, and Al Faisaliah a little south and east of it.)
-    // (And Al Majdoul Tower up King Fahd Road, 1.1 km west and 4.4 km north.)
+    // (And Al Majdoul Tower up King Fahd Road, 1.1 km west and 4.4 km north; and Burj Rafal further up it, with its podium.)
     const spots = [[-2880, 7090], [446, 1263], [1297, -883], [1169, -913], [1518, -1091], [1244, -767], [1242, -317], [-1089, 4354]];
+    if (Math.hypot(corner[0] + 3809, corner[1] - 10286) < 105) continue;
     // (…the ministry's tower north of Hamad Tower, and the Olaya Towers beyond Tahlia Street. The district's towers stand round the PIF Tower, within 800 m of it.)
     // (And each famous building where it stands: the ministry 2.6 km east and 3.3 km south, a hundred metres from its middle to its corners.)
     assert.ok(spots.some(([east, north]) => Math.hypot(corner[0] - east, corner[1] - north) < 75) || Math.hypot(corner[0] + 2880, corner[1] - 7090) < 800 || famous.some(({ one, east, north }) => Math.hypot(corner[0] - east, corner[1] - north) < one.reach), JSON.stringify(corner));
@@ -282,7 +292,7 @@ test('Al Faisaliah: a square that rises to a point in one arc between four corne
   assert.ok(lamp.length === 1 && near(lamp[0][2], 267.6, 0.01) && Math.hypot(...from(one, lamp[0])) < 0.1);
 });
 
-test('Al Majdoul turns a quarter of a turn on its way up; Burj Rafal is one oval, then two horns', () => {
+test('Al Majdoul turns a quarter of a turn on its way up; Burj Rafal is one body, then two horns', () => {
   // (Al Majdoul Tower is a true model: see famous.test.mjs for all of it. Here: that it stands where the tower stands, as tall, and turned.)
   const one = landmark('al-majdoul');
   assert.deepEqual([one.bearing, one.height, one.clear], [20.5, 244, 44]);
@@ -300,9 +310,17 @@ test('Al Majdoul turns a quarter of a turn on its way up; Burj Rafal is one oval
   // Its low wing is a slab beside it, two storeys, with a roof to be furnished.
   const wing = slabsOf('al-majdoul');
   assert.ok(wing.length === 1 && wing[0].properties.t === 9 && wing[0].properties.b === 0);
-  // Burj Rafal: one oval all the way up, then two horns.
-  assert.equal(cut('burj-rafal', 150).length, 1);
-  assert.ok(cut('burj-rafal', 300).length >= 2);
+  // Burj Rafal (a true model too: see famous.test.mjs): one body all the way up, its glass right round at 150 m; then two horns, with nothing between them at 290 m.
+  const rafal = landmark('burj-rafal');
+  assert.deepEqual([rafal.bearing, rafal.height, rafal.clear, rafal.reach], [83, 308, 62, 105]);
+  const turn = (83 * Math.PI) / 180;
+  /** How far along the tower's length a place lies, east and north of its middle. */
+  const alongIt = ([east, north]) => east * Math.sin(turn) + north * Math.cos(turn);
+  const level = (z) => cutMesh(modelMesh('burj-rafal'), z).flat().map(alongIt);
+  const body = level(150);
+  assert.ok(Math.min(...body) < -28.9 && Math.max(...body) > 28.9 && body.some((along) => Math.abs(along) < 3));
+  const horns = level(290);
+  assert.ok(horns.length > 0 && horns.every((along) => Math.abs(along) > 15) && horns.some((along) => along > 28) && horns.some((along) => along < -28));
 });
 
 test('PIF Tower: a crystal of six sides in six tiers that does not taper, folded along diagonals, cleft at its apexes, under a notched crown', () => {
@@ -747,6 +765,26 @@ test('replacedByLandmarks picks the tower\'s own outline, not the block it stand
   });
   assert.deepEqual(masts.map((mast) => mast.height), [96, 96]);
   assert.ok(near(masts[0].at[0], -202.5, 0.05) && near(masts[1].at[0], 202.5, 0.05) && near(masts[0].at[1], 0, 0.05) && near(masts[1].at[1], 0, 0.05), JSON.stringify(masts));
+});
+
+test('ghostsOfLandmarks picks the outlines the data has where a tower only lies across a road in a photograph', () => {
+  // Burj Rafal: the data has a block of 400 m2 fifty metres west of the tower, on the road: where the tower lies in an aerial photograph.
+  const rafal = landmark('burj-rafal');
+  assert.deepEqual(rafal.ghosts, [[-47.5, 19.3]]);
+  const squeeze = METERS * Math.cos((rafal.at[1] * Math.PI) / 180);
+  const ring = (points) => [...points, points[0]].map(([east, north]) => [rafal.at[0] + east / squeeze, rafal.at[1] + north / METERS]);
+  const outlines = [
+    { id: 1, ring: ring([[-49.1, 4.4], [-60, 27.2], [-45.9, 34.2], [-35, 11.4]]) }, // the ghost
+    { id: 2, ring: ring([[17, -13.5], [-14.4, -17.3], [-29.6, 1.1], [-11.7, 16.9], [14.3, 17.4], [30, -4.3]]) }, // the tower itself
+    { id: 3, ring: ring([[-110, 10], [-90, 10], [-90, 30], [-110, 30]]) }, // a building across the road
+    { id: undefined, ring: ring([[-49.1, 4.4], [-60, 27.2], [-45.9, 34.2], [-35, 11.4]]) },
+  ];
+  assert.deepEqual([...ghostsOfLandmarks(outlines)], [1]);
+  assert.equal(ghostsOfLandmarks([]).size, 0);
+  // (The tower's model stands in for the ghost as well, being within its clearing; it is the ghost's shadow that must not be thrown.)
+  assert.deepEqual([...replacedByLandmarks(outlines)].sort(), [1, 2]);
+  // No other landmark has any.
+  assert.deepEqual(LANDMARKS.filter((one) => one.ghosts).map((one) => one.id), ['burj-rafal']);
 });
 
 test('the KAFD station: a long white shell with rippling sides under a rolling roof', () => {

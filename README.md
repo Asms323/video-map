@@ -472,6 +472,7 @@ Everything is free and needs no account or key.
 | The King Abdullah Financial District, building by building | Outlines and thirty-four heights: the buildings data below (Overture Maps), kept in `js/kafd-data.js` (see `tools/kafd/`). The other heights, six outlines the data lacks, and the colours of roofs and walls: the satellite photo above (Esri World Imagery), read by hand. What the towers look like from the ground: seven photographs on [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:King_Abdullah_Financial_District) (six by Kolaiel, CC0; one by Ahmed, CC BY-SA 4.0) and Wikipedia's articles on the district, its World Trade Center and its Grand Mosque | Studied, not shown: the models are built by hand from them. No photograph is in the app or fetched by it |
 | The Ministry of Interior | Its plan and what stands on its roof: the satellite photo above (Esri World Imagery), measured by hand. What it looks like from the road, by day and by night: six photographs found through [Openverse](https://openverse.org) on Flickr (by Rupert Affen, IMP1, Bakar_88, Mohd Azli Abdul Malek and airbus777, under Creative Commons licences) and Wikipedia's article on the building | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | Al Majdoul Tower | Its square, its turn, its fins, its roof and the canopy at its foot: the satellite photo above (Esri World Imagery), read by hand, and the buildings data's outline. Its height, floors and architects: Wikipedia's article on the tower and the Council on Tall Buildings' record of it, as found by a web search | Studied, not shown: the model is built by hand from them |
+| Burj Rafal | Its plan, its masts, its podium's roof and its forecourt: the satellite photo above (Esri World Imagery), read by hand, and the buildings data's outlines. Its height, floors, architects and what it is made of: Wikipedia's article on the tower, the Council on Tall Buildings' record of it and its cost managers' and a trade paper's accounts, as found by a web search | Studied, not shown: the model is built by hand from them |
 | The King Fahd National Library | Its plan, its roof and its court: the satellite photo above (Esri World Imagery), measured by hand, and the buildings data's outline. Its veil by day and by night: two photographs found through [Openverse](https://openverse.org) on Flickr (by 'guerrilla' strategy, CC BY-NC-SA 2.0, and Mâřš, CC BY-NC-ND 2.0). How the veil is made: what its architects, Gerber Architekten, and its engineers, Bollinger + Grohmann, have published of it | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | Masmak Fort | Its outline: the buildings data below. Its courts: the satellite photo above (Esri World Imagery). What it looks like, by day and floodlit by night: twelve photographs found through [Openverse](https://openverse.org) on Flickr (by airbus777, Bruno Girin, SammySix, Desert Agama and amanderson2, under Creative Commons licences), and Wikipedia's article on the fort, which gives the heights of its towers and the size of its gate | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The models in `models/` (pagoda, hall, pylon, church, house) | Each made from one photograph out of those the app's owner sent, by [TRELLIS](https://github.com/microsoft/TRELLIS) (Microsoft Research, MIT licence), run on Hugging Face under the owner's account; then cleaned of what stood beside the thing in the photograph, thinned to at most thirty thousand triangles, and packed with `tools/models/pack.mjs` | In the app as those files. Their pictures are made out of the photographs. Who took each photograph is not recorded here: if it was not the owner, the photographer's rights in it remain, and that is to be settled before the app is published to others |
@@ -565,11 +566,11 @@ outlines do not say is made up to look right:
   ground.
 
 Landmarks. The towers the skyline is known by are modelled by hand
-(`js/landmarks.js`, `js/famous.js`). Ten are true models, built face by
+(`js/landmarks.js`, `js/famous.js`). Eleven are true models, built face by
 face: Kingdom Centre, Al Faisaliah Tower, the PIF Tower, Hamad Tower, the two
 Al Anoud Towers, the two Olaya Towers, the tower of the Ministry of Islamic
-Affairs and Al Majdoul Tower. Four are still stacks of thin slabs that follow
-the building's shape: Burj Rafal, the TV Tower, the water tower and the KAFD
+Affairs, Al Majdoul Tower and Burj Rafal. Three are still stacks of thin slabs
+that follow the building's shape: the TV Tower, the water tower and the KAFD
 metro station. Position, outline and height are the real ones; the shape was
 worked out from photos on Wikimedia Commons and from what is published about
 each building, and simplified: a model, not a survey. The water tower was
@@ -585,6 +586,18 @@ corner. What is a judgement, no photograph from the ground having been had:
 the colour of its glass, the height of the roof under the screen (214 m), and
 how high the canopy at its foot stands. The low wing beside it is built
 plainly, on the buildings data's outline.
+
+Burj Rafal (`js/famous.js`). What is real: its 307.9 m, taken as the tips of
+its two masts, its 68 floors, and that it is silvery glass on a podium of six
+storeys of stone with three-cornered openings, as published; the outlines of
+the tower and of the podium (the buildings data's); and, read off the
+satellite photo, in which the tower lies on its side across the road: its
+bowed sides and flat ends, the masts at its two ends, and on the podium's
+roof the tennis court and the round tent; the fountain before the door. What
+is a judgement, no photograph from the ground having been had: the hollow
+between its two horns (kept from the model before this one), the heights of
+its roof (276 m) and of its horns (298 m), and the stone piers at its foot.
+The podium's terraces are five plain shades; its gardens are not built.
 
 The Ministry of Interior (`js/famous.js`). What is real: its builders and its
 55 m, as published (taken here as the height of the dome), and its plan,
@@ -950,7 +963,7 @@ js/boulevard.js         Boulevard World: its lagoon and what stands round it
 js/kafd.js              the King Abdullah Financial District: every building on its own outline
 js/famous.js            the famous buildings that are not towers, each with its details: the Ministry of Interior,
                         the King Fahd National Library, Masmak Fort; and towers built again with theirs:
-                        Al Majdoul Tower
+                        Al Majdoul Tower, Burj Rafal
 js/kafd-data.js         those outlines, and the buildings' heights (written by tools/kafd)
 js/fronts.js            houses dressed as real houses look: a front out of the kit on each one's own plot
 js/kit.js               the kit: where in models/fronts.jpg each front lies, and its measures (written by tools/fronts)

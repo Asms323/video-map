@@ -666,6 +666,155 @@ export function majdoulAnnex() {
   return [{ outline, base: 0, top: 9, paint: '#e9e6dc', roof: true, north: true }];
 }
 
+// ── Burj Rafal ────────────────────────────────────────────────────────────
+
+// The tower's measures, in metres. (Its own north is the way its length runs: east by north on the map.)
+export const RAFAL = {
+  long: 29, // half its length
+  ends: 8.5, // half its width at its two ends…
+  middle: 15, // …and in its middle
+  floors: 68,
+  podium: 23.1, // the height of the podium, and of the stone piers at the tower's own foot
+  deck: 276, // its roof
+  dip: 281, // the top of the screen that stands round the roof: in the middle of the tower's long sides…
+  horns: 298, // …and at its two ends
+  top: 308, // the tips of the two masts
+  // The podium's outline, in metres east and north of the tower's middle on the map (the buildings data's), anticlockwise.
+  base: [
+    [30, -4.3], [39.2, -1.6], [58.2, -5.9], [73.4, -1], [81, 4.9], [85.3, 12.5], [88, 20.7], [88, 29.3], [83.7, 43.4], [77.7, 58.1], [70.7, 68.4],
+    [61.5, 79.2], [45.8, 84.1], [33.8, 81.4], [24.1, 73.8], [20.3, 66.7], [18.1, 59.1], [15.9, 39.6], [15.9, 22.8], [14.3, 17.4], [26.8, 10.4], [23, 4.4],
+  ],
+  court: [63, 45, 155], // the tennis court on the podium's roof: where its middle is, and the way its length runs, in degrees from north
+  tent: [27, 15, 9], // the round white tent on that roof: where, and its radius
+  fountain: [0, -33, 6], // the round fountain before the door: where, and its radius
+};
+
+/** Half the tower's width, so far along its length from its middle: its long sides are bowed. */
+export const rafalHalf = (along) => RAFAL.ends + (RAFAL.middle - RAFAL.ends) * (1 - (along / RAFAL.long) ** 2);
+/** How high the screen round its roof stands, so far along the tower from its middle: lowest in the middle, highest at the two ends. */
+export const rafalRim = (along) => RAFAL.dip + (RAFAL.horns - RAFAL.dip) * (Math.abs(along) / RAFAL.long) ** 1.7;
+
+/**
+ * Burj Rafal (P&T Architects; opened 2014), on King Fahd Road in As Sahafah: 307.9 m and 68 floors, a
+ * hotel below and flats above; for some years the tallest building of the city.
+ *
+ * A long narrow tower of silvery glass, 58 m by 30 m: its two long sides are bowed, its two ends are flat
+ * and half as wide. The glass of the long sides and of the ends runs on past the roof as a screen, low
+ * in the middle of the tower and seventeen metres higher at its two ends: so that from the side its top
+ * is a hollow between two horns; and on each horn stands a mast. It stands on a podium of six storeys in
+ * pale Riyadh stone, an oval some 80 m by 95 m with rows of three-cornered openings in the Najdi way; on
+ * the podium's roof are terraces, a tennis court and a round white tent. Before the hotel's door, on the
+ * southern side, is a round fountain in a ring of road, with a canopy over the door.
+ *
+ * (Its height, floors and architects, and that its podium is of six storeys of stone with three-cornered
+ * openings under a tower of silvery glass, are as published. Its plan, bowed sides and flat ends, the
+ * masts at its two ends, the podium's roof and the fountain are read off the satellite photo the app
+ * shows, in which the tower lies on its side across the road; the outlines of the tower and of the
+ * podium are the buildings data's. No photograph of it from the ground could be had for this: the
+ * hollow between its horns is as the model before this one had it, from photographs seen then; the
+ * heights of its roof, 276 m, and of its horns, 298 m, and the stone piers at its foot are judgements.)
+ */
+export function rafalTower(model) {
+  const T = RAFAL;
+  const storey = T.deck / T.floors;
+  const glass = { kind: 'glass', colour: '#7f9db3', storey, bay: 1.6, lit: 0.4, floors: 0.55, mirror: 0.7 };
+  const screen = { kind: 'glass', colour: '#93afc2', storey, bay: 1.6, lit: 0, floors: 0.55, mirror: 0.7, ridge: 0.8, light: '#e6f0ff', glow: 0.55 };
+  const within = { kind: 'glass', colour: '#34424d', storey, bay: 1.6, lit: 0, floors: 0.4, mirror: 0.2, open: true };
+  const stone = { kind: 'pierced', colour: '#ddd0b0', storey: T.podium, bay: 3.2, holes: 0.45, lit: 0.7, light: '#ffe2b0', glow: 0.35 };
+  const white = { kind: 'plain', colour: '#f0f1ef', light: '#e6f0ff', glow: 0.4 };
+
+  // The two long sides, bowed: each in twelve pieces, lit as the curve they stand for. From the ground to
+  // the podium's height, stone piers; from there to the roof, glass; from the roof to its own top, the screen.
+  const pieces = 12;
+  for (const side of [1, -1]) {
+    for (let k = 0; k < pieces; k += 1) {
+      // (Going round anticlockwise: north along the eastern side, south along the western.)
+      const [y0, y1] = side > 0 ? [-T.long + (2 * T.long * k) / pieces, -T.long + (2 * T.long * (k + 1)) / pieces] : [T.long - (2 * T.long * k) / pieces, T.long - (2 * T.long * (k + 1)) / pieces];
+      const [a, b] = [[side * rafalHalf(y0), y0], [side * rafalHalf(y1), y1]];
+      const looks = (y) => {
+        const slope = (-2 * (T.middle - T.ends) * y) / T.long ** 2; // how fast the side draws in
+        return [side, -slope, 0];
+      };
+      const normals = [looks(y0), looks(y1), looks(y1), looks(y0)];
+      const more = { out: [side, 0, 0], lines: [false, false, false, false], along: [b[0] - a[0], b[1] - a[1]], from: side > 0 ? [rafalHalf(-T.long), -T.long] : [-rafalHalf(T.long), T.long] };
+      model.quad([...a, 0], [...b, 0], [...b, T.podium], [...a, T.podium], stone, more);
+      model.quad([...a, T.podium], [...b, T.podium], [...b, T.deck], [...a, T.deck], glass, { ...more, normals });
+      model.quad([...a, T.deck], [...b, T.deck], [...b, rafalRim(y1)], [...a, rafalRim(y0)], screen, { ...more, normals, lines: [false, false, true, false] });
+      model.quad([...a, T.deck], [...b, T.deck], [...b, rafalRim(y1)], [...a, rafalRim(y0)], within, { ...more, out: [-side, 0, 0] });
+    }
+  }
+  // Its two flat ends: the same, and as high as the horns.
+  for (const end of [1, -1]) {
+    const [a, b] = [[end * T.ends, end * T.long], [-end * T.ends, end * T.long]];
+    const more = { out: [0, end, 0], lines: [false, false, false, false] };
+    model.quad([...a, 0], [...b, 0], [...b, T.podium], [...a, T.podium], stone, more);
+    model.quad([...a, T.podium], [...b, T.podium], [...b, T.deck], [...a, T.deck], glass, more);
+    model.quad([...a, T.deck], [...b, T.deck], [...b, T.horns], [...a, T.horns], screen, { ...more, lines: [false, false, true, false] });
+    model.quad([...a, T.deck], [...b, T.deck], [...b, T.horns], [...a, T.horns], within, { ...more, out: [0, -end, 0] });
+    // A white pier up each of its two corners; and the mast on the horn, with its red lamp.
+    for (const corner of [a, b]) beam(model, [corner[0], corner[1], 0], [corner[0], corner[1], T.horns], 1.3, white);
+    beam(model, [0, end * (T.long - 0.6), T.horns - 1], [0, end * (T.long - 0.6), T.top], 0.5, white, { ends: true });
+  }
+  // The roof inside the screen, and the low house on it.
+  const barrel = (along, across) => [
+    ...Array.from({ length: pieces + 1 }, (_, k) => [rafalHalf(-T.long + (2 * T.long * k) / pieces) * across, (-T.long + (2 * T.long * k) / pieces) * along]),
+    ...Array.from({ length: pieces + 1 }, (_, k) => [-rafalHalf(T.long - (2 * T.long * k) / pieces) * across, (T.long - (2 * T.long * k) / pieces) * along]),
+  ];
+  model.flat(raised(barrel(1, 1), T.deck + 0.2), { kind: 'plain', colour: '#e9e8e2', open: true });
+  const house = barrel(0.62, 0.42);
+  between(model, raised(house, T.deck + 0.2), raised(house, T.deck + 6.5), { kind: 'plain', colour: '#f1f0ea', open: true });
+  model.flat(raised(house, T.deck + 6.5), { kind: 'plain', colour: '#f1f0ea', open: true });
+
+  // The podium. (What was measured on the map is turned into the tower's own measure: the tower's length runs 83 degrees east of north.)
+  const turn = (83 * Math.PI) / 180;
+  const own = ([east, north]) => [east * Math.cos(turn) - north * Math.sin(turn), east * Math.sin(turn) + north * Math.cos(turn)];
+  const ring = T.base.map(own);
+  const wall = { kind: 'pierced', colour: '#d8c7a2', storey: T.podium / 6, bay: 3.2, holes: 0.3, lit: 0.5, light: '#ffe2b0', glow: 0.35 };
+  between(model, raised(ring, 0), raised(ring, T.podium), wall);
+  model.flat(raised(ring, T.podium), { kind: 'plain', colour: '#d9cdb4' });
+  // (Under its top, a row of three-cornered openings.)
+  const dark = { kind: 'plain', colour: '#4b3d2c' };
+  ring.forEach((from, i) => {
+    const to = ring[(i + 1) % ring.length];
+    const long = Math.hypot(to[0] - from[0], to[1] - from[1]);
+    const out = [(to[1] - from[1]) / long, -(to[0] - from[0]) / long, 0];
+    for (let at = 1.6; at < long - 1; at += 3.2) {
+      const spot = (aside, up) => [from[0] + ((to[0] - from[0]) * (at + aside)) / long + out[0] * 0.06, from[1] + ((to[1] - from[1]) * (at + aside)) / long + out[1] * 0.06, up];
+      model.facet(spot(-0.6, T.podium - 2.9), spot(0.6, T.podium - 2.9), spot(0, T.podium - 1.5), dark, { out, lines: [false, false, false] });
+    }
+  });
+  // On its roof: the tennis court, blue in green; the round white tent; and the slatted shades of the terraces.
+  const flatBox = ([east, north], long, wide, degrees, up, stuff) => {
+    const angle = (degrees * Math.PI) / 180;
+    const [along, across] = [[Math.sin(angle), Math.cos(angle)], [Math.cos(angle), -Math.sin(angle)]];
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([s, t]) => own([east + (along[0] * s * long) / 2 + (across[0] * t * wide) / 2, north + (along[1] * s * long) / 2 + (across[1] * t * wide) / 2]));
+    model.flat(raised(corners, up), stuff, { out: [0, 0, 1] });
+  };
+  const [courtEast, courtNorth, courtTurn] = T.court;
+  flatBox([courtEast, courtNorth], 36, 18, courtTurn, T.podium + 0.12, { kind: 'plain', colour: '#3f7d5a' });
+  flatBox([courtEast, courtNorth], 23.8, 11, courtTurn, T.podium + 0.2, { kind: 'plain', colour: '#3b5fa8' });
+  for (const [east, north] of [[38, 62], [47, 56], [30, 50], [50, 12], [62, 8]]) flatBox([east, north], 9, 5, courtTurn - 90, T.podium + 3, { kind: 'plain', colour: '#6f553f' });
+  const [tentEast, tentNorth, tentRadius] = T.tent;
+  lathe(model, frame([0, 0], 0), own([tentEast, tentNorth]), [[tentRadius, T.podium + 2.6], [tentRadius * 0.45, T.podium + 4.2], [0.3, T.podium + 6.4]], { kind: 'plain', colour: '#f4f2ea', light: '#ffe9c4', glow: 0.5 }, { cuts: 16 });
+
+  // Before the door: the fountain, round, in its low wall; and the canopy over the door, a white crescent on columns.
+  const [fountEast, fountNorth, fountRadius] = T.fountain;
+  const middle = own([fountEast, fountNorth]);
+  const to = frame(middle, 0);
+  lathe(model, to, [0, 0], [[fountRadius + 0.9, 0], [fountRadius + 0.9, 0.7], [fountRadius, 0.7], [fountRadius, 0.45]], { kind: 'plain', colour: '#e9e4d6' }, { cuts: 24 });
+  model.flat(Array.from({ length: 24 }, (_, k) => to(Math.cos((k / 24) * TAU) * fountRadius, Math.sin((k / 24) * TAU) * fountRadius, 0.45)), { kind: 'plain', colour: '#3f8f86', light: '#7fe0d0', glow: 0.5 });
+  // (The door is in the tower's southern side: the canopy lies between the fountain and the tower.)
+  const towards = Math.atan2(-middle[1], -middle[0]);
+  const arc = (k, radius, up) => to(Math.cos(towards - 1.05 + (2.1 * k) / 8) * radius, Math.sin(towards - 1.05 + (2.1 * k) / 8) * radius, up);
+  for (let k = 0; k < 8; k += 1) {
+    const corners = [arc(k, 11.5, 5.6), arc(k, 17.5, 5.6), arc(k + 1, 17.5, 5.6), arc(k + 1, 11.5, 5.6)];
+    model.quad(...corners, white, { out: [0, 0, 1], lines: [false, false, false, false] });
+    model.quad(...corners, { kind: 'plain', colour: '#f3f1ea', light: '#ffe9c4', glow: 0.7 }, { out: [0, 0, -1], lines: [false, false, false, false] });
+    if (k % 2 === 0) beam(model, arc(k + 0.5, 16.6, 0), arc(k + 0.5, 16.6, 5.6), 0.4, white);
+  }
+  return { beacons: [[0, T.long - 0.6, T.top + 0.6], [0, -(T.long - 0.6), T.top + 0.6]] };
+}
+
 /**
  * The famous buildings built here, as landmarks for the map (see landmarks.js): where each stands
  * ([lng, lat]), which way it is turned, how tall it is, within what distance of its middle the map's

@@ -44,7 +44,7 @@ import { inKafd } from './kafd.js';
 import { CHARACTERS, characterAt, districtAt } from './districts.js';
 import { dressHouses, parcelHouses, streetAprons } from './houses.js';
 import { PLAIN_FUEL, brandOf, localKind, mosqueExtras, mosquesAmong, stationExtras, storeExtras } from './dress.js';
-import { STAYED_BRIDGES, landmarkBeacons, landmarkModels, landmarkRoofs, landmarkShades, replacedByLandmarks } from './landmarks.js';
+import { STAYED_BRIDGES, ghostsOfLandmarks, landmarkBeacons, landmarkModels, landmarkRoofs, landmarkShades, replacedByLandmarks } from './landmarks.js';
 import { drawFarLights, drawLamps, drawRoofLights, drawTrafficLights, lightPoints, shopSpill } from './lights.js';
 import { buildNetwork, drawBridges, drawMarks, drawParkedNear, drawRoofs, drawStreet, drawTraffic, drawTrees, faceLight, lightFrom, Mesh, stayedHere, streetDirection, streetNear, Traffic, trafficLevel } from './life.js';
 import { ModelMesh } from './models.js';
@@ -981,6 +981,12 @@ export class MapView {
           grown = true;
         }
         const outlines = (list) => list.flatMap((one) => one.polygons.map((polygon) => ({ id: one.id, ring: polygon[0] })));
+        // (An outline the data has where nothing stands at all goes with those on the streets: altogether, shadow and all.)
+        for (const id of ghostsOfLandmarks(outlines(buildings))) {
+          if (this.onStreets.has(id)) continue;
+          this.onStreets.add(id);
+          grown = true;
+        }
         for (const [kind, list] of [['building', buildings], ['parts', buildingFootprints(parts, everywhere, null)]]) {
           for (const id of replacedByLandmarks(outlines(list))) {
             if (this.replaced[kind].has(id)) continue;
