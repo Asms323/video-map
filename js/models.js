@@ -20,7 +20,7 @@
 import earcut from '../vendor/earcut/earcut.js';
 
 /** What a face can be made of: its place in this list is what the drawing goes by. */
-export const STUFFS = ['plain', 'glass', 'lamp'];
+export const STUFFS = ['plain', 'glass', 'lamp', 'pierced'];
 /** A face has a number of its own, from 0 to this, so that no two faces of glass look quite alike. */
 export const OWN_NUMBERS = 32;
 /** What is added to the distance from an edge along which no line is drawn. */
@@ -40,8 +40,9 @@ export class ModelMesh {
     this.tints = new Uint8Array(corners * 4);
     // The colour of the light the face gives by night, and how strong.
     this.lights = new Uint8Array(corners * 4);
-    // The share of its rooms that are lit by night; how much of a net of fins lies over it; how bright the
-    // lines along its edges; and (x 85) 1 if it takes no shadow, 2 if its light changes colour, 3 if both.
+    // The share of its rooms that are lit by night; how much of a net of fins lies over it (for a pierced
+    // skin: how much of it is cut away); how bright the lines along its edges; and (x 85) 1 if it takes no
+    // shadow, 2 if its light changes colour, 3 if both.
     this.more = new Uint8Array(corners * 4);
     this.count = 0;
     this.faces = 0;
@@ -128,11 +129,12 @@ export class Model {
    * One flat triangle. a, b, c: its corners, each [east, north, up].
    *
    * stuff: what it is made of:
-   *   { kind: 'plain' | 'glass' | 'lamp', colour: '#rrggbb',
+   *   { kind: 'plain' | 'glass' | 'lamp' | 'pierced', colour: '#rrggbb',
    *     storey, bay: for glass, the height of a storey and the width of a bay, in metres,
    *     light: '#rrggbb', glow: the light it gives by night and how strong (0 to 1): for glass a line of
    *       it along the edge of every floor; for a lamp, all of it; for plain stuff, lamps shining on it,
    *     lit: for glass, the share of its floors whose rooms are lit by night (1: every room of every floor),
+   *       and for a pierced skin the share of its windows,
    *     fins: for glass, how much of a net of slanting fins lies over it (0 to 1),
    *     floors: for glass, how plainly the edge of each floor shows (0 to 1; 1 unless told),
    *     mirror: for glass, how much of a mirror it is (0: dark glass that shows a little of the sky;
@@ -141,6 +143,13 @@ export class Model {
    *     ridge: how bright the lines along its edges are (0 to 1),
    *     open: true for a face that takes no shadow: one that lies inside the block the map has for the
    *       building, whose shadow would otherwise always fall on it (a roof behind its parapets) }
+   * A pierced skin is stone, or panels, with windows cut in it: colour is the skin's, and
+   *     storey, bay: how tall and how wide one window with the skin round it is,
+   *     diamonds: true for windows that stand on their points, in a net that slants (each as wide as a
+   *       bay and as tall as a storey); without it they stand upright, in rows,
+   *     holes: how much of the skin is cut away (0 to 1). Of diamonds: few and small, of many sizes, up to
+   *       every one of them and wide open, which leaves a mesh. Of upright windows: from narrow ones up
+   *       to bands of glass that run right round between bands of skin.
    *
    * out: a direction the face looks towards rather than away from; it
    * settles which of its two sides is the outside. Without it the outside is
@@ -193,6 +202,7 @@ export class Model {
     const turnedCurved = curved && !bands ? curved.map((way) => this.turned(way.map((part) => part / long(way)))) : null;
     const put = (shape, made) => {
       const kind = Math.max(STUFFS.indexOf(made.kind ?? 'plain'), 0);
+      const pierced = made.kind === 'pierced';
       const colour = rgbOf(made.colour);
       const light = rgbOf(made.light ?? '#000000');
       const glow = byte(made.light ? made.glow ?? 1 : 0);
@@ -212,10 +222,11 @@ export class Model {
           mesh.surfaces[n * 4 + 2] = made.storey ?? 0;
           mesh.surfaces[n * 4 + 3] = made.bay ?? 0;
           for (let e = 0; e < 3; e += 1) mesh.edges[n * 4 + e] = Math.max(dot(minus(corner, starts[e]), ways[e]), 0) + (edged[e] ? 0 : NO_LINE);
-          mesh.edges[n * 4 + 3] = Math.min(Math.max(made.floors ?? 1, 0), 1);
+          // (For a pierced skin: 0 if its windows are diamonds, 1 if they stand upright.)
+          mesh.edges[n * 4 + 3] = pierced ? (made.diamonds ? 0 : 1) : Math.min(Math.max(made.floors ?? 1, 0), 1);
           mesh.tints.set([colour[0], colour[1], colour[2], kind * OWN_NUMBERS + number], n * 4);
           mesh.lights.set([light[0], light[1], light[2], glow], n * 4);
-          mesh.more.set([byte(made.lit ?? 0), byte(made.fins ?? 0), byte(made.ridge ?? 0), ((made.open ? 1 : 0) + (made.changing ? 2 : 0)) * 85], n * 4);
+          mesh.more.set([byte(made.lit ?? 0), byte(pierced ? made.holes ?? 0.4 : made.fins ?? 0), byte(made.ridge ?? 0), ((made.open ? 1 : 0) + (made.changing ? 2 : 0)) * 85], n * 4);
           mesh.count += 1;
         }
       }

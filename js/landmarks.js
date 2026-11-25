@@ -16,6 +16,7 @@
 // Nothing here touches the browser. Measurements are in metres.
 
 import { WORLD_PARTS, worldPlace } from './boulevard.js';
+import { KAFD_PARTS, kafdPlace } from './kafd.js';
 import { Model, ModelMesh } from './models.js';
 import { PROPS } from './props.js';
 
@@ -1083,6 +1084,9 @@ export const LANDMARKS = [
   // Boulevard World: its lagoon and what stands round it, each thing a landmark of its own (see boulevard.js).
   // (They are many and low: built only for a view within a few kilometres of them.)
   ...WORLD_PARTS.map(({ at, ...part }) => ({ ...part, at: worldPlace(at), bearing: 0, within: 4000 })),
+  // The King Abdullah Financial District: every building of it on its own outline (see kafd.js), round the
+  // tower and the station above. (Its towers are built for any view, the rest only for one near them.)
+  ...KAFD_PARTS.map(({ at, ...part }) => ({ ...part, at: kafdPlace(at), bearing: 0 })),
 ];
 
 /** [lng, lat] of a point given in a landmark's own measure: u along its axis and v to the left, or east and north. */

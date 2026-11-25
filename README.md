@@ -125,6 +125,14 @@ map opens on the city and keeps to it, and places are looked for in it.
   the twisting Al Majdoul Tower, the TV Tower, the striped water tower and
   the KAFD metro station each have their own shape, built from reference
   photos on the building's real outline, in place of a plain block.
+- **The financial district, building by building.** Round the PIF Tower the
+  King Abdullah Financial District stands as it is built: seventy buildings,
+  each a model on its own outline. Crystals of dark and blue glass, folded
+  along slanting lines and cut off aslant; white towers pierced with diamond
+  windows; blocks of tan stone; the World Trade Center's two pale shafts with
+  the seam of glass between them; the Grand Mosque with its two minarets; the
+  faceted glass hall. By night their floors, their rooms and their edges are
+  lit.
 - **Bridges you can drive over.** Flyovers, interchange ramps and metro
   viaducts are built in 3D: a deck with parapets on piers, with the traffic
   and the trains up on it. A bridge is as high as what it passes over: one
@@ -443,6 +451,7 @@ Everything is free and needs no account or key.
 | Satellite photos | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. Shown only in the Satellite look. How sharp the photo comes differs from place to place: the service is asked, a square of tiles at a time, and only what it has is fetched. In the 3D city the photo is never shown: it is read on the phone, at one middling level of sharpness, for trees, shadows and the colours of roofs, and the service is asked once per area for the day the photo was taken |
 | What Riyadh's houses and house streets look like | [OpenStreetView-5M](https://huggingface.co/datasets/osv5m/osv5m) (Astruc and others, CVPR 2024): street photographs by Mapillary contributors, CC BY-SA 4.0 | Studied, not shown: the 1,629 photographs taken inside Riyadh were looked through and the houses are built by rules drawn from them. No photograph is in the app or fetched by it |
 | What stands at Boulevard World, and where | The satellite photo above (Esri World Imagery, taken in September 2025): the lagoon's shore was traced from it and every thing's place measured on it. Sixteen photographs of the place by night and the fairground's own booklet for the 2026-27 season, both sent by the app's owner | Studied, not shown: the models are built by hand from them. No photograph and no page of the booklet is in the app or fetched by it |
+| The King Abdullah Financial District, building by building | Outlines and thirty-four heights: the buildings data below (Overture Maps), kept in `js/kafd-data.js` (see `tools/kafd/`). The other heights, two outlines the data lacks, and the colours of roofs and walls: the satellite photo above (Esri World Imagery), read by hand. What the towers look like from the ground: seven photographs on [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:King_Abdullah_Financial_District) (six by Kolaiel, CC0; one by Ahmed, CC BY-SA 4.0) and Wikipedia's articles on the district, its World Trade Center and its Grand Mosque | Studied, not shown: the models are built by hand from them. No photograph is in the app or fetched by it |
 | The models in `models/` (pagoda, hall, pylon, church, house) | Each made from one photograph out of those the app's owner sent, by [TRELLIS](https://github.com/microsoft/TRELLIS) (Microsoft Research, MIT licence), run on Hugging Face under the owner's account; then cleaned of what stood beside the thing in the photograph, thinned to at most thirty thousand triangles, and packed with `tools/models/pack.mjs` | In the app as those files. Their pictures are made out of the photographs. Who took each photograph is not recorded here: if it was not the owner, the photographer's rights in it remain, and that is to be settled before the app is published to others |
 | The fronts the houses are dressed from (`models/fronts.jpg`, `js/kit.js`) | Two pictures of a new Riyadh villa that the app's owner made with an AI image generator as a reference (not photographs of a real house); three pictures made for this by [FLUX.1 Krea dev](https://huggingface.co/black-forest-labs/FLUX.1-Krea-dev) (Black Forest Labs and Krea), run on Hugging Face on the owner's account; and nine made for this by [Gamma](https://gamma.app)'s image generator on the owner's account. Each measured by hand (`tools/fronts/fronts.json`): a street tree, an open gate and a plate with writing were painted over | In the app as that one picture. None of them shows a real house: every front in the map is a likely one, not that house's own |
 | One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
@@ -540,8 +549,22 @@ KAFD metro station. Position, outline and height are the real ones; the shape
 was worked out from photos on Wikimedia Commons and from what is published
 about each building, and simplified: a model, not a survey. The water tower
 was built from memory, with no photo to check it against. The other tall
-buildings of the city (the towers of the financial district among them)
-remain plain blocks.
+buildings of the city remain plain blocks, but for the financial district.
+
+The financial district. Seventy of its buildings are built as models, each
+on its own outline (`js/kafd.js`). What is real: where each stands and its
+outline (the buildings data's), and the height of thirty-four of them (on
+record in that data). What is read off the satellite photo, and so only
+good to some ten metres: the height of the other thirty-six. What is a
+likeness and not a survey: each building's skin and the cut of its top. The
+towers that can be told apart in photographs are built as the photographs
+show them; a building seen only from above is given the nearest of the
+district's kinds of skin to the colours it shows there. The World Trade
+Center and the Grand Mosque follow what is published of them, but where the
+mosque's two minarets stand is a judgement. Two buildings that the data does
+not have were traced from the satellite photo; others it does not have, in
+the west and the north of the district, are still missing, and so are the
+bridges between the towers, the monorail and the gardens of the wadi.
 
 Bridges. Which stretches of road and track are on a bridge, and which pass
 over which, is real. How high a bridge is, is not recorded: a road deck is
@@ -857,6 +880,8 @@ js/models.js            the famous buildings built as true models, face by face
 js/solids.js            plain solids for the models: blocks, tapers, things turned
                         on a lathe, beams, sweeping roofs, panes
 js/boulevard.js         Boulevard World: its lagoon and what stands round it
+js/kafd.js              the King Abdullah Financial District: every building on its own outline
+js/kafd-data.js         those outlines, and the buildings' heights (written by tools/kafd)
 js/fronts.js            houses dressed as real houses look: a front out of the kit on each one's own plot
 js/kit.js               the kit: where in models/fronts.jpg each front lies, and its measures (written by tools/fronts)
 js/props.js             models that carry a picture, each made from a photograph:
@@ -864,6 +889,7 @@ js/props.js             models that carry a picture, each made from a photograph
 models/                 those models: name.vmm (the mesh), name.jpg (its picture)
 tools/models/           how such a model is made: see its README
 tools/fronts/           the kit the houses are dressed from: its pictures, their measures, how it is built
+tools/kafd/             the outlines and heights of the financial district's buildings: where they come from
 js/districts.js         the city's districts and what each is like
 js/districts-data.js    where each district lies
 js/plots.js             the walls and gates round the houses the map gives singly

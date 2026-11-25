@@ -310,6 +310,7 @@ test('a red lamp stands on the mast of every tall tower, and on top of the tall 
   // (Each landmark's own: along King Fahd Road they stand a street's width apart.)
   const near = (landmark) => tops.filter(([lng, lat]) => Math.hypot((lng - landmark.at[0]) * 101100, (lat - landmark.at[1]) * 111320) < landmark.clear + 12);
   for (const landmark of LANDMARKS) {
+    if (/^kafd-\d/.test(landmark.id)) continue; // the financial district's buildings stand close together: see kafd.test.mjs
     const own = near(landmark);
     if (landmark.height < 60) assert.equal(own.length, 0, landmark.id);
     else assert.ok(own.length >= 1 && own.every(([, , height]) => height >= landmark.height - (landmark.model ? 5 : 0) && height <= landmark.height + 26), `${landmark.id}: ${JSON.stringify(own)}`);

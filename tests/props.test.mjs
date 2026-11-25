@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { BOULEVARD_WORLD, GREEK_HOUSES, WORLD_PARTS, WORLD_SPOTS, worldPlace } from '../js/boulevard.js';
+import { KAFD_PARTS } from '../js/kafd.js';
 import { landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
 import { HOUSE_MODELS_MOST, HOUSE_MODEL_MIN_ZOOM, HOUSE_MODEL_REACH_METERS, PROPS, housesNear, propNormals, propsNear, readProp } from '../js/props.js';
 
@@ -195,9 +196,9 @@ test('the models that carry a picture are shown near them only; each has its cle
   const box = (east, north, half) => [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([x, y]) => [prop.at[0] + (east + x * half) / squeeze, prop.at[1] + (north + y * half) / METERS]);
   assert.deepEqual([...replacedByLandmarks([{ id: 1, ring: box(3, -2, 8) }, { id: 2, ring: box(200, 300, 8) }])], [1]);
   // Its shadow: a footprint 13 m across, 25 m tall, where it stands.
-  assert.equal(landmarkShades().length, 4 + 9 + PROPS.length);
-  const shade = landmarkShades().find((one) => one.height === 25);
-  assert.ok(shade && shade.polygons[0][0].every(([lng, lat]) => Math.hypot((lng - prop.at[0]) * squeeze, (lat - prop.at[1]) * METERS) < 6.6));
+  assert.equal(landmarkShades().length, 4 + 9 + KAFD_PARTS.filter((one) => one.shade).length + PROPS.length);
+  const shade = landmarkShades().find((one) => one.height === 25 && one.polygons[0][0].every(([lng, lat]) => Math.hypot((lng - prop.at[0]) * squeeze, (lat - prop.at[1]) * METERS) < 6.6));
+  assert.ok(shade);
 });
 
 test('a mesh built by hand may say which of its corners are lamps and windows, and keeps its edges', () => {

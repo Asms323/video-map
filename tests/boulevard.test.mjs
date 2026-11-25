@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { BOULEVARD_WORLD, WORLD_PARTS, fountainJets, inFairground, lagoonRings, onLagoon, worldPlace } from '../js/boulevard.js';
+import { KAFD_PARTS } from '../js/kafd.js';
 import { LANDMARKS, landmarkModels, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
 import { facesOf } from './model-faces.mjs';
@@ -129,10 +130,12 @@ test('the parts of Boulevard World are landmarks of the map, built only for a vi
     assert.ok(one.bearing === 0 && one.within === 4000 && one.model === from.model && one.height === from.height && one.clear === from.clear);
   }
   // From the middle of the fairground: all of them, with the towers of the city. From across town: the towers alone.
+  // (The financial district is 4 km off: its buildings are all built from here, and its towers from anywhere: see kafd.test.mjs.)
+  const district = KAFD_PARTS.filter((one) => one.model);
   const mesh = new ModelMesh();
-  assert.equal(landmarkModels(mesh, { lng: BOULEVARD_WORLD[0], lat: BOULEVARD_WORLD[1] }), 9 + WORLD_PARTS.length);
+  assert.equal(landmarkModels(mesh, { lng: BOULEVARD_WORLD[0], lat: BOULEVARD_WORLD[1] }), 9 + WORLD_PARTS.length + district.length);
   const here = mesh.count;
-  assert.equal(landmarkModels(mesh, { lng: 46.72, lat: 24.64 }), 9);
+  assert.equal(landmarkModels(mesh, { lng: 46.72, lat: 24.64 }), 9 + district.filter((one) => !one.within).length);
   assert.ok(mesh.count < here / 3);
   // Each stands where it should: the Sphere's ball over its own middle, 190 m north of the fairground's mark.
   landmarkModels(mesh, { lng: BOULEVARD_WORLD[0], lat: BOULEVARD_WORLD[1] });

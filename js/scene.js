@@ -674,7 +674,7 @@ void main() {
   float open = mod(marks, 2.0);
   float pixel = u_pixel / gl_FragCoord.w;
   float style = floor(v_tint.a * 255.0 + 0.5);
-  float kind = floor(style / 32.0);   // 0 plain, 1 glass, 2 a lamp
+  float kind = floor(style / 32.0);   // 0 plain, 1 glass, 2 a lamp, 3 a skin pierced with windows
   float own = style - kind * 32.0;    // the face's own number, 0 to 31
   float up = v_surf.y;
 
@@ -763,6 +763,45 @@ void main() {
       // (And silvered glass lets less of a lamp through.)
       glow = mix(even, mix(byFloor, rooms, fineBays), fineFloors) * mix(0.3 + 0.7 * smoothstep(0.4, 0.9, u_night), 1.0, always) * (1.0 - 0.4 * v_normal.w);
     }
+  } else if (kind > 2.5) {
+    // A skin pierced with windows: stone, or pale panels, with glass in the holes. The windows are
+    // diamonds standing on their points in a net that slants, some cut and some not, of many sizes; or
+    // they stand upright in rows, up to bands of glass that run right round. (v_more.y: how much of the
+    // skin is cut away; v_edge.w: 0 for diamonds, 1 for upright ones.)
+    float storey = max(v_surf.z, 0.5);
+    float bay = max(v_surf.w, 0.5);
+    float holes = v_more.y;
+    float upright = step(0.5, v_edge.w);
+    vec2 at = vec2(v_surf.x / bay, up / storey);
+    vec2 grid = mix(vec2(at.x + at.y, at.x - at.y), at, upright);
+    vec2 cell = floor(grid);
+    vec2 within = abs(grid - cell - 0.5);
+    float pick = chance(cell * vec2(1.7, 2.3) + own);
+    // Which of the diamonds are cut, and how large each is: the more is cut away, the more alike they are.
+    float cut = mix(step(1.0 - clamp(0.25 + 0.9 * holes, 0.0, 1.0), pick), 1.0, upright);
+    float half_ = 0.5 * (0.45 + 0.5 * holes) * (1.0 - 0.35 * (1.0 - holes) * fract(pick * 7.3));
+    vec2 reach = mix(vec2(half_), vec2(0.18 + 0.33 * holes, 0.22 + 0.16 * holes), upright);
+    float size = min(storey, bay);
+    float soft = clamp(pixel / size, 0.002, 0.5);
+    float window = cut * (1.0 - smoothstep(reach.x - soft, reach.x + soft, within.x)) * (1.0 - smoothstep(reach.y - soft, reach.y + soft, within.y));
+    // (What is too fine for the screen is drawn as the even mixture it makes.)
+    float evenly = mix(clamp(0.25 + 0.9 * holes, 0.0, 1.0) * (0.45 + 0.5 * holes) * (0.45 + 0.5 * holes) * 0.8, min(4.0 * reach.x * reach.y, 1.0), upright);
+    window = mix(evenly, window, smoothstep(1.2, 3.0, size / pixel));
+    // The skin, a little uneven; and in the holes dark glass, with the sky in it.
+    vec3 skin = colour * (0.97 + 0.06 * chance(floor(v_world.xy / 3.0) + own));
+    vec3 thrown = reflect(-eye, normal);
+    vec3 streets = mix(vec3(0.58, 0.54, 0.47), vec3(0.22, 0.15, 0.09), u_night);
+    vec3 above = mix(u_skyLow, u_skyHigh, smoothstep(0.0, 0.35, thrown.z));
+    vec3 below = mix(u_skyLow * 0.62, streets * 0.85, smoothstep(0.0, -0.2, thrown.z));
+    vec3 seen = mix(below, above, smoothstep(-0.04, 0.04, thrown.z));
+    vec3 pane = vec3(0.13, 0.17, 0.20) * light + seen * 0.30;
+    colour = mix(skin, pane, window);
+    // By night: lamps trained on the skin, and behind some of the windows a room with its lamp on.
+    float room = chance(cell * vec2(2.9, 1.3) + own * 1.7);
+    float on = step(1.0 - v_more.x, room);
+    vec3 lampOfRoom = mix(vec3(1.0, 0.90, 0.74), vec3(0.86, 0.92, 1.0), step(0.6, fract(room * 5.7)));
+    glow = lampOfRoom * 0.8 * mix(v_more.x, on, smoothstep(1.2, 3.0, size / pixel)) * window + v_tint.rgb * ownLight * (1.0 - changing) * (1.0 - window);
+    show = v_tint.rgb * ownLight * changing * (1.0 - window);
   } else if (kind > 1.5) {
     // A lamp: by night all of it gives its light. (One whose colour changes is part of the building's
     // show, and comes on with it.)
