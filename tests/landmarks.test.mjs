@@ -100,20 +100,22 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   }
   // A mesh may hold every model at once, each at its own place; built again, it holds them once.
   // (With them come the towers of the financial district, which are built for any view: the rest of it is not, from 7 km off.
-  // And the Ministry of Interior, 4 km off, which is built for a view within nine.)
+  // And those of the famous buildings that stand near enough: the Ministry of Interior, 4 km off, and the library, 2 km.)
   const towers = KAFD_PARTS.filter((one) => one.model && !one.within).length;
+  const famous = FAMOUS.map((one) => ({ one, east: (one.at[0] - 46.67) * METERS * Math.cos((24.7 * Math.PI) / 180), north: (one.at[1] - 24.7) * METERS })).filter(({ one, east, north }) => !one.within || Math.hypot(east, north) < one.within);
+  assert.ok(famous.length >= 2);
   const mesh = new ModelMesh();
-  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 9 + towers + 1);
+  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 9 + towers + famous.length);
   const corners = mesh.count;
-  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 9 + towers + 1);
+  assert.equal(landmarkModels(mesh, { lng: 46.67, lat: 24.7 }), 9 + towers + famous.length);
   assert.equal(mesh.count, corners);
   // (The PIF Tower stands 2.9 km west and 7.1 km north of there; Kingdom Centre 0.4 km east and 1.3 km north; Hamad Tower 1.3 km east and 0.9 km south.)
   for (const corner of facesOf(mesh).flatMap((face) => face.corners)) {
     // (And the two Al Anoud Towers across the road from that one, and Al Faisaliah a little south and east of it.)
     const spots = [[-2880, 7090], [446, 1263], [1297, -883], [1169, -913], [1518, -1091], [1244, -767], [1242, -317]];
     // (…the ministry's tower north of Hamad Tower, and the Olaya Towers beyond Tahlia Street. The district's towers stand round the PIF Tower, within 800 m of it.)
-    // (And the ministry stands 2.6 km east and 3.3 km south, a hundred metres from its middle to its corners.)
-    assert.ok(spots.some(([east, north]) => Math.hypot(corner[0] - east, corner[1] - north) < 75) || Math.hypot(corner[0] + 2880, corner[1] - 7090) < 800 || Math.hypot(corner[0] - 2622, corner[1] + 3313) < 105, JSON.stringify(corner));
+    // (And each famous building where it stands: the ministry 2.6 km east and 3.3 km south, a hundred metres from its middle to its corners.)
+    assert.ok(spots.some(([east, north]) => Math.hypot(corner[0] - east, corner[1] - north) < 75) || Math.hypot(corner[0] + 2880, corner[1] - 7090) < 800 || famous.some(({ one, east, north }) => Math.hypot(corner[0] - east, corner[1] - north) < one.reach), JSON.stringify(corner));
   }
   assert.ok(JSON.stringify(data).length < 700000, 'small enough to hand to the map in one piece');
 });

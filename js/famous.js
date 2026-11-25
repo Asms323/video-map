@@ -230,6 +230,142 @@ function ministryOfInterior(model) {
   return {};
 }
 
+// ── The King Fahd National Library ────────────────────────────────────────
+
+// The library's measures, in metres.
+export const LIBRARY = {
+  sail: 4.9, // a sail of the veil: so wide and so tall, a square standing on its point
+  across: 29, // sails side by side along each side of the building
+  levels: 8, // from the foot of the veil to its top, in half sails
+  foot: 6.5, // the foot of the veil: the ceiling of the open ground floor
+  depth: 2.4, // from the front net of cables to the one behind it
+  scallop: 0.72, // how far the middle of a sail's edge is drawn in: its share of the way out from the sail's middle
+  glass: 67.4, // the half-width of the glass box behind the veil
+  hall: 61, // …and of the glass of the ground floor, which stands further back
+  roof: 25,
+  strips: 10, // the skylights of the roof: so many to each side, 9.8 m apart, each 2.4 m wide
+  well: 26.5, // the eight-sided court in the middle of the roof: from its middle to its corners…
+  wellFloor: 17, // …and its floor, which is the roof of the old library
+  dome: [8.8, 20, 26], // the dome on that: its radius, and the heights of its foot and of its top
+};
+
+/**
+ * The King Fahd National Library on King Fahd Road (Gerber Architekten, opened 2013): the old library
+ * of the 1980s, a cross-shaped building under a dome, kept whole and wrapped on all four sides in a new
+ * square building of glass; and that in a veil.
+ *
+ * The veil is what the building is known by: white sails of cloth, each a square of some five metres
+ * standing on its point, held in two nets of steel cable that hang one 2.4 m before the other. Every
+ * sail is fastened by its top and its bottom to the front net and by its two sides to the back one, so
+ * that it is a saddle, and its edges are drawn in between its corners; so sail stands over sail like the
+ * scales of a fish, with dark eyes between them through which the glass shows. They keep the sun off
+ * the glass. By night every sail is lit.
+ *
+ * Under the veil the ground floor stands open: glass set back behind a row of round columns. The roof is
+ * white, with ten strips of skylight to each side over the reading rooms; and in its middle an
+ * eight-sided court goes down to the roof of the old library, with its dome, now of glass.
+ *
+ * (Its architects and what it is made of are as published. Its plan was measured on the satellite photo
+ * the app shows: 142 m square to the points of the veil, which agrees with the buildings data's outline
+ * of it; twenty-nine sails to a side; the strips of skylight; the court, 53 m across, and the dome in
+ * it. One published figure, a cube of 90 m, does not agree with either. The rows of sails, eight of
+ * them each half a sail over the last, were counted off two photographs; its height, 26 m, follows from
+ * that count and from a ground floor judged at 6.5 m against the people standing in it, and may be out
+ * by two or three metres. What stands in the court round the dome is built plainly.)
+ */
+function kingFahdLibrary(model) {
+  const L = LIBRARY;
+  const to = frame([0, 0], 0);
+  const half = (L.across * L.sail) / 2; // to the front net
+  const top = L.foot + (L.levels * L.sail) / 2;
+
+  // The glass box, four storeys of it; and under it the ground floor, further back, with its lamps on.
+  const glass = { kind: 'glass', colour: '#27343c', storey: (L.roof - L.foot) / 4, bay: 2.45, lit: 0.55, floors: 0.6, mirror: 0.25 };
+  const box = stepped(L.glass);
+  between(model, raised(box, L.foot), raised(box, L.roof), glass);
+  const hall = stepped(L.hall);
+  between(model, raised(hall, 0), raised(hall, L.foot), { kind: 'glass', colour: '#4b5f69', storey: L.foot, bay: 2.45, lit: 1, floors: 0, mirror: 0.2 });
+  // (The ceiling over the open ground floor, out to the foot of the veil: lit from below by night.)
+  const eaves = stepped(half - L.depth);
+  model.flat(raised(eaves, L.foot), { kind: 'plain', colour: '#d9d9d6', light: '#fff0d2', glow: 0.5 }, { out: [0, 0, -1], holes: [raised(hall, L.foot)] });
+  between(model, raised(eaves, L.foot), raised(eaves, L.foot + 0.7), { kind: 'plain', colour: '#c9cac8' });
+  model.flat(raised(eaves, L.foot + 0.7), { kind: 'plain', colour: '#c9cac8' }, { holes: [raised(box, L.foot + 0.7)] });
+  // Its columns: round, pale, under every other sail.
+  const column = { kind: 'plain', colour: '#dcdcd8', light: '#fff0d2', glow: 0.45 };
+  const turned = (turn, [east, north]) => (turn === 0 ? [east, north] : turn === 1 ? [-north, east] : turn === 2 ? [-east, -north] : [north, -east]);
+  for (let turn = 0; turn < 4; turn += 1) {
+    for (let k = 0.5; k < L.across; k += 2) {
+      lathe(model, to, turned(turn, [half - L.depth, -half + k * L.sail]), [[0.45, 0], [0.45, L.foot]], column, { cuts: 6 });
+    }
+  }
+
+  // The roof: white, with the court cut out of its middle; the strips of skylight, lit by night from the rooms under them.
+  const court = Array.from({ length: 8 }, (_, k) => [Math.cos(((k + 0.5) / 8) * TAU) * L.well, Math.sin(((k + 0.5) / 8) * TAU) * L.well]);
+  model.flat(raised(box, L.roof), { kind: 'plain', colour: '#f1ece0' }, { holes: [raised(court, L.roof)] });
+  const strip = { kind: 'glass', colour: '#7d8779', storey: 3, bay: 2.4, lit: 1, floors: 0, mirror: 0.25 };
+  for (let turn = 0; turn < 4; turn += 1) {
+    for (let j = 0; j < L.strips; j += 1) {
+      const aside = (j - (L.strips - 1) / 2) * 2 * L.sail;
+      // (Each runs in from near the edge towards the court, and stops short of its neighbours on the next side.)
+      const [inner, outer] = [Math.max(31, Math.abs(aside) + 3), 56];
+      if (outer - inner < 4) continue;
+      const corners = [[inner, aside - 1.2], [outer, aside - 1.2], [outer, aside + 1.2], [inner, aside + 1.2]].map((corner) => [...turned(turn, corner), L.roof + 0.25]);
+      model.quad(...corners, strip, { lines: [false, false, false, false] });
+    }
+  }
+  // The court: its walls of glass, its floor, the arms of the old library's cross, and the dome in the middle.
+  between(model, raised(court, L.wellFloor), raised(court, L.roof), { kind: 'glass', colour: '#2c3a42', storey: 4, bay: 2.4, lit: 0.6, floors: 0.5, mirror: 0.2 }, { way: -1 });
+  model.flat(raised(court, L.wellFloor), { kind: 'plain', colour: '#d8cdb6', open: true });
+  const old = { kind: 'plain', colour: '#e0d6c0', open: true };
+  for (let turn = 0; turn < 4; turn += 1) {
+    const arm = [[10.5, -5.5], [20, -5.5], [20, 5.5], [10.5, 5.5]].map((corner) => turned(turn, corner));
+    between(model, raised(arm, L.wellFloor), raised(arm, L.wellFloor + 2.6), old);
+    model.flat(raised(arm, L.wellFloor + 2.6), old);
+  }
+  const [domeRadius, domeFoot, domeTop] = L.dome;
+  lathe(model, to, [0, 0], [[domeRadius + 0.8, L.wellFloor], [domeRadius + 0.8, domeFoot], [domeRadius, domeFoot]], { kind: 'plain', colour: '#e6dfcf', open: true }, { cuts: 24 });
+  const rise = domeTop - domeFoot;
+  const ball = (domeRadius ** 2 + rise ** 2) / (2 * rise);
+  lathe(model, to, [0, 0], ballProfile(ball, domeTop - ball, { rings: 6, from: 0.02, until: Math.asin(domeRadius / ball) }), { kind: 'glass', colour: '#6c8d94', storey: 2, bay: 2, lit: 1, floors: 0.3, mirror: 0.45 }, { cuts: 24 });
+
+  // The veil. On each side: rows of sails, each row half a sail lower than the last and half a sail along.
+  const sail = { kind: 'plain', colour: '#f3f0e7', light: '#fff0d2', glow: 0.85 };
+  const s = L.sail;
+  const reach = (s / 4) * L.scallop; // from a sail's middle to the middle of each of its edges, across and up
+  for (let turn = 0; turn < 4; turn += 1) {
+    /** A place on this side's veil: so far along the side, so high, so far behind the front net. */
+    const at = (along, up, behind) => [...turned(turn, [half - behind, along]), up];
+    const out = [...turned(turn, [1, 0]), 0];
+    const back = [-out[0], -out[1], 0];
+    /** A piece of sail, seen from before it and from behind. */
+    const both = (a, b, c) => {
+      model.facet(a, b, c, sail, { out, lines: [false, false, false] });
+      model.facet(a, b, c, sail, { out: back, lines: [false, false, false] });
+    };
+    for (let level = 1; level <= L.levels; level += 1) {
+      const up = top - (level * s) / 2; // the height of the row's middle
+      const odd = level % 2 === 1;
+      for (let k = odd ? 0 : 1; k < L.across; k += 1) {
+        const along = -half + (odd ? k + 0.5 : k) * s;
+        const [high, right, left] = [at(along, up + s / 2, 0), at(along + s / 2, up, L.depth), at(along - s / 2, up, L.depth)];
+        if (level === L.levels) {
+          // (The lowest row is cut off at the foot of the veil: the upper half of a sail, like a tent.)
+          both(left, right, high);
+          continue;
+        }
+        const low = at(along, up - s / 2, 0);
+        const [a, b, c, d] = [at(along + reach, up + reach, L.depth / 2), at(along + reach, up - reach, L.depth / 2), at(along - reach, up - reach, L.depth / 2), at(along - reach, up + reach, L.depth / 2)];
+        model.quad(d, a, b, c, sail, { out, lines: [false, false, false, false] });
+        both(d, high, a);
+        both(a, right, b);
+        both(b, low, c);
+        both(c, left, d);
+      }
+    }
+  }
+  return {};
+}
+
 /**
  * The famous buildings built here, as landmarks for the map (see landmarks.js): where each stands
  * ([lng, lat]), which way it is turned, how tall it is, within what distance of its middle the map's
@@ -248,5 +384,16 @@ export const FAMOUS = [
     within: 9000,
     // (Its shadow is that of its widest floor: under that floor the building itself stands in it.)
     shade: { radius: 78, height: 33 },
+  },
+  {
+    id: 'king-fahd-library',
+    name: 'King Fahd National Library',
+    at: [46.686448, 24.685663],
+    bearing: 336.4,
+    height: LIBRARY.foot + (LIBRARY.levels * LIBRARY.sail) / 2,
+    clear: 66,
+    reach: 105,
+    model: kingFahdLibrary,
+    within: 7000,
   },
 ];

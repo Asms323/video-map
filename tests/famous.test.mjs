@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { FAMOUS, MINISTRY, stepped } from '../js/famous.js';
+import { FAMOUS, LIBRARY, MINISTRY, stepped } from '../js/famous.js';
 import { LANDMARKS, landmarkBeacons, landmarkModels, landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
 import { facesOf } from './model-faces.mjs';
@@ -26,7 +26,7 @@ const lookOf = ({ corners: [a, b, c] }) => {
 };
 
 test('the famous buildings are landmarks of the map: each where it stands, with its clearing and its shadow', () => {
-  assert.deepEqual(FAMOUS.map((one) => one.id), ['interior-ministry']);
+  assert.deepEqual(FAMOUS.map((one) => one.id), ['interior-ministry', 'king-fahd-library']);
   for (const one of FAMOUS) {
     assert.equal(LANDMARKS.find((landmark) => landmark.id === one.id), one);
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
@@ -189,4 +189,78 @@ test('the Ministry of Interior: its roof in steps, a glazed lantern with sixteen
   const little = faces.filter((face) => face.kind === 'glass' && face.colour === '#5a7480');
   const points = [...new Set(little.flatMap((face) => face.corners).filter((corner) => near(corner[2], 7.5, 1e-3)).map(([east, north]) => `${Math.round(east * 10) / 10},${Math.round(north * 10) / 10}`))];
   assert.equal(points.length, 12);
+});
+
+test('the King Fahd National Library: a glass box on columns, wrapped in a veil of sails; skylights and the old dome on its roof', () => {
+  const L = LIBRARY;
+  const library = famous('king-fahd-library');
+  assert.deepEqual([library.name, library.bearing, library.clear], ['King Fahd National Library', 336.4, 66]);
+  assert.ok(near(library.height, 26.1, 1e-9));
+  // (On King Fahd Road north of Al Faisaliah: at the middle of the outline the buildings data has of it.)
+  assert.ok(near(library.at[0], 46.68645, 1e-4) && near(library.at[1], 24.68566, 1e-4));
+  const { faces } = built('king-fahd-library');
+  const half = (L.across * L.sail) / 2;
+  assert.ok(near(half, 71.05, 1e-9));
+  // The veil: on each of the four sides, seven rows of whole sails and a row of half ones at the foot,
+  // by turns twenty-nine and twenty-eight to a row: 228 a side.
+  const veil = faces.filter((face) => face.colour === '#f3f0e7');
+  assert.equal(veil.length, 4 * ((4 * 29 + 3 * 28) * 10 + 28 * 2));
+  assert.ok(veil.every((face) => face.kind === 'plain' && face.glow > 0.8), 'every sail is lit by night');
+  const spots = veil.flatMap((face) => face.corners);
+  // It hangs between the two nets: from 71.05 m out, the front one, to 2.4 m behind it; and from 6.5 m up to 26.1 m.
+  const out = spots.map(([east, north]) => Math.max(Math.abs(east), Math.abs(north)));
+  assert.ok(near(Math.max(...out), half, 1e-3) && near(Math.min(...out), half - L.depth, 1e-3));
+  assert.ok(near(Math.min(...spots.map((spot) => spot[2])), L.foot, 1e-3) && near(Math.max(...spots.map((spot) => spot[2])), 26.1, 1e-3));
+  // Every sail is fastened by its top and its bottom to the front net, by its two sides to the back one,
+  // and its middle hangs between the two: so of the east side's sails, the points furthest out are the highest and lowest of each.
+  // (Looked at in the middle of the east side, clear of the sails of the two sides that meet it at its corners.)
+  const east = veil.filter((face) => face.corners.every((corner) => corner[0] > half - L.depth - 1e-3 && Math.abs(corner[1]) <= 30));
+  const front = east.flatMap((face) => face.corners).filter((corner) => near(corner[0], half, 1e-3));
+  const behind = east.flatMap((face) => face.corners).filter((corner) => near(corner[0], half - L.depth, 1e-3));
+  const levels = (list) => [...new Set(list.map((corner) => Math.round(((26.1 - corner[2]) / (L.sail / 2)) * 100) / 100))].sort((a, b) => a - b);
+  // (Counted in half sails down from the top: tops and bottoms from the very top to one above the foot; sides from one below the top to the foot.)
+  assert.deepEqual(levels(front), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(levels(behind), [1, 2, 3, 4, 5, 6, 7, 8]);
+  // A sail is drawn in between its corners: it covers 72 of a hundred parts of its square.
+  // (The middle sail of the top row: all that lies within its square, which stands on its point.)
+  const one = east.filter((face) => face.corners.every((corner) => Math.abs(corner[1]) + Math.abs(corner[2] - (26.1 - L.sail / 2)) <= L.sail / 2 + 1e-3));
+  assert.equal(one.length, 10);
+  const seen = one.filter((face) => face.normal[0] > 0).reduce((sum, { corners: [a, b, c] }) => sum + Math.abs((b[1] - a[1]) * (c[2] - a[2]) - (c[1] - a[1]) * (b[2] - a[2])) / 2, 0);
+  assert.ok(near(seen / (L.sail ** 2 / 2), L.scallop, 0.01), String(seen));
+
+  // Behind the veil: the glass box, four storeys from the ceiling of the ground floor to the roof.
+  const glass = faces.filter((face) => face.kind === 'glass' && face.colour === '#27343c');
+  assert.equal(glass.length, 8);
+  assert.ok(glass.every((face) => near(face.storey, (L.roof - L.foot) / 4, 1e-6) && face.lit > 0.5 && face.corners.every((corner) => near(Math.max(Math.abs(corner[0]), Math.abs(corner[1])), L.glass, 1e-3))));
+  // The ground floor stands open: glass further back, with its lamps on, behind fifteen round columns to a side.
+  const hall = faces.filter((face) => face.kind === 'glass' && face.colour === '#4b5f69');
+  assert.ok(hall.length === 8 && hall.every((face) => face.lit === 1 && face.corners.every((corner) => corner[2] <= L.foot + 1e-3)));
+  const columns = faces.filter((face) => face.colour === '#dcdcd8');
+  assert.equal(columns.length, 4 * 15 * 6 * 2);
+  assert.ok(columns.every((face) => face.corners.every((corner) => corner[2] <= L.foot + 1e-3 && Math.max(Math.abs(corner[0]), Math.abs(corner[1])) > half - L.depth - 0.5)));
+
+  // The roof: forty strips of skylight, ten to a side, each 2.4 m wide, lit by night; the longest 25 m, the shortest 8.9 m.
+  const strips = faces.filter((face) => face.kind === 'glass' && face.colour === '#7d8779');
+  assert.equal(strips.length, 40 * 2);
+  assert.ok(strips.every((face) => face.lit === 1 && face.normal[2] > 0.99 && face.corners.every((corner) => near(corner[2], L.roof + 0.25, 1e-3))));
+  const lengths = [];
+  for (let n = 0; n < strips.length; n += 2) {
+    const spotsOf = [...strips[n].corners, ...strips[n + 1].corners];
+    const [wide, deep] = [Math.max(...spotsOf.map((spot) => spot[0])) - Math.min(...spotsOf.map((spot) => spot[0])), Math.max(...spotsOf.map((spot) => spot[1])) - Math.min(...spotsOf.map((spot) => spot[1]))];
+    assert.ok(near(Math.min(wide, deep), 2.4, 1e-3));
+    lengths.push(Math.round(Math.max(wide, deep) * 10) / 10);
+  }
+  assert.deepEqual([...new Set(lengths)].sort((a, b) => a - b), [8.9, 18.7, 25]);
+  // In its middle the eight-sided court, 53 m across, goes down to the roof of the old library; and in that stands the dome, of glass, as high as the veil.
+  const walls = faces.filter((face) => face.kind === 'glass' && face.colour === '#2c3a42');
+  assert.equal(walls.length, 16);
+  for (const face of walls) {
+    assert.ok(face.corners.every((corner) => near(Math.hypot(corner[0], corner[1]), L.well, 1e-3) && corner[2] >= L.wellFloor - 1e-3 && corner[2] <= L.roof + 1e-3));
+    const middle = [(face.corners[0][0] + face.corners[1][0] + face.corners[2][0]) / 3, (face.corners[0][1] + face.corners[1][1] + face.corners[2][1]) / 3];
+    assert.ok(face.normal[0] * middle[0] + face.normal[1] * middle[1] < 0, 'they look into the court');
+  }
+  const dome = faces.filter((face) => face.kind === 'glass' && face.colour === '#6c8d94');
+  assert.equal(dome.length, 24 * 6 * 2 - 0);
+  assert.ok(near(Math.max(...heights(dome)), 26, 0.02) && near(Math.min(...heights(dome)), 20, 1e-3));
+  assert.ok(near(Math.max(...dome.flatMap((face) => face.corners.map((corner) => Math.hypot(corner[0], corner[1])))), 8.8, 1e-3));
 });
