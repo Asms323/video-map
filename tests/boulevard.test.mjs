@@ -135,13 +135,15 @@ test('the parts of Boulevard World are landmarks of the map, built only for a vi
   // The famous buildings that are not towers are each built for a view within a few kilometres of them: see famous.test.mjs.)
   const district = KAFD_PARTS.filter((one) => one.model);
   const famousFrom = ([lng, lat]) => FAMOUS.filter((one) => !one.within || Math.hypot((one.at[0] - lng) * METERS * Math.cos((lat * Math.PI) / 180), (one.at[1] - lat) * METERS) < one.within).length;
+  // (The towers of the city that are true models are built from anywhere.)
+  const city = LANDMARKS.filter((one) => one.model && !one.id.startsWith('blvd-world-') && !/^kafd-\d/.test(one.id) && !FAMOUS.includes(one)).length;
   const mesh = new ModelMesh();
-  assert.equal(landmarkModels(mesh, { lng: BOULEVARD_WORLD[0], lat: BOULEVARD_WORLD[1] }), 9 + WORLD_PARTS.length + district.length + famousFrom(BOULEVARD_WORLD));
+  assert.equal(landmarkModels(mesh, { lng: BOULEVARD_WORLD[0], lat: BOULEVARD_WORLD[1] }), city + WORLD_PARTS.length + district.length + famousFrom(BOULEVARD_WORLD));
   const here = mesh.count;
   // (Across town: fifteen kilometres to the east, where nothing low is near.)
   const far = [46.85, 24.6];
   assert.equal(famousFrom(far), 0);
-  assert.equal(landmarkModels(mesh, { lng: far[0], lat: far[1] }), 9 + district.filter((one) => !one.within).length);
+  assert.equal(landmarkModels(mesh, { lng: far[0], lat: far[1] }), city + district.filter((one) => !one.within).length);
   assert.ok(mesh.count < here / 3);
   // Each stands where it should: the Sphere's ball over its own middle, 190 m north of the fairground's mark.
   landmarkModels(mesh, { lng: BOULEVARD_WORLD[0], lat: BOULEVARD_WORLD[1] });

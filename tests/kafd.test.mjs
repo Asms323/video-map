@@ -79,7 +79,9 @@ test('every building of the district is a landmark of the map, standing on its o
   }
   assert.equal(parts.filter((one) => !one.within).length, 39);
   const mesh = new ModelMesh();
-  assert.equal(landmarkModels(mesh, { lng: KAFD_AT[0], lat: KAFD_AT[1] }), 9 + 73);
+  // (With them, the towers of the city that are true models: those are built for a view from anywhere.)
+  const city = LANDMARKS.filter((one) => one.model && !one.within && !/^kafd-\d/.test(one.id)).length;
+  assert.equal(landmarkModels(mesh, { lng: KAFD_AT[0], lat: KAFD_AT[1] }), city + 73);
   assert.ok(mesh.count > 15000 && mesh.count < 60000, `${mesh.count} corners`);
   for (let i = 0; i < mesh.count * 3; i += 1) assert.ok(Number.isFinite(mesh.positions[i]));
 

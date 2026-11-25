@@ -16,7 +16,7 @@
 // Nothing here touches the browser. Measurements are in metres.
 
 import { WORLD_PARTS, worldPlace } from './boulevard.js';
-import { FAMOUS } from './famous.js';
+import { FAMOUS, majdoulAnnex, majdoulTower } from './famous.js';
 import { KAFD_PARTS, kafdPlace } from './kafd.js';
 import { Model, ModelMesh } from './models.js';
 import { PROPS } from './props.js';
@@ -42,8 +42,6 @@ const turned = (outline, degrees) => {
   const sin = Math.sin(angle);
   return outline.map(([u, v]) => [u * cos - v * sin, u * sin + v * cos]);
 };
-const grown = (outline, by, byV = by) => outline.map(([u, v]) => [u * by, v * byV]);
-const moved = (outline, du, dv) => outline.map(([u, v]) => [u + du, v + dv]);
 
 /**
  * Stack slabs from one height to another. outlineAt(z) gives the outline for
@@ -899,29 +897,6 @@ function burjRafal() {
 }
 
 /**
- * Al Majdoul Tower, 232 m: a square tower that turns a quarter of a turn on
- * its way up. Every floor is a white band of louvres over dark glass, and
- * the roof slopes up to a point at one corner.
- */
-function majdoul() {
-  const slabs = [];
-  const half = 19.2;
-  const height = 232;
-  const shoulder = 208;
-  const turn = (z) => (z / height) * 90;
-  for (let base = 0; base < shoulder; base += 4) {
-    slabs.push({ outline: turned(cutSquare(half, 4.5), turn(base + 1.3)), base, top: base + 2.6, paint: '#eef0f1' });
-    slabs.push({ outline: turned(cutSquare(half - 0.6, 4.3), turn(base + 3.3)), base: base + 2.6, top: base + 4, paint: '#4f6478' });
-  }
-  // The sloping roof: the square draws in towards one of its corners.
-  stack(slabs, shoulder, height, 3, (z) => {
-    const up = (z - shoulder) / (height - shoulder);
-    return turned(moved(grown(cutSquare(half, 4.5), 1 - up * 0.82), up * 13, up * 13), turn(z));
-  }, ['#eef0f1', '#dfe4e7']);
-  return slabs;
-}
-
-/**
  * Riyadh TV Tower, 170 m: a sand-coloured shaft on a base of fins, with a
  * faceted glass lantern near the top like a cut stone in its setting.
  */
@@ -1057,7 +1032,8 @@ export const LANDMARKS = [
   { id: 'olaya-tower-2', name: 'Olaya Towers (south)', at: [46.68221, 24.696875], bearing: 10, height: 166, clear: 34, build: olayaPodium, model: olayaShort, nights: { '#c9cdd0': '#3c4148' } },
   { id: 'pif-tower', name: 'PIF Tower', at: [46.641519, 24.763701], bearing: 0, height: 385, clear: 36, model: pifTower },
   { id: 'burj-rafal', name: 'Burj Rafal', at: [46.632342, 24.792398], bearing: 81.6, height: 308, clear: 32, build: burjRafal, nights: { '#84b4c9': '#1a3340', '#96c2d4': '#27485a', '#dfe5e8': '#95a5af' } },
-  { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20, height: 232, clear: 30, build: majdoul, nights: { '#eef0f1': '#7b8793', '#4f6478': '#1b2532', '#dfe4e7': '#6d7985' } },
+  // (The buildings data has the tower's foot, its canopy and its low wing as one outline, 69 m from its middle to its far end: that is cleared with the tower's own.)
+  { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20.5, height: 244, clear: 44, build: majdoulAnnex, model: majdoulTower, nights: { '#e9e6dc': '#57534a' } },
   {
     id: 'tv-tower',
     name: 'Riyadh TV Tower',

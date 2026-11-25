@@ -4,6 +4,8 @@
 // Here are the buildings the city is known by that are not towers: each looked up, studied in
 // photographs and in the satellite photo the app shows, and built face by face (see models.js and
 // solids.js). What is known of each, what was measured and what is a judgement is said where it is built.
+// And, after those, the towers that were at first plain stacks of slabs, built again with their details:
+// they keep their places among the landmarks (see landmarks.js).
 //
 // Nothing here touches the browser. Measurements are in metres; a model is measured from the middle of
 // its own footprint, east and north being its own (it is turned with its landmark's bearing).
@@ -549,6 +551,119 @@ function masmakFort(model) {
     }
   }
   return {};
+}
+
+// ── Al Majdoul Tower ──────────────────────────────────────────────────────
+
+// The tower's measures, in metres.
+export const MAJDOUL = {
+  half: 18.8, // half the side of its square
+  floors: 54,
+  deck: 214, // its roof, where the helipad is
+  top: 244, // the highest corner of the screen that stands round the roof…
+  low: 217.5, // …and its lowest, across the roof from that
+  turn: 90, // how far it turns between the ground and its roof, in degrees: clockwise, seen from above, as it rises
+  fin: 0.8, // how far the white fin at every floor stands out of the glass
+  helipad: 12, // the radius of the helipad
+  canopy: [24.5, 38, 11, 8], // the glass canopy at its foot: how far out it reaches at its two ends and in its middle, how high it is at the tower and at its edge
+};
+
+/** The tower's square at a height: its four corners [east, north], anticlockwise, turned as far as the tower has turned by then. */
+export function majdoulSquare(height, half = MAJDOUL.half) {
+  const angle = -((MAJDOUL.turn * Math.PI) / 180) * (Math.min(Math.max(height, 0), MAJDOUL.deck) / MAJDOUL.deck);
+  const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
+  return [[half, half], [-half, half], [-half, -half], [half, -half]].map(([east, north]) => [east * cos - north * sin, east * sin + north * cos]);
+}
+
+/**
+ * Al Majdoul Tower (Zeidler Partnership; built 2012 to 2019), on King Fahd Road north of Kingdom Centre:
+ * the twisted tower. 244 m and 54 floors; its name means the braided one.
+ *
+ * It is a square of some 38 m that does not narrow, and turns a quarter of a turn between the ground and
+ * its roof, clockwise as it rises when seen from above: so each of its four walls is a twisted sheet of
+ * glass, and round the whole of it, at every floor, runs a white fin that stands out of the glass and
+ * turns with it. That is what the tower looks like from anywhere: a white screw.
+ *
+ * On its roof is a round helipad; and round the roof stands a screen of glass whose top is cut off
+ * aslant, lowest at one corner and thirty metres higher at the corner across from it, where a rod
+ * stands. At its foot, on the side towards the road, a canopy of glass on white ribs curves round it,
+ * shaped like a leaf; and on the other side stands a low wing (see majdoulAnnex).
+ *
+ * (Its height, its floors and its architects are as published. Its square, that it does not narrow, the
+ * quarter turn and which way it goes, the fins, the helipad and the screen with its high corner are read
+ * off the satellite photo the app shows, which is taken at a slant from the south and shows two of its
+ * walls from top to bottom; the outline the buildings data has of it agrees. No photograph of it from the
+ * ground could be had for this: the colour of its glass, the height of the roof under the screen, 214 m,
+ * and the height of the canopy, which the satellite photo shows only from above, are judgements. The
+ * canopy's outline, and the wing's, are the buildings data's, which has them and the tower's foot as one.)
+ */
+export function majdoulTower(model) {
+  const T = MAJDOUL;
+  const storey = T.deck / T.floors;
+  const glass = { kind: 'glass', colour: '#5d7d94', storey, bay: 1.5, lit: 0.35, floors: 0, mirror: 0.5 };
+  const lobby = { kind: 'glass', colour: '#7c98a8', storey, bay: 1.5, lit: 1, floors: 0, mirror: 0.3 };
+  const white = { kind: 'plain', colour: '#f1f2f1', light: '#dce8ff', glow: 0.3 };
+
+  // The four twisted walls, a floor at a time; and at the top of every floor the fin: its upper side, its underside and its edge.
+  for (let floor = 0; floor < T.floors; floor += 1) {
+    const [low, high] = [floor * storey, (floor + 1) * storey];
+    between(model, raised(majdoulSquare(low), low), raised(majdoulSquare(high), high), floor < 2 ? lobby : glass);
+    const [inner, outer] = [majdoulSquare(high), majdoulSquare(high, T.half + T.fin)];
+    model.flat(raised(outer, high + 0.12), white, { holes: [raised(inner, high + 0.12)] });
+    model.flat(raised(outer, high - 0.12), white, { out: [0, 0, -1], holes: [raised(inner, high - 0.12)] });
+    between(model, raised(outer, high - 0.12), raised(outer, high + 0.12), white);
+  }
+
+  // The screen round the roof: glass, its top one slanting plane, highest at the north-western corner.
+  const square = majdoulSquare(T.deck);
+  const topAt = ([east, north]) => T.low + (T.top - T.low) * ((north - east) / (2 * T.half) + 1) / 2;
+  const rim = square.map((corner) => [corner[0], corner[1], topAt(corner)]);
+  const screen = { kind: 'glass', colour: '#7d9bb0', storey, bay: 1.5, lit: 0, floors: 0.6, mirror: 0.55, ridge: 1, light: '#dfeaff', glow: 0.5 };
+  between(model, raised(square, T.deck), rim, screen, { lines: [false, false, true, false] });
+  // (Seen from the roof it is dark glass; and it takes no shadow from the block the map has for the tower.)
+  between(model, raised(square, T.deck), rim, { kind: 'glass', colour: '#2f3d49', storey, bay: 1.5, lit: 0, floors: 0.4, mirror: 0.2, open: true }, { way: -1 });
+  // The roof, and the helipad on it: blue, in a white ring.
+  model.flat(raised(square, T.deck + 0.15), { kind: 'plain', colour: '#ecebe6', open: true });
+  const round = (radius, height) => Array.from({ length: 28 }, (_, k) => [Math.cos((k / 28) * TAU) * radius, Math.sin((k / 28) * TAU) * radius, height]);
+  model.flat(round(T.helipad + 0.9, T.deck + 0.3), { kind: 'plain', colour: '#fbfbf8', open: true });
+  model.flat(round(T.helipad, T.deck + 0.4), { kind: 'plain', colour: '#2f7fd2', open: true });
+  // The rod on the high corner.
+  const peak = rim.reduce((best, corner) => (corner[2] > best[2] ? corner : best));
+  beam(model, [peak[0] * 0.97, peak[1] * 0.97, peak[2] - 0.5], [peak[0] * 0.97, peak[1] * 0.97, peak[2] + 3], 0.3, white, { ends: true });
+
+  // The canopy at its foot, towards the road: glass on white ribs, curving round the tower from its western
+  // side to its southern, and reaching furthest out before its south-western corner.
+  const [ends, most, high, low] = T.canopy;
+  const pane = { kind: 'glass', colour: '#a9bcc6', storey: 3.2, bay: 3, lit: 0.6, floors: 0, mirror: 0.5, ridge: 1 };
+  const [from, sweep, pieces] = [(-185 * Math.PI) / 180, (110 * Math.PI) / 180, 12];
+  // (It begins at the tower's glass, which at that height has turned four degrees.)
+  const turned = (T.turn * Math.PI) / 180 * (high / T.deck);
+  const spot = (k, part, height) => {
+    const angle = from + (sweep * k) / pieces;
+    const inner = (T.half + 0.7) / Math.max(Math.abs(Math.cos(angle + turned)), Math.abs(Math.sin(angle + turned)));
+    const outer = ends + (most - ends) * (1 - ((2 * k) / pieces - 1) ** 2);
+    const radius = inner + (outer - inner) * part;
+    return [Math.cos(angle) * radius, Math.sin(angle) * radius, height];
+  };
+  for (let k = 0; k < pieces; k += 1) {
+    for (const [p0, p1, z0, z1] of [[0, 0.5, high, (high + low) / 2], [0.5, 1, (high + low) / 2, low]]) {
+      const corners = [spot(k, p0, z0), spot(k, p1, z1), spot(k + 1, p1, z1), spot(k + 1, p0, z0)];
+      model.quad(...corners, pane, { out: [0, 0, 1] });
+      model.quad(...corners, { ...pane, lit: 0, light: '#fff0d2', glow: 0.5 }, { out: [0, 0, -1] });
+    }
+    if (k % 2 === 1) lathe(model, frame([0, 0], 0), [spot(k, 0.95, 0)[0], spot(k, 0.95, 0)[1]], [[0.28, 0], [0.28, low + 0.15]], white, { cuts: 6 });
+  }
+  return { beacons: [[peak[0] * 0.97, peak[1] * 0.97, peak[2] + 3.6]] };
+}
+
+/**
+ * The low wing at the tower's foot, on the side away from the road: two storeys under a flat white roof.
+ * (Its outline is the buildings data's, measured east and north of the tower's middle; it is built
+ * plainly, as a slab: see landmarks.js.)
+ */
+export function majdoulAnnex() {
+  const outline = [[28, -0.9], [41, 4.6], [61.6, 8.9], [58.9, 19.8], [74.6, 22.5], [60, 54.5], [47.5, 41.4], [42.1, 51.7], [36.6, 46.3], [41, 38.2], [20.4, 29], [12, 18], [24.5, 12]];
+  return [{ outline, base: 0, top: 9, paint: '#e9e6dc', roof: true, north: true }];
 }
 
 /**
