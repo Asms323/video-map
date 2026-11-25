@@ -763,6 +763,51 @@ export function weatherSummary(current) {
   return summary;
 }
 
+/**
+ * The clouds round a place as the weather service has them at a grid of points, for the sky over the 3D
+ * city: { at (the moment the reading is for, ms), lats (the grid's rows, south to north), lngs (its
+ * columns, west to east), low, mid, high (how much of the sky each layer covers at each point, 0 to 1,
+ * row by row from the south-west), aloft ([{ from, speed }] for the high, middle and low layers: where
+ * the wind blows from at their heights, in degrees, and how fast, in m/s; or null) }.
+ *
+ * answer: the service's answer for the points, asked row by row from the south-west (a list, or one
+ * answer for one point); lats, lngs: the grid's lines as asked; now: the time, to pick the hour of the
+ * winds aloft. Null if the answer does not fit the grid.
+ */
+export function cloudField(answer, lats, lngs, now = Date.now()) {
+  const list = Array.isArray(answer) ? answer : [answer];
+  if (list.length !== lats.length * lngs.length) return null;
+  const share = (value) => (Number.isFinite(value) ? clamp(value / 100, 0, 1) : null);
+  const field = { at: NaN, lats: [...lats], lngs: [...lngs], low: [], mid: [], high: [], aloft: null };
+  for (const one of list) {
+    const current = one?.current;
+    const [low, mid, high] = [share(current?.cloud_cover_low), share(current?.cloud_cover_mid), share(current?.cloud_cover_high)];
+    if (low === null || mid === null || high === null) return null;
+    field.low.push(low);
+    field.mid.push(mid);
+    field.high.push(high);
+    const at = Date.parse(`${current.time}Z`);
+    if (Number.isFinite(at)) field.at = Number.isFinite(field.at) ? Math.max(field.at, at) : at;
+  }
+  if (!Number.isFinite(field.at)) field.at = now;
+  // The winds aloft, where they were asked: from the middle of the grid, at the hour nearest now.
+  const hourly = list[Math.floor(list.length / 2)]?.hourly;
+  if (Array.isArray(hourly?.time) && hourly.time.length > 0) {
+    const times = hourly.time.map((time) => Date.parse(`${time}Z`));
+    let nearest = 0;
+    times.forEach((time, k) => {
+      if (Math.abs(time - now) < Math.abs(times[nearest] - now)) nearest = k;
+    });
+    const wind = (level) => {
+      const [speed, from] = [hourly[`wind_speed_${level}hPa`]?.[nearest], hourly[`wind_direction_${level}hPa`]?.[nearest]];
+      return Number.isFinite(speed) && Number.isFinite(from) ? { from, speed } : null;
+    };
+    const aloft = [wind(250), wind(500), wind(700)];
+    if (aloft.every(Boolean)) field.aloft = aloft;
+  }
+  return field;
+}
+
 /** The first route of an OSRM answer as { distance, duration, coordinates } — or null. */
 export function routeSummary(answer) {
   const route = answer?.code === 'Ok' && Array.isArray(answer.routes) ? answer.routes[0] : null;

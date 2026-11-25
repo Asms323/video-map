@@ -141,7 +141,8 @@ test('live aircraft are read out of what the feeds answer', () => {
     ],
   });
   assert.deepEqual(sky, [
-    { id: 'c04049', callsign: 'SVA1023', lng: 46.73, lat: 24.83, alt: 1310.6, ground: false, speed: 82.5, track: 330.2, climb: -4.2, seen: 1507203246 },
+    // (Its height above the sea, 1,310.6 m, made a height above Riyadh's ground: the airport's lies 625 m up.)
+    { id: 'c04049', callsign: 'SVA1023', lng: 46.73, lat: 24.83, alt: 1310.6 - 625, ground: false, speed: 82.5, track: 330.2, climb: -4.2, seen: 1507203246 },
     { id: '710105', callsign: 'FAD301', lng: 46.7, lat: 24.95, alt: 0, ground: true, speed: 6.1, track: 150, climb: 0, seen: 1507203240 },
   ]);
   assert.deepEqual(parseOpenSky({ time: 1, states: null }), []);
@@ -158,10 +159,10 @@ test('live aircraft are read out of what the feeds answer', () => {
   const [air, ground] = parseReceivers(answer);
   assert.equal(parseReceivers(answer).length, 2);
   assert.ok(air.id === '400982' && air.callsign === 'SHT9Q' && air.type === 'A320' && !air.ground);
-  assert.ok(near(air.alt, 4400 * 0.3048, 0.01) && near(air.speed, 195.1 * 0.514444, 0.01) && air.track === 118.14 && near(air.climb, (-768 * 0.3048) / 60, 0.001) && near(air.seen, 1795465533.001, 0.001));
+  assert.ok(near(air.alt, 4400 * 0.3048 - 625, 0.01) && near(air.speed, 195.1 * 0.514444, 0.01) && air.track === 118.14 && near(air.climb, (-768 * 0.3048) / 60, 0.001) && near(air.seen, 1795465533.001, 0.001));
   assert.ok(ground.ground && ground.alt === 0 && ground.speed === 0 && ground.climb === 0);
   const other = parseReceivers({ now: 1795465534.0, aircraft: [{ hex: '896219', flight: 'UAE1CL  ', t: 'B77W', lat: 25.594345, lon: 54.719187, alt_baro: 12750, gs: 273.5, track: 82.23, baro_rate: -768, seen_pos: 0.402 }] });
-  assert.ok(other.length === 1 && other[0].callsign === 'UAE1CL' && near(other[0].alt, 12750 * 0.3048, 0.01) && near(other[0].seen, 1795465533.598, 0.001));
+  assert.ok(other.length === 1 && other[0].callsign === 'UAE1CL' && near(other[0].alt, 12750 * 0.3048 - 625, 0.01) && near(other[0].seen, 1795465533.598, 0.001));
 });
 
 test('while live aircraft are known they are what is shown, each moved on from where it last was; otherwise the typical traffic', () => {
@@ -190,4 +191,51 @@ test('while live aircraft are known they are what is shown, each moved on from w
   // An empty report: the typical traffic again.
   flights.report([], T0 + 200, 'The OpenSky Network');
   assert.equal(flights.at(T0 + 201).kind, 'typical');
+});
+
+test("where no receiver hears the airport, its usual landings and take-offs are added to the live aircraft; where one does, nothing is", () => {
+  const flights = new Flights();
+  // One airliner high over the city, as the receivers round the Gulf hear it.
+  const high = { id: '7104c1', callsign: 'KNE423', type: 'A320', lng: 46.6, lat: 24.6, alt: 10970, ground: false, speed: 230, track: 300, climb: 0, seen: T0 - 3 };
+  flights.report([high], T0, 'The OpenSky Network', { now: T0 + 1 });
+  const sky = flights.at(T0 + 5, { windFrom: 330 });
+  const usual = typicalFlights(T0 + 5, { windFrom: 330 }).filter((plane) => plane.phase !== 'cruise');
+  assert.ok(usual.length > 0, 'the airport is busy at five in the afternoon');
+  assert.ok(sky.kind === 'live' && sky.live === 1 && sky.typical === usual.length && sky.planes.length === 1 + usual.length);
+  assert.ok(sky.planes[0].kind === 'live' && sky.planes[0].callsign === 'KNE423');
+  assert.ok(sky.planes.slice(1).every((plane) => plane.kind === 'typical' && plane.phase !== 'cruise' && plane.callsign === undefined), 'none that typically passes over: the real ones are there');
+  // One heard coming in low over the airport: the receivers hear the airport, and nothing is added.
+  const low = { id: '710239', callsign: 'SVA1023', type: 'B77W', lng: 46.73, lat: 24.9, alt: 900, ground: false, speed: 75, track: 330, climb: -3.5, seen: T0 + 30 };
+  flights.report([high, low], T0 + 30, 'The OpenSky Network', { now: T0 + 31 });
+  const heard = flights.at(T0 + 33, { windFrom: 330 });
+  assert.ok(heard.kind === 'live' && heard.live === 2 && heard.typical === 0 && heard.planes.length === 2);
+  // With nothing live: all of it typical, and counted so.
+  const none = new Flights().at(T0, { windFrom: 330 });
+  assert.ok(none.kind === 'typical' && none.live === 0 && none.typical === none.planes.length);
+});
+
+test("a phone whose clock is well off the feed's still shows the live aircraft where they are", () => {
+  const plane = { id: 'a2', callsign: 'KNE55', type: 'A320', lng: 46.5, lat: 24.6, alt: 9000, ground: false, speed: 220, track: 90, climb: 0, seen: T0 - 1 };
+  const moved = (sky) => apart([sky.planes[0].lng, sky.planes[0].lat], [46.5, 24.6]);
+  // Its clock four minutes behind: by it the report is for a moment still to come; yet it shows the
+  // aircraft moved on by the time since it gave its place, by the feed's clock (11 s).
+  const slow = new Flights();
+  slow.report([plane], T0, 'The OpenSky Network', { now: T0 - 240 });
+  const late = slow.at(T0 - 240 + 10);
+  assert.ok(late.kind === 'live' && near(moved(late), 220 * 11, 5), `${moved(late)}`);
+  // Four minutes ahead: by it the report would be too old to show at all.
+  const fast = new Flights();
+  fast.report([plane], T0, 'The OpenSky Network', { now: T0 + 240 });
+  const early = fast.at(T0 + 240 + 10);
+  assert.ok(early.kind === 'live' && near(moved(early), 220 * 11, 5));
+  assert.equal(fast.at(T0 + 240 + 151).kind, 'typical');
+  // Within half a minute of the feed's, the phone's own clock is kept (the feed's report is for a moment
+  // some seconds before it is had: that is no fault of the phone's).
+  const fine = new Flights();
+  fine.report([plane], T0, 'The OpenSky Network', { now: T0 + 8 });
+  assert.ok(near(moved(fine.at(T0 + 8)), 220 * 9, 5));
+  // And a phone a little behind still shows them at once.
+  const behind = new Flights();
+  behind.report([plane], T0, 'The OpenSky Network', { now: T0 - 12 });
+  assert.equal(behind.at(T0 - 12).kind, 'live');
 });

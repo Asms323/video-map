@@ -409,10 +409,14 @@ map opens on the city and keeps to it, and places are looked for in it.
 - **A sky with depth.** Turned the way you travel, the view runs along the
   road to the horizon with the sky over the skyline, and what is in that sky
   is what is over Riyadh at that moment:
-  - **The clouds the weather has**, in the three layers it tells of (low,
-    middle and high), as much of each as it says there is. Each layer lies
-    level at its own height, so it runs away to the horizon in ever thinner
-    bands; each drifts on the wind, the higher the faster. By day they are
+  - **The clouds where the weather has them**, in the three layers it tells
+    of (low, middle and high). They are read live at 25 places round the
+    city, some 38 km apart, as the weather service has them each quarter of
+    an hour: a bank of cloud to the north-west shows to the north-west, and
+    a clear south-east stays clear. Each layer lies level at its own height,
+    so it runs away to the horizon in ever thinner bands, and drifts on the
+    real wind at its own height (the service's winds at about 10, 5.5 and
+    3 km up), the high ones fastest. By day they are
     white with grey bellies, heaped up when there are few of them and a flat
     sheet when the sky is covered; as the sun goes down the high ones stay
     lit longest and the low ones go dark first; by night the city's own
@@ -421,25 +425,37 @@ map opens on the city and keeps to it, and places are looked for in it.
     the glow along the horizon on its own side and, on the far side, the
     pink band over the grey-blue shadow of the Earth.
   - **The moon** where it really stands, with as much of its face lit as it
-    has, the lit side towards the sun.
-  - **The stars and the planets** where they really stand: the 483 stars to
-    the fourth magnitude that rise over Riyadh, each in its own colour, and
-    Mercury, Venus, Mars, Jupiter and Saturn. They come out one by one as it
-    darkens, the brightest first (Venus while the sky is still light), and
-    the stars twinkle, the more the lower they stand.
-- **Aircraft, by the airport's real rhythm.** Aircraft come in to King
-  Khalid International Airport, climb out of it and pass high over the
-  city, drawn larger than life or they would be specks. The high ones leave
-  trails; by night each shows its lamps (red on the left wing, green on the
-  right, white at the tail, the flashing ones) and, coming in, its landing
-  lamps. If the open feed of live aircraft positions has any over Riyadh,
-  those are the aircraft shown, each where it really is. It rarely has (see
-  the limits below), and then the sky is flown as the airport really flies
-  it: as many arrivals and departures an hour as it has at that hour of the
-  day, on its two real runways, in the direction the real wind of the moment
-  has them in use, down the real three-degree approach. Tap your own dot to
-  see which of the two is being shown. Shown with the traffic; switched off
-  with it.
+    has, the lit side towards the sun; and its light washes out the fainter
+    stars, as it does (under a full moon about a third of them show).
+  - **The stars and the planets** where they really stand this minute: the
+    483 stars to the fourth magnitude that rise over Riyadh, each in its own
+    colour, and Mercury, Venus, Mars, Jupiter and Saturn. They come out one
+    by one as it darkens, the brightest first (Venus while the sky is still
+    light), large enough to be seen on a phone, and the stars twinkle, the
+    more the lower they stand. Tap your own dot to see how many show, the
+    brightest by name and where to look for them, and the planets that are
+    up. (Checked against the astronomy library Astropy: the stars to within
+    a hundredth of a degree, the moon to a tenth, the planets to 0.15°.)
+- **Aircraft, live where they can be had.** The open feed of live aircraft
+  positions (the OpenSky Network) is asked every 15 seconds while it has
+  aircraft within 150 km of the city, and every 2 minutes while it has none.
+  Each live one is drawn where it is that second, moved on from its last
+  report by its own speed, course and climb, at its real height, with a tag
+  over it giving its call sign and how high it is. Tap your own dot for the
+  list of them: what each is doing, how high and how far off. The feed's
+  receivers round Riyadh stand far off, round the Gulf: they hear the
+  airliners high over the city, but not the ones low over the airport. So
+  where no receiver hears the airport, its own landings and take-offs are
+  added as it really flies them: as many arrivals and departures an hour as
+  it has at that hour of the day, on its two real runways, in the direction
+  the real wind of the moment has them in use, down the real three-degree
+  approach. Those carry no tag: they are typical, not particular. With no
+  live aircraft known at all, the airliners that usually pass over are
+  added too. All are drawn larger than life or they would be specks; the
+  high ones leave trails; by night each shows its lamps (red on the left
+  wing, green on the right, white at the tail, the flashing ones) and,
+  coming in, its landing lamps. Shown with the traffic; switched off with
+  it.
 - Drawing the walls window by window and working out the shadows on them is
   more work for the phone with every picture. If the map moves slowly, both
   can be switched off under the map options ("Detailed walls and shadows");
@@ -515,9 +531,10 @@ Everything is free and needs no account or key.
 | Place details, speed limits, where the traffic signals stand | [Overpass API](https://overpass-api.de) (OpenStreetMap data) | One small question per place tapped; one per area for limits; and one for all of Riyadh's traffic signals, the same whoever asks it (so nothing of where you are goes with it), whose answer is kept on the phone for a week |
 | Search, nearest address | [Photon](https://photon.komoot.io) (OpenStreetMap data) | |
 | Routes | [OSRM](https://project-osrm.org) demo server (OpenStreetMap data) | |
-| Weather, and for the sky: how much cloud in each of three layers, the wind, how far one can see | [Open-Meteo](https://open-meteo.com) | Asked at most every half hour |
-| Live aircraft positions over Riyadh | [The OpenSky Network](https://opensky-network.org) | Its open feed, asked for one fixed box round the city (the same whoever asks, so nothing about you goes with the question), at most every 40 seconds, and far less often while it has nothing. It is fed by volunteers' receivers, of which there are few or none in Riyadh: most of the time it has no aircraft there |
-| Where the stars are, how bright and what colour | The Hipparcos catalogue as extended by Anderson and Francis (XHIP, 2012) | Comes with the app (`js/stars.js`); nothing is asked of anyone. The moon and the planets are worked out on the phone |
+| Weather, and for the sky: how much cloud in each of three layers, the wind, how far one can see | [Open-Meteo](https://open-meteo.com) | The weather where you are: asked at most every half hour |
+| The clouds round the city, place by place, and the winds at their heights | [Open-Meteo](https://open-meteo.com) (its forecast models' values for this quarter of an hour; the winds at 250, 500 and 700 hPa) | 25 places on a fixed lattice a third of a degree apart round the city (the same lattice whoever asks, so where you are goes no closer than that), asked at most every quarter of an hour while the app is open, and kept for two hours |
+| Live aircraft positions over Riyadh | [The OpenSky Network](https://opensky-network.org) | Its open feed, asked for one fixed box 150 km round the city (the same whoever asks, so nothing about you goes with the question): every 15 seconds while it has aircraft there, every 2 minutes while it has none, and at most 380 times a day (it allows 400 a day to anyone without an account; the app counts them on the phone, and stops until the next day). It is fed by volunteers' receivers, which round Riyadh stand far off: it hears the high aircraft, not the low ones over the airport |
+| Where the stars are, how bright and what colour | The Hipparcos catalogue as extended by Anderson and Francis (XHIP, 2012) | Comes with the app (`js/stars.js`); nothing is asked of anyone. The moon and the planets are worked out on the phone, and checked against [Astropy](https://www.astropy.org) |
 
 These public services are run for light, fair use, which one person's app is.
 They can be slow or briefly unavailable; the app then simply leaves that piece
@@ -1041,22 +1058,34 @@ Watch video only when parked, or let a passenger watch.
 - The traffic lights go by the app's own clock. They do not show what the
   real signal in front of you shows, and are no guide to it.
 - The sky: the sun, the moon, the stars and the planets are where they
-  really are (the moon and the planets to within a degree or so). The clouds
-  are as many as the weather service says there are in each layer, but which
-  cloud is where is made up: the service tells how much of the sky is
-  covered, not the shape of it. With the weather switched off, the sky is
-  clear.
-- The aircraft: no free source that a web page may read has the aircraft
-  over Riyadh. The open networks of receivers (adsb.lol, adsb.fi) have no
-  receivers there and do not let a web page ask them; airplanes.live turns
-  such questions away; the OpenSky Network may be asked, and is, but seldom
-  has anything over the city. So what flies is nearly always the airport's
-  usual traffic: the real number of flights for the hour (296,800 flights in
-  2025, by the General Authority for Statistics), the real runways, the real
-  wind and approach. Those aircraft are typical, not particular: no flight
+  really are, to within a fraction of a degree. The clouds come from a
+  weather model (Open-Meteo), not from a satellite picture: how much of the
+  sky each layer covers is the model's own figure at 25 places round the
+  city, new each quarter of an hour; between those places, and the shape of
+  each cloud, is made up. With the weather switched off, the sky is clear.
+  Turned the way you travel, the picture shows only the lowest 6° to 10° of
+  the sky (more with the view tilted up as far as it goes): of the stars,
+  only those low over the horizon can be in it; the rest are counted and
+  named in the sheet your dot opens.
+- The aircraft: no free source that a web page may read hears all of the
+  aircraft over Riyadh. The open networks of receivers (adsb.lol, adsb.fi)
+  do not let a web page ask them; airplanes.live turns such questions away;
+  the OpenSky Network may be asked, and is, but its receivers that reach
+  Riyadh stand far off, round the Gulf, and hear only the high aircraft.
+  So the landings and take-offs at the airport are nearly always its usual
+  traffic: the real number of flights for the hour (296,800 flights in 2025,
+  by the General Authority for Statistics), the real runways, the real wind
+  and approach. Those aircraft are typical, not particular: no flight
   number, and not the minute any real flight lands. How the day's flights
   are spread over its hours is an estimate (the airport publishes no count
-  by the hour): quiet before dawn, fullest in the evening.
+  by the hour): quiet before dawn, fullest in the evening. The feed allows
+  400 questions a day to a phone without an account: asked every 15
+  seconds, that is about an hour and a half of live aircraft a day, after
+  which the app waits for the next day (by the clock in Greenwich). Each
+  live aircraft is shown where it was at most ten seconds or so before,
+  moved on by its speed and course; if the phone's clock is more than half
+  a minute out, the feed's clock is used instead. A tag still shows when a
+  tall building hides its aircraft.
 
 ## For developers
 

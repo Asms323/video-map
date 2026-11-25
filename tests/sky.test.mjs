@@ -10,19 +10,27 @@ import {
   cloudLayersOf,
   cloudTones,
   cloudsNear,
+  compassPoint,
   directionOf,
   drawAircraft,
   drawClouds,
   drawHeavens,
   drawStars,
+  fieldCover,
   horizontal,
+  layerShare,
+  layerWind,
   moonAt,
+  NAMED_STARS,
   planetsAt,
+  precessed,
+  skyTonight,
   starPoints,
   starsAt,
   sunBetween,
   sunlightAt,
 } from '../js/sky.js';
+import { cloudField } from '../js/lib.js';
 import { STARS } from '../js/stars.js';
 
 const RIYADH = [46.68, 24.71];
@@ -322,9 +330,9 @@ test('the planets and the stars come out one by one as it darkens, the brightest
   const all = starPoints({ eye, night: 1, stars, planets: [venus, jupiter, set] });
   assert.ok(some.length > dusk.length && all.length > some.length && all.length > stars.length * 0.85 && all.length <= stars.length + 2, `${dusk.length}, ${some.length}, ${all.length}`);
   // Each on the bowl, in its own direction; Venus the strongest and the widest, with a halo round it.
-  assert.ok(all.every((point) => near(far([point.x, point.y, point.z], eye), SKY_RADIUS, SKY_RADIUS * 1e-4) && point.strength > 0 && point.strength <= 1 && point.wide >= 0 && point.wide <= 0.44));
+  assert.ok(all.every((point) => near(far([point.x, point.y, point.z], eye), SKY_RADIUS, SKY_RADIUS * 1e-4) && point.strength > 0 && point.strength <= 1 && point.wide >= 0.08 && point.wide <= 0.5));
   assert.ok(degreesApart(wayTo([all[0].x, all[0].y, all[0].z], eye), directionOf(240, 20)) < 0.01);
-  assert.ok(all[0].strength === 1 && all[0].wide === 0.44 && all[0].halo === 1 && all[1].halo > 0 && all.slice(2).every((point) => point.halo === 0));
+  assert.ok(all[0].strength === 1 && all[0].wide === 0.5 && all[0].halo === 1 && all[1].halo > 0 && all.slice(2).every((point) => point.halo === 0));
   // A star low over the city is put out by its glow; a faint one is drawn faint.
   const low = starPoints({ eye, night: 1, stars: [{ azimuth: 10, altitude: 0.8, magnitude: 0, colour: [255, 255, 255] }, { azimuth: 10, altitude: 30, magnitude: 3.9, colour: [255, 255, 255] }] });
   assert.ok(low.length === 1 && low[0].strength < 0.25);
@@ -339,7 +347,7 @@ test('the planets and the stars come out one by one as it darkens, the brightest
   assert.ok(changed > all.length * 0.3 && first[1][4] > 240 && Math.abs(first[1][4] - second[1][4]) <= 25, `${changed} of ${all.length} twinkled`);
   assert.ok(first.every((corner, i) => corner[0] === second[i][0] && corner[2] === second[i][2]), 'none moves');
   // (The halo is wide and faint; the point within it is as wide as the brightest star is drawn.)
-  assert.ok(first[0][6] === 255 && first[0][4] < 90 && first[1][6] === Math.floor(255 * 0.44));
+  assert.ok(first[0][6] === 255 && first[0][4] < 90 && first[1][6] === Math.floor(255 * 0.5));
   assert.equal(drawStars(lights, [], 100), 0);
   assert.equal(lights.count, 0);
 });
@@ -416,4 +424,115 @@ test('an aircraft is drawn where it is, nose to its course, in its airline\'s co
   // One that is cruising high shows none.
   drawAircraft(mesh, lights, { eye, origin, planes: [{ ...cruise, track: 180 }], night: 1, seconds: 0.3 - 'in1'.length * 0.37 });
   assert.equal(lights.count, 3);
+});
+
+test('the sky is as it stands this minute over Riyadh: stars, moon and planets agree with an astronomy library to a fraction of a degree', () => {
+  // Where astropy (with the IAU's precession and nutation, and the Moon's position from its built-in ephemeris) puts them,
+  // seen from Riyadh (46.6753 E, 24.7136 N) at 22:00 on 25 November 2026, without the bending of light near the horizon.
+  const [lng, lat] = [46.6753, 24.7136];
+  const date = new Date('2026-11-25T19:00:00Z');
+  const apart = (place, azimuth, altitude) => degreesApart(directionOf(place.azimuth, place.altitude), directionOf(azimuth, altitude));
+  const star = (k) => horizontal(...precessed(STARS[k][0], STARS[k][1], date), date, lng, lat);
+  assert.ok(apart(star(0), 116.31, 14.17) < 0.05, 'Sirius');
+  // (Without the slow swing of the Earth's axis since 2000, Sirius would be off by a third of a degree.)
+  assert.ok(apart(horizontal(STARS[0][0], STARS[0][1], date, lng, lat), 116.31, 14.17) > 0.2);
+  const polaris = STARS.findIndex(([ra, dec]) => near(ra, 2.53, 0.002) && near(dec, 89.26, 0.02));
+  assert.ok(apart(star(polaris), 0.13, 25.33) < 0.05, 'Polaris');
+  // And as of 2000 it is where the catalogue has it; it has moved by a third of a degree since.
+  assert.deepEqual(precessed(6.752, -16.72, new Date('2000-01-01T12:00:00Z')).map((x) => Math.round(x * 1000) / 1000), [6.752, -16.72]);
+  const [ra, dec] = precessed(6.752, -16.72, date);
+  assert.ok(near(ra, 6.77, 0.01) && near(dec, -16.75, 0.02), `${ra}, ${dec}`);
+  // The moon: a day after full, high in the east; as seen from Riyadh, not from the middle of the Earth.
+  const moon = moonAt(date, lng, lat);
+  assert.ok(apart(moon, 76.22, 51.42) < 0.25 && near(moon.lit, 0.978, 0.005) && !moon.waxing, JSON.stringify(moon));
+  assert.ok(apart(moonAt(new Date('2026-11-26T01:30:00Z'), lng, lat), 285.28, 43.9) < 0.25);
+  assert.ok(apart(moonAt(new Date('2027-01-15T16:00:00Z'), lng, lat), 245.21, 65.82) < 0.25);
+  // Jupiter, rising before dawn: within a fifth of a degree.
+  const jupiter = planetsAt(new Date('2026-11-26T01:30:00Z'), lng, lat).find((one) => one.name === 'Jupiter');
+  assert.ok(apart(jupiter, 126.16, 71.98) < 0.2, JSON.stringify(jupiter));
+});
+
+test('by night the stars show as they would to the eye from the city: a full moon puts the fainter out, the brightest have their names', () => {
+  const [lng, lat] = [46.6753, 24.7136];
+  const date = new Date('2026-11-25T19:00:00Z');
+  const stars = starsAt(date, lng, lat);
+  const planets = planetsAt(date, lng, lat);
+  const eye = [0, 0, 0];
+  // Fifty-eight of the brightest have names; Sirius is one, and those that are up carry theirs.
+  assert.equal(NAMED_STARS, 58);
+  assert.equal(stars.find((one) => one.magnitude === -1.44).name, 'Sirius');
+  assert.ok(stars.filter((one) => one.name).length > 20);
+  // On a moonless night, nearly every star of the catalogue that is up; with a full moon high in the sky, a third as many.
+  const dark = starPoints({ eye, night: 1, stars, planets, moon: { altitude: -20, lit: 0 } });
+  const moonlit = starPoints({ eye, night: 1, stars, planets, moon: moonAt(date, lng, lat) });
+  assert.ok(dark.length > stars.length * 0.85 && moonlit.length < dark.length * 0.45 && moonlit.length > 40, `${dark.length}, ${moonlit.length}`);
+  // (A new moon, or one under the horizon, puts out none.)
+  assert.equal(starPoints({ eye, night: 1, stars, planets, moon: { altitude: 50, lit: 0 } }).length, dark.length);
+  // What shows is at least a dot a phone shows: none is drawn narrower than the faintest point, and the brightest are wider.
+  assert.ok(moonlit.every((point) => point.wide >= 0.08));
+  const mean = (some) => some.reduce((sum, point) => sum + point.strength, 0) / some.length;
+  assert.ok(mean(moonlit.filter((point) => point.magnitude < 1.5)) > 0.6 && mean(moonlit.filter((point) => point.magnitude > 2.5)) < 0.35);
+  const sirius = moonlit.find((point) => point.name === 'Sirius');
+  assert.ok(sirius && sirius.wide > 0.45 && sirius.strength > 0.9);
+  // In words, for the info sheet: tonight Sirius and Rigel in the south-east, Capella in the north-east; Saturn in the south-west.
+  const words = skyTonight(moonlit);
+  assert.equal(words.stars, moonlit.filter((point) => !point.planet).length);
+  assert.deepEqual(words.brightest, ['Sirius (south-east)', 'Capella (north-east)', 'Rigel (south-east)']);
+  assert.deepEqual(words.planets, ['Saturn (south-west)']);
+  assert.deepEqual([0, 44, 46, 91, 180, 270, 337, 338, 359].map(compassPoint), ['north', 'north-east', 'north-east', 'east', 'south', 'west', 'north-west', 'north', 'north']);
+});
+
+test('the clouds are laid where the weather service has them, place by place round the city, and each layer drifts on the wind at its own height', () => {
+  // The service's answer for a grid of 2 by 2: clear in the south-west, overcast with low cloud in the north-east.
+  const lats = [24.5, 24.85];
+  const lngs = [46.55, 46.9];
+  const point = (low, mid, high, hourly) => ({ latitude: 0, longitude: 0, current: { time: '2026-11-25T09:15', interval: 900, cloud_cover_low: low, cloud_cover_mid: mid, cloud_cover_high: high }, ...(hourly ? { hourly } : {}) });
+  const hourly = {
+    time: ['2026-11-25T08:00', '2026-11-25T09:00', '2026-11-25T10:00'],
+    wind_speed_250hPa: [40, 42, 44], wind_direction_250hPa: [270, 275, 280],
+    wind_speed_500hPa: [20, 21, 22], wind_direction_500hPa: [300, 305, 310],
+    wind_speed_700hPa: [8, 9, 10], wind_direction_700hPa: [330, 335, 340],
+  };
+  const answer = [point(0, 0, 0), point(0, 10, 40), point(20, 20, 60, hourly), point(100, 60, 80)];
+  const now = Date.parse('2026-11-25T09:20:00Z');
+  const field = cloudField(answer, lats, lngs, now);
+  assert.equal(field.at, Date.parse('2026-11-25T09:15:00Z'));
+  assert.deepEqual([field.low, field.mid, field.high], [[0, 0, 0.2, 1], [0, 0.1, 0.2, 0.6], [0, 0.4, 0.6, 0.8]]);
+  // The winds aloft, at the hour nearest now, from the middle of the grid: the high layer on the jet stream, the low on a breeze.
+  assert.deepEqual(field.aloft, [{ from: 275, speed: 42 }, { from: 305, speed: 21 }, { from: 335, speed: 9 }]);
+  // An answer that does not fit the grid is no field; one without the winds aloft is one without them.
+  assert.equal(cloudField(answer.slice(1), lats, lngs, now), null);
+  assert.equal(cloudField([point(0, 0, 0), point(0, null, 0), point(0, 0, 0), point(0, 0, 0)], lats, lngs, now), null);
+  assert.equal(cloudField(answer.map((one) => ({ ...one, hourly: undefined })), lats, lngs, now).aloft, null);
+  // Between the readings the cover is read off the four round a place; beyond the grid, as at its edge.
+  assert.deepEqual(fieldCover(field, 46.55, 24.5), { low: 0, mid: 0, high: 0 });
+  assert.deepEqual(fieldCover(field, 46.9, 24.85), { low: 1, mid: 0.6, high: 0.8 });
+  const middle = fieldCover(field, 46.725, 24.675);
+  assert.ok(near(middle.low, 0.3, 1e-9) && near(middle.mid, 0.225, 1e-9) && near(middle.high, 0.45, 1e-9), JSON.stringify(middle));
+  assert.deepEqual(fieldCover(field, 50, 30), fieldCover(field, 46.9, 24.85));
+  assert.deepEqual([0, 1, 2].map((layer) => layerShare({ low: 0.1, mid: 0.2, high: 0.3 }, layer)), [0.3, 0.2, 0.1]);
+  // Laid by the field: low cloud only where the field has it (the north-east), none over the clear south-west.
+  const east = Math.cos((24.7 * Math.PI) / 180) * 111320;
+  const coverAt = (layer, x, y) => layerShare(fieldCover(field, x / east, y / 111320), layer);
+  const where = [46.725 * east, 24.675 * 111320];
+  const clouds = cloudsNear(where, { low: 1, mid: 0.6, high: 0.8, seconds: 0, coverAt });
+  const lowOnes = clouds.filter((cloud) => cloud.layer === 2);
+  const at = (cloud) => fieldCover(field, cloud.x / east, cloud.y / 111320).low;
+  assert.ok(lowOnes.length > 20 && lowOnes.every((cloud) => at(cloud) > 0.02 && cloud.cover === Math.min(at(cloud), 1)));
+  // (More where there is more: the clouds stand where the cover is greater than it is on the average over the ground they could stand on.)
+  let ground = 0;
+  for (let k = 0; k < 4000; k += 1) {
+    const [r, turn] = [Math.sqrt((k + 0.5) / 4000) * CLOUD_LAYERS[2].reach, k * 2.399963];
+    ground += fieldCover(field, (where[0] + r * Math.sin(turn)) / east, (where[1] + r * Math.cos(turn)) / 111320).low / 4000;
+  }
+  const onClouds = lowOnes.reduce((sum, cloud) => sum + at(cloud), 0) / lowOnes.length;
+  assert.ok(onClouds > ground * 1.15, `${onClouds} against ${ground}`);
+  // (Where the low cloud is a whole deck, nothing is laid above it; elsewhere the higher layers are.)
+  assert.ok(clouds.filter((cloud) => cloud.layer < 2).every((cloud) => at(cloud) < 0.97) && clouds.some((cloud) => cloud.layer === 0));
+  // Each layer drifts on its own wind: the high one at 42 m/s from 275 degrees, not at four times the wind on the ground.
+  const wind = { windFrom: 315, windSpeed: 4, aloft: field.aloft };
+  assert.deepEqual(layerWind(0, wind), { from: 275, speed: 42 });
+  assert.deepEqual(layerWind(2, { windFrom: 315, windSpeed: 4 }), { from: 315, speed: 8 });
+  const drift = cloudDrift(0, wind, 100);
+  assert.ok(near(Math.hypot(...drift), 4200, 1e-6) && drift[0] > 4100 && near(Math.atan2(drift[0], drift[1]) * 180 / Math.PI, 95, 1e-6), JSON.stringify(drift));
 });

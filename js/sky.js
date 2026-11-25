@@ -61,24 +61,73 @@ export function horizontal(ra, dec, date, lng, lat) {
 }
 
 /**
- * The moon: where it stands, how much of its face is lit (0 new, 1 full)
- * and whether it is waxing. Good to a degree or so, which is twice its own
- * width: enough to put it in the right part of the sky with the right shape.
+ * Where a star of the catalogue stands among the stars today: the catalogue gives each place as it was
+ * at the start of 2000, and since then the Earth's axis has swung round a little (by a third of a degree
+ * in twenty-six years), so every place has moved. ra in hours, dec in degrees; returns [ra, dec] for the
+ * date. (After Lieske, 1977; good to a few seconds of arc for centuries.)
+ */
+export function precessed(ra, dec, date) {
+  const t = daysSince2000(date) / 36525;
+  const arcsec = RADIANS / 3600;
+  const zeta = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) * arcsec;
+  const z = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) * arcsec;
+  const theta = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) * arcsec;
+  const [a0, d0] = [ra * 15 * RADIANS + zeta, dec * RADIANS];
+  const x = Math.cos(theta) * Math.cos(d0) * Math.cos(a0) - Math.sin(theta) * Math.sin(d0);
+  const y = Math.cos(d0) * Math.sin(a0);
+  const w = Math.sin(theta) * Math.cos(d0) * Math.cos(a0) + Math.cos(theta) * Math.sin(d0);
+  return [turned((Math.atan2(y, x) + z) / RADIANS) / 15, Math.asin(Math.min(Math.max(w, -1), 1)) / RADIANS];
+}
+
+/**
+ * The moon: where it stands, as seen from the place (not from the middle of the Earth: from Riyadh it
+ * stands as much as a degree lower than that), how much of its face is lit (0 new, 1 full) and whether it
+ * is waxing. Its path round the Earth and the dozen largest pulls of the sun on it (after Paul Schlyter's
+ * "How to compute planetary positions"): good to a tenth of a degree or two, a fifth of its own width.
  */
 export function moonAt(date, lng, lat) {
-  const d = daysSince2000(date);
-  const anomaly = (134.963 + 13.064993 * d) * RADIANS;
-  const node = (93.272 + 13.22935 * d) * RADIANS;
-  const longitude = (218.316 + 13.176396 * d) * RADIANS + 6.289 * RADIANS * Math.sin(anomaly);
-  const latitude = 5.128 * RADIANS * Math.sin(node);
-  const tilt = (23.439 - 0.0000004 * d) * RADIANS;
-  const ra = Math.atan2(Math.sin(longitude) * Math.cos(tilt) - Math.tan(latitude) * Math.sin(tilt), Math.cos(longitude));
-  const dec = Math.asin(Math.sin(latitude) * Math.cos(tilt) + Math.cos(latitude) * Math.sin(tilt) * Math.sin(longitude));
-  // The sun's place along the same circle, for how far round from it the moon has come.
-  const sunAnomaly = (357.528 + 0.9856003 * d) * RADIANS;
-  const sun = (280.46 + 0.9856474 * d) * RADIANS + 1.915 * RADIANS * Math.sin(sunAnomaly) + 0.02 * RADIANS * Math.sin(2 * sunAnomaly);
-  const apart = Math.acos(Math.min(Math.max(Math.cos(latitude) * Math.cos(longitude - sun), -1), 1));
-  return { ...horizontal((ra / RADIANS / 15 + 24) % 24, dec / RADIANS, date, lng, lat), lit: (1 - Math.cos(apart)) / 2, waxing: Math.sin(longitude - sun) > 0 };
+  const d = daysSince2000(date) + 1.5; // (these paths are reckoned from the last midnight of 1999)
+  const deg = (x) => x * RADIANS;
+  const N = deg(turned(125.1228 - 0.0529538083 * d));
+  const i = deg(5.1454);
+  const w = deg(turned(318.0634 + 0.1643573223 * d));
+  const e = 0.0549;
+  const M = deg(turned(115.3654 + 13.0649929509 * d));
+  let E = M + e * Math.sin(M) * (1 + e * Math.cos(M));
+  for (let k = 0; k < 6; k += 1) E -= (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+  const [xv, yv] = [60.2666 * (Math.cos(E) - e), 60.2666 * Math.sqrt(1 - e * e) * Math.sin(E)];
+  const v = Math.atan2(yv, xv);
+  let far = Math.hypot(xv, yv); // in the Earth's radii
+  const [xh, yh, zh] = [far * (Math.cos(N) * Math.cos(v + w) - Math.sin(N) * Math.sin(v + w) * Math.cos(i)), far * (Math.sin(N) * Math.cos(v + w) + Math.cos(N) * Math.sin(v + w) * Math.cos(i)), far * Math.sin(v + w) * Math.sin(i)];
+  let longitude = Math.atan2(yh, xh);
+  let latitude = Math.atan2(zh, Math.hypot(xh, yh));
+  // The sun's pull: its own place, and the angles between the two.
+  const Ms = deg(turned(356.047 + 0.9856002585 * d));
+  const Ls = Ms + deg(282.9404 + 4.70935e-5 * d);
+  const Lm = M + w + N;
+  const D = Lm - Ls;
+  const F = Lm - N;
+  longitude += deg(-1.274 * Math.sin(M - 2 * D) + 0.658 * Math.sin(2 * D) - 0.186 * Math.sin(Ms) - 0.059 * Math.sin(2 * M - 2 * D) - 0.057 * Math.sin(M - 2 * D + Ms) + 0.053 * Math.sin(M + 2 * D) + 0.046 * Math.sin(2 * D - Ms) + 0.041 * Math.sin(M - Ms) - 0.035 * Math.sin(D) - 0.031 * Math.sin(M + Ms) - 0.015 * Math.sin(2 * F - 2 * D) + 0.011 * Math.sin(M - 4 * D));
+  latitude += deg(-0.173 * Math.sin(F - 2 * D) - 0.055 * Math.sin(M - F - 2 * D) - 0.046 * Math.sin(M + F - 2 * D) + 0.033 * Math.sin(F + 2 * D) + 0.017 * Math.sin(2 * M + F));
+  far += -0.58 * Math.cos(M - 2 * D) - 0.46 * Math.cos(2 * D);
+  // Against the sky's equator instead of the Earth's path.
+  const tilt = deg(23.4393 - 3.563e-7 * d);
+  const [x, y, z] = [Math.cos(latitude) * Math.cos(longitude), Math.cos(latitude) * Math.sin(longitude), Math.sin(latitude)];
+  let ra = Math.atan2(y * Math.cos(tilt) - z * Math.sin(tilt), x);
+  let dec = Math.asin(y * Math.sin(tilt) + z * Math.cos(tilt));
+  // As seen from the place, not from the middle of the Earth (it is close enough for that to show).
+  const sidereal = deg(turned(280.46061837 + 360.98564736629 * daysSince2000(date) + lng));
+  const hour = sidereal - ra;
+  const parallax = Math.asin(1 / far);
+  const ground = deg(lat - 0.1924 * Math.sin(2 * deg(lat)));
+  const rho = 0.99833 + 0.00167 * Math.cos(2 * deg(lat));
+  const g = Math.atan2(Math.tan(ground), Math.cos(hour));
+  ra -= (parallax * rho * Math.cos(ground) * Math.sin(hour)) / Math.cos(dec);
+  dec -= Math.abs(g) > 1e-9 ? (parallax * rho * Math.sin(ground) * Math.sin(g - dec)) / Math.sin(g) : parallax * rho * Math.sin(-dec) * Math.cos(hour);
+  // How far round from the sun it has come: so much of its face is lit.
+  const sunLongitude = Ls + deg(1.915 * Math.sin(Ms) + 0.02 * Math.sin(2 * Ms));
+  const apart = Math.acos(Math.min(Math.max(Math.cos(latitude) * Math.cos(longitude - sunLongitude), -1), 1));
+  return { ...horizontal(turned(ra / RADIANS) / 15, dec / RADIANS, date, lng, lat), lit: (1 - Math.cos(apart)) / 2, waxing: Math.sin(longitude - sunLongitude) > 0 };
 }
 
 /** How many stars are known. */
@@ -93,13 +142,34 @@ function starColour(bv) {
   return STAR_COLOURS[STAR_COLOURS.length - 1][1];
 }
 
-/** The stars that are up: [{ azimuth, altitude, magnitude (less is brighter), colour }]. */
+// The brightest stars by the names they are known by, many of them Arabic: each with its place in the
+// catalogue ([hours, degrees], as of 2000), by which it is found there.
+const STAR_NAMES = [
+  ['Sirius', 6.752, -16.72], ['Canopus', 6.399, -52.7], ['Arcturus', 14.261, 19.18], ['Rigil Kentaurus', 14.66, -60.83], ['Vega', 18.616, 38.78],
+  ['Capella', 5.278, 46], ['Rigel', 5.242, -8.2], ['Procyon', 7.655, 5.22], ['Achernar', 1.629, -57.24], ['Betelgeuse', 5.92, 7.41],
+  ['Hadar', 14.064, -60.37], ['Altair', 19.846, 8.87], ['Aldebaran', 4.599, 16.51], ['Spica', 13.42, -11.16], ['Antares', 16.49, -26.43],
+  ['Pollux', 7.755, 28.03], ['Fomalhaut', 22.961, -29.62], ['Mimosa', 12.795, -59.69], ['Deneb', 20.691, 45.28], ['Regulus', 10.14, 11.97],
+  ['Adhara', 6.977, -28.97], ['Castor', 7.577, 31.89], ['Gacrux', 12.519, -57.11], ['Shaula', 17.56, -37.1], ['Bellatrix', 5.419, 6.35],
+  ['Elnath', 5.438, 28.61], ['Alnilam', 5.604, -1.2], ['Alnair', 22.137, -46.96], ['Alnitak', 5.679, -1.94], ['Regor', 8.159, -47.34],
+  ['Alioth', 12.9, 55.96], ['Mirfak', 3.405, 49.86], ['Kaus Australis', 18.403, -34.38], ['Dubhe', 11.062, 61.75], ['Wezen', 7.14, -26.39],
+  ['Alkaid', 13.792, 49.31], ['Avior', 8.375, -59.51], ['Sargas', 17.622, -43], ['Menkalinan', 5.992, 44.95], ['Alhena', 6.629, 16.4],
+  ['Alsephina', 8.745, -54.71], ['Peacock', 20.427, -56.74], ['Polaris', 2.53, 89.26], ['Mirzam', 6.378, -17.96], ['Alphard', 9.46, -8.66],
+  ['Hamal', 2.12, 23.46], ['Algieba', 10.333, 19.84], ['Diphda', 0.726, -17.99], ['Nunki', 18.921, -26.3], ['Menkent', 14.111, -36.37],
+  ['Alpheratz', 0.14, 29.09], ['Mirach', 1.162, 35.62], ['Saiph', 5.796, -9.67], ['Kochab', 14.845, 74.16], ['Rasalhague', 17.582, 12.56],
+  ['Algol', 3.136, 40.96], ['Almach', 2.065, 42.33], ['Denebola', 11.818, 14.57],
+];
+/** The name of each of those stars, by its place in the catalogue. */
+const NAMED = new Map(STAR_NAMES.map(([name, ra, dec]) => [STARS.findIndex(([r, d]) => Math.abs(r - ra) < 0.002 && Math.abs(d - dec) < 0.02), name]));
+/** How many of the stars have a name the app knows them by. */
+export const NAMED_STARS = [...NAMED.keys()].filter((index) => index >= 0).length;
+
+/** The stars that are up: [{ azimuth, altitude, magnitude (less is brighter), colour, name (for the brightest) }]. */
 export function starsAt(date, lng, lat) {
   const up = [];
-  for (const [ra, dec, magnitude, bv] of STARS) {
-    const place = horizontal(ra, dec, date, lng, lat);
-    if (place.altitude > 0.5) up.push({ ...place, magnitude, colour: starColour(bv) });
-  }
+  STARS.forEach(([ra, dec, magnitude, bv], index) => {
+    const place = horizontal(...precessed(ra, dec, date), date, lng, lat);
+    if (place.altitude > 0.5) up.push({ ...place, magnitude, colour: starColour(bv), ...(NAMED.has(index) ? { name: NAMED.get(index) } : {}) });
+  });
   return up;
 }
 
@@ -235,6 +305,35 @@ export function cloudLayersOf(weather) {
 }
 
 /**
+ * How much of the sky each layer of cloud covers at a place, from a field of readings round it (see
+ * cloudField() in lib.js): { low, mid, high }, each 0 to 1, read between the four readings round the
+ * place; beyond the edge of the field, as at its edge.
+ */
+export function fieldCover(field, lng, lat) {
+  const { lats, lngs } = field;
+  const along = (lines, value) => {
+    if (lines.length < 2 || value <= lines[0]) return [0, 0, 0];
+    if (value >= lines[lines.length - 1]) return [lines.length - 1, lines.length - 1, 0];
+    let k = 0;
+    while (value > lines[k + 1]) k += 1;
+    return [k, k + 1, (value - lines[k]) / (lines[k + 1] - lines[k])];
+  };
+  const [r0, r1, fr] = along(lats, lat);
+  const [c0, c1, fc] = along(lngs, lng);
+  const width = lngs.length;
+  const read = (values) => {
+    const at = (r, c) => values[r * width + c];
+    const south = at(r0, c0) + (at(r0, c1) - at(r0, c0)) * fc;
+    const north = at(r1, c0) + (at(r1, c1) - at(r1, c0)) * fc;
+    return clamp01(south + (north - south) * fr);
+  };
+  return { low: read(field.low), mid: read(field.mid), high: read(field.high) };
+}
+
+/** Of a { low, mid, high }, the share of a layer of cloud (0 high, 1 mid, 2 low, as in CLOUD_LAYERS). */
+export const layerShare = (cover, layer) => clamp01([cover.high, cover.mid, cover.low][layer] ?? 0);
+
+/**
  * How much of the sun shows between the clouds, 1 (a clear sky) to nearly 0
  * (a covered one): low cloud hides it, middle cloud dims it, high cloud
  * only veils it. cover: { low, mid, high }.
@@ -243,10 +342,22 @@ export function sunBetween(cover = {}) {
   return (1 - 0.92 * clamp01(cover.low ?? 0)) * (1 - 0.7 * clamp01(cover.mid ?? 0)) * (1 - 0.3 * clamp01(cover.high ?? 0));
 }
 
-/** How far a layer of cloud has drifted by a time, in metres [east, north]: with the wind, the higher the faster. */
-export function cloudDrift(layer, { windFrom = 315, windSpeed = 4 } = {}, seconds = 0) {
-  const to = (windFrom + 180) * RADIANS;
-  const far = windSpeed * CLOUD_LAYERS[layer].drift * seconds;
+/**
+ * Where the wind that carries a layer of cloud blows from, and how fast: { from (degrees), speed (m/s) }.
+ * Where the wind at the layer's own height is known (aloft: [{ from, speed }] for the high, middle and low
+ * layers), that; otherwise the wind on the ground, the faster the higher the layer.
+ */
+export function layerWind(layer, { windFrom = 315, windSpeed = 4, aloft = null } = {}) {
+  const own = aloft?.[layer];
+  if (own && Number.isFinite(own.from) && Number.isFinite(own.speed)) return { from: own.from, speed: own.speed };
+  return { from: windFrom, speed: windSpeed * CLOUD_LAYERS[layer].drift };
+}
+
+/** How far a layer of cloud has drifted by a time, in metres [east, north]: with the wind at its height. */
+export function cloudDrift(layer, wind = {}, seconds = 0) {
+  const { from, speed } = layerWind(layer, wind);
+  const to = (from + 180) * RADIANS;
+  const far = speed * seconds;
   return [Math.sin(to) * far, Math.cos(to) * far];
 }
 
@@ -255,39 +366,53 @@ export function cloudDrift(layer, { windFrom = 315, windSpeed = 4 } = {}, second
  * does not move: the clouds are fixed to the air they drift in, not to the
  * eye). low, mid, high: how much of the sky each layer covers, 0 to 1, as
  * the weather has it. windFrom, windSpeed: where the wind comes from in
- * degrees, and how fast in m/s. seconds: the time.
+ * degrees, and how fast in m/s; aloft: the winds at the layers' own heights
+ * (see layerWind). seconds: the time. coverAt(layer, x, y): where the
+ * weather is known place by place, how much of the sky the layer covers at
+ * a place (in the same metres as at): each cloud is then laid as the
+ * weather is where it is, and low, mid and high only say how much there is
+ * at most.
  *
  * Returns [{ layer (0 high, 1 mid, 2 low), x, y, z (its base), radius,
  * turn, seed, cover }]. The same place, weather and time always give the
  * same clouds; and a moment later each has drifted a little.
  */
-export function cloudsNear(at, { low = 0, mid = 0, high = 0, windFrom = 315, windSpeed = 4, seconds = 0 } = {}) {
+export function cloudsNear(at, { low = 0, mid = 0, high = 0, windFrom = 315, windSpeed = 4, aloft = null, seconds = 0, coverAt = null } = {}) {
   const clouds = [];
   const cover = [clamp01(high), clamp01(mid), clamp01(low)];
   CLOUD_LAYERS.forEach((layer, index) => {
-    const share = cover[index];
-    if (!(share > 0.02)) return;
-    if (cover.slice(index + 1).some((below) => below >= CLOUD_HIDES_ALL)) return;
-    // How thick the clouds lie for that much of the sky to be covered, where they overlap by chance; a
-    // sky with little cloud has small clouds, a sky with much has wide ones that run together.
-    const thick = -Math.log(1 - Math.min(share, CLOUD_HIDES_ALL));
-    let area = layer.cell * layer.cell * (0.25 + 0.9 * share);
-    let odds = (thick * layer.cell * layer.cell) / area;
-    if (odds > 1) {
-      area *= odds;
-      odds = 1;
-    }
-    const radius = Math.sqrt((area * CLOUD_SOFT) / Math.PI);
+    if (!(cover[index] > 0.02)) return;
+    // (A layer that covers the whole sky hides those above it: everywhere, or, where the weather is known
+    // place by place, wherever it does.)
+    if (!coverAt && cover.slice(index + 1).some((below) => below >= CLOUD_HIDES_ALL)) return;
+    // How thick the clouds lie for so much of the sky to be covered, where they overlap by chance; a sky
+    // with little cloud has small clouds, a sky with much has wide ones that run together.
+    const laying = (share) => {
+      const thick = -Math.log(1 - Math.min(share, CLOUD_HIDES_ALL));
+      let area = layer.cell * layer.cell * (0.25 + 0.9 * share);
+      let odds = (thick * layer.cell * layer.cell) / area;
+      if (odds > 1) {
+        area *= odds;
+        odds = 1;
+      }
+      return { odds, radius: Math.sqrt((area * CLOUD_SOFT) / Math.PI) };
+    };
+    const even = laying(cover[index]);
     // How far the whole field has drifted; the squares are counted in the field's own measure.
-    const moved = cloudDrift(index, { windFrom, windSpeed }, seconds);
+    const moved = cloudDrift(index, { windFrom, windSpeed, aloft }, seconds);
     const middle = [(at[0] - moved[0]) / layer.cell, (at[1] - moved[1]) / layer.cell];
     const span = Math.ceil(layer.reach / layer.cell);
     for (let i = Math.floor(middle[0]) - span; i <= Math.floor(middle[0]) + span; i += 1) {
       for (let j = Math.floor(middle[1]) - span; j <= Math.floor(middle[1]) + span; j += 1) {
-        if (chance(i, j, 101 + index) >= odds) continue;
         const x = (i + 0.2 + chance(i, j, 11 + index) * 0.6) * layer.cell + moved[0];
         const y = (j + 0.2 + chance(i, j, 13 + index) * 0.6) * layer.cell + moved[1];
         if (Math.hypot(x - at[0], y - at[1]) > layer.reach) continue;
+        // (Where the weather is known place by place, as much cloud is laid here as there is here.)
+        const share = coverAt ? Math.min(clamp01(coverAt(index, x, y)), cover[index]) : cover[index];
+        if (!(share > 0.02)) continue;
+        if (coverAt && [1, 2].some((below) => below > index && coverAt(below, x, y) >= CLOUD_HIDES_ALL)) continue;
+        const { odds, radius } = coverAt ? laying(share) : even;
+        if (chance(i, j, 101 + index) >= odds) continue;
         clouds.push({
           layer: index,
           x,
@@ -710,17 +835,22 @@ export function drawHeavens({ wash, glow, disc, face }, { eye, sun = null, night
  * a faint star it is drawn, 0 to 1), halo (how much of a halo it has, 0 to
  * 1), flicker (how much it twinkles), pace, planet (its name, or null) }].
  */
-export function starPoints({ eye, night = 0, stars = [], planets = [] } = {}) {
+export function starPoints({ eye, night = 0, stars = [], planets = [], moon = null } = {}) {
   const dark = clamp01(night);
-  // What is as bright as this shows already; what is fainter by a magnitude does not yet.
-  const faintest = -5.5 + 10 * smooth(0.2, 0.95, dark);
+  // How faint a star still shows: none by day, more and more as it darkens, down to the fourth magnitude
+  // or a little past it on a moonless night in the city (its own light hides the rest). The moon hides
+  // more: a full moon high in the sky puts out all but the brighter stars, as it does over Riyadh.
+  const moonlight = moon ? clamp01(moon.lit ?? 0) * smooth(-2, 25, moon.altitude ?? -90) : 0;
+  const faintest = -5.5 + 9.8 * smooth(0.2, 0.95, dark) - 1.3 * moonlight;
   const points = [];
   const put = (body, planet) => {
     if (!(body.altitude > 0.5)) return;
     const shown = clamp01((faintest - body.magnitude) / 1.2);
     // (Low in the sky the dust and the city's glow put all but the brightest out.)
     const through = clamp01((body.altitude - 1) / 9) ** 0.7;
-    const strength = clamp01(1 - (body.magnitude + 1.5) / 6.2) * 0.9 + 0.1;
+    // How bright it is drawn, and how wide: the brighter the stronger and the wider, but every star that
+    // shows is at least a clear dot on a phone's screen, not a speck one cannot see.
+    const strength = 0.32 + 0.68 * clamp01((3.6 - body.magnitude) / 5.1);
     if (!(shown * through > 0.02)) return;
     const way = directionOf(body.azimuth, body.altitude);
     points.push({
@@ -729,18 +859,39 @@ export function starPoints({ eye, night = 0, stars = [], planets = [] } = {}) {
       z: eye[2] + way[2] * SKY_RADIUS,
       colour: body.colour ?? [226, 232, 255],
       strength: strength * shown * through,
-      wide: clamp01((1.2 - body.magnitude) / 5.6) * 0.44,
+      wide: 0.08 + 0.42 * clamp01((2.6 - body.magnitude) / 4.1),
       // (Round what outshines every star there is a soft halo: Venus, Jupiter.)
       halo: clamp01((-1.6 - body.magnitude) / 2.6),
       // A star twinkles, the more the lower it stands; a planet shines steadily.
       flicker: planet ? 0.06 : 0.16 + 0.34 * clamp01(1 - body.altitude / 40),
       pace: 3 + 5 * chance(Math.round(body.azimuth * 50), Math.round(body.altitude * 50), 71),
       planet: planet ? body.name : null,
+      name: body.name ?? null,
+      magnitude: body.magnitude,
+      azimuth: body.azimuth,
+      altitude: body.altitude,
     });
   };
   for (const planet of planets) put(planet, true);
   for (const star of stars) put(star, false);
   return points;
+}
+
+/** The compass point a direction lies towards: 'north', 'north-east' and so on. */
+export function compassPoint(azimuth) {
+  return ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][Math.round(turned(azimuth) / 45) % 8];
+}
+
+/**
+ * What of the night sky is to be seen, in words, from the points starPoints() gave: { stars (how many
+ * show), brightest: ['Sirius (south-east)', …] (the brightest named stars that show, up to three),
+ * planets: ['Jupiter (east)', …] }.
+ */
+export function skyTonight(points = []) {
+  const stars = points.filter((point) => !point.planet);
+  const named = stars.filter((point) => point.name && point.strength > 0.15).sort((a, b) => a.magnitude - b.magnitude);
+  const words = (point) => `${point.name} (${compassPoint(point.azimuth)})`;
+  return { stars: stars.length, brightest: named.slice(0, 3).map(words), planets: points.filter((point) => point.planet).sort((a, b) => a.magnitude - b.magnitude).map(words) };
 }
 
 /** Draw those points into a mesh of lights, as they are at a moment: each twinkling at its own pace. Returns how many. */
@@ -779,11 +930,14 @@ const TRAIL_FROM_METERS = 8000; // how high it must fly to leave one
  * Flights.at() gives them. night: 0 by day to 1 by night. sun, moon: for the
  * light on the trails. cover: { low, mid, high }: how much of the sky each
  * layer of cloud covers: an aircraft over a covered sky is not seen through
- * it. seconds: the time, for the lamps that flash.
+ * it. seconds: the time, for the lamps that flash. shown: an array, if wanted,
+ * into which each one drawn is put: { id, kind, callsign, phase, alt, at
+ * (where it is, in the scene's metres), seen (how much of it shows through
+ * the cloud, 0 to 1), far (metres from the eye) }.
  *
  * Returns how many were drawn.
  */
-export function drawAircraft(mesh, lights, { eye, origin, planes = [], night = 0, sun = null, moon = null, cover = {}, seconds = 0 } = {}) {
+export function drawAircraft(mesh, lights, { eye, origin, planes = [], night = 0, sun = null, moon = null, cover = {}, seconds = 0, shown = null } = {}) {
   mesh.clear();
   lights.clear();
   if (planes.length === 0) return 0;
@@ -870,6 +1024,7 @@ export function drawAircraft(mesh, lights, { eye, origin, planes = [], night = 0
     }
     face(part(0, -0.33, h), part(0, -0.43, 0.2), part(0, -0.5, 0.2), part(0, -0.47, h * 0.6), tint(tail, 1));
     drawn += 1;
+    shown?.push({ id: plane.id, kind: plane.kind, callsign: plane.callsign, phase: plane.phase, alt: plane.alt, at, seen, far });
 
     // Its landing lamps, coming in or going out below three kilometres: lit by day too, and the brightest
     // thing in the sky when they point at the eye.

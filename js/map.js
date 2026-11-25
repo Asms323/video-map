@@ -60,7 +60,7 @@ import { CasterMesh, groundCasters, shadowCasters, shadowFall, shadowMapSize } f
 import { Flights } from './flights.js';
 import { drawSignalLamps, drawSignals, signalsOf } from './signals.js';
 import { Walkers, drawWalkers } from './people.js';
-import { CLOUD_LAYERS, cloudDrift, cloudLayersOf, cloudsNear, drawAircraft, drawClouds, drawHeavens, drawStars, moonAt, planetsAt, starPoints, starsAt, sunBetween } from './sky.js';
+import { CLOUD_LAYERS, cloudDrift, cloudLayersOf, cloudsNear, drawAircraft, drawClouds, drawHeavens, drawStars, fieldCover, layerShare, layerWind, moonAt, planetsAt, skyTonight, starPoints, starsAt, sunBetween } from './sky.js';
 import { PARAPET_METERS, PARAPET_THICK_METERS, WallMesh, colourOf, facadeOf, footShade, parapetTops, tilePieces, wallTone, wallsOf } from './walls.js';
 
 export const MAP_TYPES = ['city', 'streets', 'night', 'satellite', 'detailed'];
@@ -130,7 +130,11 @@ const SKY_EAST_METERS = Math.cos((24.7 * Math.PI) / 180) * 111320; // a degree e
 // The parts of the sky, in the order they are drawn in: the furthest first.
 const SKY_CLOUD_PARTS = ['skyhigh', 'skymid', 'skylow'];
 const SKY_GRAIN_WRAP_METERS = 262144;
+const CLOUD_FIELD_KEPT_MS = 2 * 60 * 60 * 1000; // a field of cloud readings is used for so long after the moment it is for, and no longer
 const FLIGHTS_ASK_MS = 15000; // how often the feed of live aircraft is given the chance to be asked
+const PLANE_TAGS_MOST = 8; // the live aircraft named on screen: the nearest so many
+const PLANE_TAG_SEEN_FROM = 0.2; // and only one that shows through the cloud at least so much
+const PLANE_TAG_ROOM_PX = 100; // how far down the picture an aircraft must be for its name to go above it (clear of the bar at the top)
 const PLACES_GONE_PITCH = 82; // tilted this far the places' markers are put away; four degrees short of it they are all there
 
 // Shadows are worked out for what is on screen and a margin around it, and
@@ -532,6 +536,7 @@ export class MapView {
     this.skyKept = null; // what of the sky is set out only now and then
     this.skyOrdered = false; // whether the scene has had the parts of the sky, in their order
     this.weather = null; // what is known of the weather: how much cloud, the wind
+    this.cloudField = null; // the clouds as the weather service has them place by place round the city (see cloudField() in lib.js)
     this.sunlight = 1; // how much of the sun gets through the clouds
     this.flights = new Flights(); // the aircraft: live where a feed has them, the airport's typical traffic otherwise
     this.flightsAskedAt = 0;
@@ -556,6 +561,11 @@ export class MapView {
     this.spillMade = null;
     this.groundMade = null; // where the buildings stand, as last worked out (see builtGround)
     this.scene = new SceneLayer(LIFE_LAYER, { onFrame: () => this.moveLife() });
+    // The live aircraft by name, laid over the picture where each one is: placed as the picture is drawn.
+    this.planeTags = new Map(); // by aircraft: its name on screen
+    this.planeTagsWanted = []; // those to be named just now: { id, name, height, at (in the scene's metres), seen }
+    this.unit = 'kmh'; // the measure heights are given in: metres, or with 'mph' feet
+    this.scene.onView = (matrix) => this.placePlaneTags(matrix);
     // For anyone looking at the scene from outside (the tests do): what it holds.
     this.scene.counts = () => ({ life: this.lifeCounts(), photo: this.photoCounts(), buildings: this.buildingCounts(), detail: this.detailCounts(), night: this.nightCounts(), busy: { ...this.busy } });
     // How often each piece of work has been done, for anyone wondering what keeps the map from coming to rest.
@@ -581,6 +591,11 @@ export class MapView {
     });
     const map = this.map;
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+
+    this.planeTagLayer = document.createElement('div');
+    this.planeTagLayer.className = 'plane-tags';
+    this.planeTagLayer.setAttribute('aria-hidden', 'true');
+    map.getCanvasContainer().appendChild(this.planeTagLayer);
 
     this.meElement = document.createElement('button');
     this.meElement.type = 'button';
@@ -770,6 +785,76 @@ export class MapView {
   }
 
   /** Show the photo of the Satellite look as sharp as the screen can show it (which takes more of it to fetch), or not. */
+  /** The measure heights are given in: 'kmh' for metres, 'mph' for feet. */
+  setUnit(unit) {
+    this.unit = unit === 'mph' ? 'mph' : 'kmh';
+  }
+
+  /** A height above the ground, in words: to the nearest hundred metres or feet. */
+  heightText(metres) {
+    if (this.unit === 'mph') return `${(Math.round((metres * 3.28084) / 100) * 100).toLocaleString('en-US')} ft`;
+    return `${(Math.round(metres / 100) * 100).toLocaleString('en-US')} m`;
+  }
+
+  /**
+   * Put the names of the live aircraft over the picture, each just above where it is drawn, by the
+   * measure the picture is drawn with (matrix: the scene's metres to WebGL's clip space).
+   */
+  placePlaneTags(matrix) {
+    const layer = this.planeTagLayer;
+    if (!layer || (this.planeTagsWanted.length === 0 && this.planeTags.size === 0)) return;
+    const m = matrix;
+    const canvas = this.map.getCanvas();
+    const [width, height] = [canvas.clientWidth, canvas.clientHeight];
+    const placed = new Set();
+    for (const tag of this.planeTagsWanted) {
+      const [x, y, z] = tag.at;
+      const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+      if (!(w > 1e-6)) continue; // (behind the eye)
+      const across = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
+      const up = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+      if (!(Math.abs(across) < 0.98 && Math.abs(up) < 0.98)) continue; // (only one well inside the picture)
+      let element = this.planeTags.get(tag.id);
+      if (!element) {
+        element = document.createElement('div');
+        element.className = 'plane-tag';
+        layer.appendChild(element);
+        this.planeTags.set(tag.id, element);
+      }
+      const words = `${tag.name}\n${tag.height}`;
+      if (element.dataset.words !== words) {
+        // (The name is the feed's, and is set as text, never as markup.)
+        const name = document.createElement('b');
+        name.textContent = tag.name;
+        const high = document.createElement('span');
+        high.textContent = tag.height;
+        const text = document.createElement('div');
+        text.className = 'plane-tag-text';
+        text.append(name, high);
+        element.replaceChildren(text);
+        element.dataset.words = words;
+      }
+      const [left, top] = [((across + 1) / 2) * width, ((1 - up) / 2) * height];
+      element.style.transform = `translate(${left.toFixed(1)}px, ${top.toFixed(1)}px)`;
+      // (Near the top of the picture the name goes below the aircraft, or it would be cut off.)
+      element.classList.toggle('below', top < PLANE_TAG_ROOM_PX);
+      element.style.opacity = String(Math.round(Math.min(0.35 + tag.seen, 1) * 20) / 20);
+      placed.add(tag.id);
+    }
+    for (const [id, element] of this.planeTags) {
+      if (placed.has(id)) continue;
+      element.remove();
+      this.planeTags.delete(id);
+    }
+  }
+
+  /** Take the names of the aircraft off the picture. */
+  clearPlaneTags() {
+    this.planeTagsWanted = [];
+    for (const element of this.planeTags.values()) element.remove();
+    this.planeTags.clear();
+  }
+
   setSharp(on) {
     if (this.sharpOn === Boolean(on)) return;
     this.sharpOn = Boolean(on);
@@ -779,6 +864,7 @@ export class MapView {
   /** Switch to one of MAP_TYPES. Resolves true once the new style is on its way to the screen. */
   async setType(type) {
     const request = ++this.styleRequest;
+    this.clearPlaneTags();
     let base;
     let buildings = null;
     let cityBase = null;
@@ -2504,10 +2590,39 @@ export class MapView {
    */
   setWeather(weather) {
     this.weather = weather ?? null;
-    // Under cloud the sun throws a weaker shadow, on the ground and on every wall and roof, and the sky
-    // is greyer. (With a few clouds about the sun is out most of the time: little changes until the sky
-    // is mostly covered.)
-    const between = Math.min(Math.max((sunBetween(cloudLayersOf(this.weather)) - 0.1) / 0.65, 0), 1);
+    this.lightByCloud();
+  }
+
+  /**
+   * The clouds as the weather service has them place by place round the city (see cloudField() in
+   * lib.js), or null: the clouds are then laid where they really are, and each layer drifts on the wind
+   * at its own height.
+   */
+  setCloudField(field) {
+    this.cloudField = field ?? null;
+    this.lightByCloud();
+  }
+
+  /** The field of cloud readings, while it is fresh enough to go by; otherwise null. */
+  liveCloudField(now = Date.now()) {
+    const field = this.cloudField;
+    return field && Math.abs(now - field.at) < CLOUD_FIELD_KEPT_MS ? field : null;
+  }
+
+  /** How much of the sky each layer of cloud covers over a place: from the field of readings, or else from the weather there. */
+  coverOver(place) {
+    const field = this.liveCloudField();
+    return field && place ? fieldCover(field, place.lng, place.lat) : cloudLayersOf(this.weather);
+  }
+
+  /**
+   * Under cloud the sun throws a weaker shadow, on the ground and on every wall and roof, and the sky is
+   * greyer. (With a few clouds about the sun is out most of the time: little changes until the sky is
+   * mostly covered.)
+   */
+  lightByCloud() {
+    const centre = this.map?.getCenter?.();
+    const between = Math.min(Math.max((sunBetween(this.coverOver(centre ? { lng: centre.lng, lat: centre.lat } : null)) - 0.1) / 0.65, 0), 1);
     this.sunlight = 0.1 + 0.9 * between * between * (3 - 2 * between);
     this.scene.sunlight = this.sunlight;
     this.applyNight(this.night);
@@ -2537,6 +2652,7 @@ export class MapView {
   moveSky() {
     const origin = this.scene.origin;
     if (this.type !== 'city' || !origin || !this.sun || this.map.getPitch() < SKY_FROM_PITCH || this.map.getZoom() < LIFE_MIN_ZOOM) {
+      if (this.planeTags.size > 0 || this.planeTagsWanted.length > 0) this.clearPlaneTags();
       if (this.skyMade) {
         for (const [name, mesh, how] of this.skyParts()) {
           mesh.clear();
@@ -2559,13 +2675,17 @@ export class MapView {
     const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
     const place = { lng: origin.lng + eye[0] / squeeze, lat: origin.lat + eye[1] / METERS_PER_DEGREE };
     const weather = this.weather ?? {};
-    const wind = { windFrom: weather.windFrom ?? 315, windSpeed: weather.windSpeed ?? 4 };
-    const cover = cloudLayersOf(this.weather);
+    // The clouds round the eye: place by place where the weather service tells them so, and each layer
+    // drifting on the wind at its own height; else as the weather here says, the same everywhere.
+    const field = this.liveCloudField(now);
+    const wind = { windFrom: weather.windFrom ?? 315, windSpeed: weather.windSpeed ?? 4, aloft: field?.aloft ?? null };
+    const cover = this.coverOver(place);
     let kept = this.skyKept;
     const stale =
       !kept ||
       kept.origin !== origin ||
       kept.weather !== this.weather ||
+      kept.field !== field ||
       Math.abs(now - kept.at) > SKY_SLOW_MS ||
       Math.abs(this.night - kept.night) > SKY_NIGHT_STEP ||
       Math.hypot(eye[0] - kept.eye[0], eye[1] - kept.eye[1], eye[2] - kept.eye[2]) > SKY_MOVED_METERS;
@@ -2577,17 +2697,21 @@ export class MapView {
       const heavens = drawHeavens({ wash: this.skyWashMesh, glow: this.skyGlowMesh, disc: this.skySunMesh, face: this.skyMoonMesh }, { eye, sun: this.sun, night: this.night, moon, cover });
       // (No star shows by day: none is looked up.)
       const dusk = this.night > 0.2;
-      const points = starPoints({ eye, night: this.night, stars: dusk ? starsAt(date, place.lng, place.lat) : [], planets: dusk ? planetsAt(date, place.lng, place.lat) : [] });
+      const points = starPoints({ eye, night: this.night, stars: dusk ? starsAt(date, place.lng, place.lat) : [], planets: dusk ? planetsAt(date, place.lng, place.lat) : [], moon });
       // The clouds are fixed to the air they drift in, measured from a place that never moves. Where they
       // are is worked out now; they are drawn one layer with each picture that follows, so that no one
       // picture has to wait for all three.
       const [east, north] = [origin.lng * SKY_EAST_METERS, origin.lat * METERS_PER_DEGREE];
-      const clouds = cloudsNear([place.lng * SKY_EAST_METERS, place.lat * METERS_PER_DEGREE], { ...cover, ...wind, seconds }).map((cloud) => ({ ...cloud, x: cloud.x - east, y: cloud.y - north }));
+      // (With a field, as much of each layer as there is anywhere in it; each cloud is then laid as the field has it where the cloud is.)
+      const most = field ? { high: Math.max(...field.high), mid: Math.max(...field.mid), low: Math.max(...field.low) } : cover;
+      const coverAt = field ? (layer, x, y) => layerShare(fieldCover(field, x / SKY_EAST_METERS, y / METERS_PER_DEGREE), layer) : null;
+      const clouds = cloudsNear([place.lng * SKY_EAST_METERS, place.lat * METERS_PER_DEGREE], { ...most, ...wind, seconds, coverAt }).map((cloud) => ({ ...cloud, x: cloud.x - east, y: cloud.y - north }));
       for (const name of ['skywash', 'skyglow', 'skymoon', 'skysun']) this.scene.set(name, ...parts.get(name));
       kept = {
         at: now,
         origin,
         weather: this.weather,
+        field,
         night: this.night,
         eye: [eye[0], eye[1], eye[2]],
         moon,
@@ -2607,10 +2731,12 @@ export class MapView {
       const index = kept.clouds.due.shift();
       const drawn = kept.clouds;
       const layer = CLOUD_LAYERS[index];
-      kept.laid[index] = drawClouds(this.skyCloudMeshes, { only: index, eye: kept.eye, sun: this.sun, night: kept.night, horizon: skyColours(kept.night, this.sunlight).horizon, moon: kept.moon, clouds: drawn.list, visibility: weather.visibility, windFrom: drawn.wind.windFrom });
+      // (High cloud is combed out along the wind at its own height.)
+      const along = layerWind(index, drawn.wind).from;
+      kept.laid[index] = drawClouds(this.skyCloudMeshes, { only: index, eye: kept.eye, sun: this.sun, night: kept.night, horizon: skyColours(kept.night, this.sunlight).horizon, moon: kept.moon, clouds: drawn.list, visibility: weather.visibility, windFrom: along });
       // The layer's grain is fixed to the layer itself: measured from a spot that drifts with it. (Kept
       // within a few hundred kilometres, for the sake of the numbers: once in many hours the grain changes.)
-      const blowing = ((drawn.wind.windFrom + 180) * Math.PI) / 180;
+      const blowing = ((along + 180) * Math.PI) / 180;
       const wrapped = (metres) => ((metres % SKY_GRAIN_WRAP_METERS) + SKY_GRAIN_WRAP_METERS) % SKY_GRAIN_WRAP_METERS;
       const drifted = cloudDrift(index, drawn.wind, drawn.seconds);
       const [mesh, how] = parts.get(SKY_CLOUD_PARTS[index]);
@@ -2641,34 +2767,57 @@ export class MapView {
       if (Math.abs(now - this.flightsAskedAt) > FLIGHTS_ASK_MS && !document.hidden) {
         this.flightsAskedAt = now;
         aircraftOverRiyadh().then((found) => {
-          if (found) this.flights.report(found.planes, found.seconds, found.source);
+          if (found) this.flights.report(found.planes, found.seconds, found.source, { now: Date.now() / 1000 });
         });
       }
       flying = this.flights.at(seconds, { windFrom: this.weather?.windFrom });
     }
-    const planes = drawAircraft(this.skyPlaneMesh, this.skyPlaneLampMesh, { eye, origin, planes: flying.planes, night: this.night, sun: this.sun, moon: kept.moon, cover, seconds });
+    const shown = [];
+    const planes = drawAircraft(this.skyPlaneMesh, this.skyPlaneLampMesh, { eye, origin, planes: flying.planes, night: this.night, sun: this.sun, moon: kept.moon, cover, seconds, shown });
     if (planes > 0 || this.skyMade?.planes !== 0) {
       this.scene.set('skyplanes', ...parts.get('skyplanes'));
       this.scene.set('skyplanelamps', ...parts.get('skyplanelamps'));
     }
+    // The live ones by name, the nearest first: each where it is drawn this moment. (The airport's typical
+    // traffic has no name: it is not any flight in particular.)
+    this.planeTagsWanted = shown
+      .filter((one) => one.kind === 'live' && one.callsign && one.seen >= PLANE_TAG_SEEN_FROM)
+      .sort((a, b) => a.far - b.far)
+      .slice(0, PLANE_TAGS_MOST)
+      .map((one) => ({ id: one.id || one.callsign, name: one.callsign, height: this.heightText(one.alt), at: one.at, seen: one.seen }));
+    // And every live one, for anyone who asks: how far off, how high, and climbing or coming down.
+    const named = flying.planes
+      .filter((plane) => plane.kind === 'live')
+      .map((plane) => ({ callsign: plane.callsign, alt: plane.alt, climb: plane.climb, far: Math.hypot((plane.lng - place.lng) * squeeze, (plane.lat - place.lat) * METERS_PER_DEGREE) }))
+      .sort((a, b) => a.far - b.far);
     this.skyMade = {
       clouds: kept.laid.reduce((sum, laid) => sum + (laid?.clouds ?? 0), 0),
       patches: kept.laid.reduce((sum, laid) => sum + (laid?.patches ?? 0), 0),
       planes,
       stars: kept.points.length,
       planets: kept.points.filter((point) => point.planet).map((point) => point.planet),
+      // (In words: how many stars show, the brightest by name, and the planets: all where they are this minute.)
+      tonight: skyTonight(kept.points),
+      // (Where the clouds come from: readings place by place, the moment they are for and how many; or the weather here.)
+      field: field ? { at: field.at, readings: field.lats.length * field.lngs.length, aloft: Boolean(field.aloft) } : null,
       sun: kept.heavens.sun,
       moon: kept.heavens.moon,
       flights: flying.kind,
       source: flying.source,
       aloft: flying.planes.length,
+      live: flying.live ?? 0,
+      typical: flying.typical ?? 0,
+      named,
+      tagged: this.planeTagsWanted.length,
       cover,
     };
   }
 
   /**
    * What is in the sky right now: { clouds, patches, planes, stars, planets, sun, moon, flights: 'live' |
-   * 'typical' | null, source, aloft, cover: { low, mid, high } }, or null while no sky shows.
+   * 'typical' | null, source, aloft (how many aircraft in all), live and typical (how many of each), named
+   * (the live ones: { callsign, alt, climb, far }, the nearest first), tagged (how many are named on
+   * screen), cover: { low, mid, high } }, or null while no sky shows.
    */
   skyCounts() {
     return this.skyMade;

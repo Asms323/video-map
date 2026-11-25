@@ -22,7 +22,7 @@ import {
   youtubeEmbedUrl,
 } from './lib.js';
 import { LIGHT_MODES, MAP_TYPES, MapView } from './map.js';
-import { drivingRoute, placeAt, placeDetails, riyadhSignals, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
+import { aircraftFeed, cloudFieldAround, drivingRoute, placeAt, placeDetails, riyadhSignals, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
 
 const VERSION = '1.13.0';
 const STORE_PREFIX = 'video-map:';
@@ -616,16 +616,34 @@ let weatherShown = null;
 function updateWeather() {
   if (!settings.weather) {
     renderWeather(null);
+    // (With the weather off, the sky over the 3D city is clear.)
+    mapView?.setWeather(null);
+    mapView?.setCloudField(null);
     return;
   }
   // The weather where you are in the city; until that is known, or away from it, the weather over the middle of it.
-  weatherAt(lastFix && inRiyadh(lastFix) ? lastFix : RIYADH.centre).then((summary) => {
+  const here = lastFix && inRiyadh(lastFix) ? lastFix : RIYADH.centre;
+  weatherAt(here).then((summary) => {
     weatherShown = summary;
     renderWeather(summary);
     // (The sky over the 3D city has as much cloud as the weather says, drifting the way its wind blows.)
     if (summary) mapView?.setWeather(summary);
   });
+  // And the clouds place by place round the city, with the winds at their heights: where they really are.
+  cloudFieldAround(here).then((field) => {
+    if (field && settings.weather) mapView?.setCloudField(field);
+  });
 }
+
+// The weather is asked after again every few minutes, whether or not one moves (the services keep what
+// they had until they have something newer), and as soon as the app is looked at again.
+const WEATHER_EVERY_MS = 5 * 60 * 1000;
+setInterval(() => {
+  if (!document.hidden) updateWeather();
+}, WEATHER_EVERY_MS);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) updateWeather();
+});
 
 // ── Live location ─────────────────────────────────────────────────────────
 
@@ -830,6 +848,27 @@ function closePlace() {
   renderPlace();
 }
 
+/** The aircraft in the sky, in words: the live ones by name, nearest first; and the typical ones, and why. */
+function aircraftWords(sky) {
+  const height = (metres) => (settings.unit === 'mph' ? `${(Math.round((metres * 3.28084) / 100) * 100).toLocaleString('en-US')} ft` : `${(Math.round(metres / 100) * 100).toLocaleString('en-US')} m`);
+  const away = (metres) => formatDistance(metres, settings.unit);
+  const usual = "the airport's usual landings and take-offs for this hour";
+  if (sky.flights === 'live') {
+    const doing = (plane) => (plane.climb < -1 ? 'coming down' : plane.climb > 1 ? 'climbing' : 'level');
+    const list = sky.named.slice(0, 4).map((plane) => `${plane.callsign || 'one'} ${doing(plane)} at ${height(plane.alt)}, ${away(plane.far)} off`);
+    const more = sky.named.length > 4 ? `, and ${sky.named.length - 4} more` : '';
+    const added = sky.typical > 0 ? `; with ${usual}, drawn as typical, as no receiver hears the airport` : '';
+    return `${sky.live} live just now (${sky.source}): ${list.join('; ')}${more}${added}`;
+  }
+  const feed = aircraftFeed();
+  const why = {
+    none: 'the live feed hears no aircraft round the city just now',
+    spent: "the live feed's questions for today are used up",
+    failed: 'the live feed does not answer just now',
+  }[feed.heard] ?? 'no live positions yet';
+  return `${usual[0].toUpperCase()}${usual.slice(1)}, and the airliners that usually pass over (${why})`;
+}
+
 function showWhereIAm() {
   if (!lastFix) return;
   const rows = [{ label: 'Position', value: `${lastFix.lat.toFixed(5)}, ${lastFix.lng.toFixed(5)}` }];
@@ -841,8 +880,19 @@ function showWhereIAm() {
   if (weatherShown && settings.weather) rows.push({ label: 'Weather', value: weatherEl.textContent });
   // What the aircraft overhead are: the real ones, or the airport's usual traffic at this hour.
   const sky = mapView?.skyCounts();
-  if (sky?.flights === 'live') rows.push({ label: 'Aircraft', value: `${sky.aloft} live (${sky.source})` });
-  else if (sky?.flights === 'typical') rows.push({ label: 'Aircraft', value: 'The airport\'s usual traffic for this hour (no live positions here)' });
+  // The clouds, where they come from; and by night, the stars and planets as they stand this minute.
+  if (sky && settings.weather) {
+    const percent = (share) => `${Math.round((share ?? 0) * 100)}%`;
+    const overhead = `low ${percent(sky.cover?.low)}, middle ${percent(sky.cover?.mid)}, high ${percent(sky.cover?.high)} overhead`;
+    const when = sky.field ? new Date(sky.field.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
+    rows.push({ label: 'Clouds', value: sky.field ? `${overhead}; live from ${sky.field.readings} readings round the city at ${when} (Open-Meteo)` : overhead });
+  }
+  if (sky?.tonight && sky.stars > 0) {
+    const named = sky.tonight.brightest.length ? `; brightest ${sky.tonight.brightest.join(', ')}` : '';
+    rows.push({ label: 'Stars', value: `${sky.tonight.stars} showing${named}` });
+    if (sky.tonight.planets.length) rows.push({ label: 'Planets', value: sky.tonight.planets.join(', ') });
+  }
+  if (sky?.flights) rows.push({ label: 'Aircraft', value: aircraftWords(sky) });
   showPlace({ title: 'You are here', lat: lastFix.lat, lng: lastFix.lng, rows, me: true, lookup: true });
 }
 
@@ -1062,6 +1112,7 @@ function initMap() {
   mapView.setLife(settings.traffic);
   mapView.setPhoto(settings.photo);
   mapView.setSharp(settings.sharp);
+  mapView.setUnit(settings.unit);
   mapView.setDetail(settings.detail);
   mapView.setLightMode(settings.light);
   applyMapType();
@@ -1172,6 +1223,7 @@ function syncForms() {
 
 /** Everything on screen that depends on km/h or mph. */
 function applyUnit() {
+  if (mapView) mapView.setUnit(settings.unit);
   syncForms();
   renderSpeed();
   renderWeather(weatherShown);

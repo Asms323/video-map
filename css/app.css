@@ -297,6 +297,46 @@ button { cursor: pointer; }
 .map .maplibregl-ctrl-attrib-button { filter: invert(1); }
 
 /* "You are here". The map library positions and turns the marker. */
+/* The live aircraft by name, each just above where it flies. */
+.plane-tags {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.plane-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+}
+.plane-tag::after {
+  content: "";
+  position: absolute;
+  left: -0.5px;
+  top: -10px;
+  width: 1px;
+  height: 7px;
+  background: rgb(255 255 255 / 0.75);
+}
+.plane-tag-text {
+  position: absolute;
+  left: 0;
+  bottom: 10px;
+  transform: translateX(-50%);
+  padding: 2px 6px 3px;
+  border-radius: 6px;
+  background: rgb(12 20 34 / 0.6);
+  color: #fff;
+  font: 600 11px/1.2 var(--font);
+  text-align: center;
+  white-space: nowrap;
+}
+.plane-tag.below::after { top: 3px; }
+.plane-tag.below .plane-tag-text { bottom: auto; top: 10px; }
+.plane-tag-text b { display: block; font-weight: 700; letter-spacing: 0.02em; }
+.plane-tag-text span { display: block; font-weight: 500; font-size: 10px; opacity: 0.85; }
+
 .me {
   width: 28px;
   height: 28px;

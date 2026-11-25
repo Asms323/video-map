@@ -30,6 +30,9 @@ export const AIRPORT = {
     { id: '15L/33R', south: [46.72271, 24.94412], north: [46.70202, 24.97688] },
   ],
   flightsAYear: 296800, // in 2025, by the General Authority for Statistics
+  // How high its ground lies above the sea: 625 m (2,049 ft). The feeds give an aircraft's height above the
+  // sea; the scene has it above the ground, which in Riyadh lies about as high as the airport's.
+  elevation: 625,
 };
 
 // How busy each hour of the day is, against the average hour: quiet before dawn, fullest in the evening.
@@ -274,7 +277,7 @@ export function parseOpenSky(answer) {
       callsign: String(state[1] ?? '').trim(),
       lng: state[5],
       lat: state[6],
-      alt: Math.max(Number.isFinite(state[13]) ? state[13] : Number.isFinite(state[7]) ? state[7] : 0, 0),
+      alt: state[8] === true ? 0 : Math.max((Number.isFinite(state[13]) ? state[13] : Number.isFinite(state[7]) ? state[7] : AIRPORT.elevation) - AIRPORT.elevation, 0),
       ground: state[8] === true,
       speed: Number.isFinite(state[9]) ? state[9] : 0,
       track: Number.isFinite(state[10]) ? state[10] : 0,
@@ -304,7 +307,7 @@ export function parseReceivers(answer) {
       type: one.t ?? null,
       lng: one.lon,
       lat: one.lat,
-      alt: ground ? 0 : Math.max(feet * FEET, 0),
+      alt: ground ? 0 : Math.max(feet * FEET - AIRPORT.elevation, 0),
       ground,
       speed: Number.isFinite(one.gs) ? one.gs * KNOTS : 0,
       track: Number.isFinite(one.track) ? one.track : 0,
@@ -319,35 +322,58 @@ export function parseReceivers(answer) {
 const WIDE_TYPES = /^(A3[3-8]|A35|B74|B76|B77|B78|IL96|MD11)/;
 const LIVE_FOR_SECONDS = 150; // a report older than this says nothing about now
 const MOVED_ON_MOST_SECONDS = 90; // an aircraft is moved on from its last report no longer than this
+// The receivers that hear Riyadh's sky stand far off, round the Gulf: they hear an aircraft high over the city,
+// but not one low over the airport. Should a report have any aircraft so low and so near the airport, the
+// receivers hear the airport, and its own traffic needs nothing added.
+const HEARD_LOW_METERS = 3000;
+const HEARD_NEAR_AIRPORT_METERS = 60000;
+// The phone's clock is trusted, unless it is further off the feed's than this. (The feed's own clock gives
+// the moment its report is for, which is some seconds before it is had: that much is no fault of the phone.)
+const CLOCK_TRUSTED_SECONDS = 30;
 
-/** The aircraft in the sky: the live ones while any are known, the airport's typical traffic otherwise. */
+/** How far a place is from the airport, in metres. */
+const fromAirport = ([lng, lat]) => Math.hypot((lng - AIRPORT.at[0]) * squeezeAt(AIRPORT.at[1]), (lat - AIRPORT.at[1]) * METERS_PER_DEGREE);
+
+/**
+ * The aircraft in the sky. The live ones, wherever a feed of them has any, each where it really is, with
+ * its call sign. Where the feed hears no aircraft low near the airport (and the receivers it has round
+ * Riyadh do not), the airport's own landings and take-offs are added as it flies them at this hour:
+ * typical, not particular. With no live aircraft known at all, that typical traffic, and the airliners
+ * that typically pass over, are all there is.
+ */
 export class Flights {
   constructor() {
     this.live = [];
     this.reportedAt = 0;
     this.source = null;
+    this.skew = 0; // how far the feed's clock is ahead of the phone's, where the phone's is not to be trusted
   }
 
   /**
    * Take a report of live aircraft (as parseOpenSky() or parseReceivers()
-   * gives them), had at a time, from a source by name. Those on the ground
-   * are left out.
+   * gives them), for a moment by the feed's clock, from a source by name.
+   * Those on the ground are left out. now: when the report was had, by the
+   * phone's clock: should the two clocks be more than half a minute apart,
+   * the feed's is the one kept, or every aircraft would be shown where it
+   * was so long ago (or, the phone's clock being behind, not at all).
    */
-  report(planes, seconds, source) {
+  report(planes, seconds, source, { now } = {}) {
     this.live = (planes ?? []).filter((plane) => !plane.ground && plane.alt > 30);
     this.reportedAt = seconds;
     this.source = source ?? null;
+    this.skew = Number.isFinite(now) && Math.abs(seconds - now) > CLOCK_TRUSTED_SECONDS ? seconds - now : 0;
   }
 
   /**
-   * The sky at a moment: { kind: 'live' | 'typical', source, planes }. Live
-   * while a report no older than two and a half minutes has aircraft in it:
-   * each is moved on from where it last was, by its speed and course.
+   * The sky at a moment: { kind: 'live' | 'typical', source, planes, live (how many of them are live),
+   * typical (how many are the airport's typical traffic) }. Live while a report no older than two and a
+   * half minutes has aircraft in it: each is moved on from where it last was, by its speed and course.
    */
   at(seconds, { windFrom } = {}) {
-    if (this.live.length > 0 && seconds - this.reportedAt <= LIVE_FOR_SECONDS && seconds >= this.reportedAt - 5) {
+    const feed = seconds + this.skew; // the moment by the feed's clock
+    if (this.live.length > 0 && feed - this.reportedAt <= LIVE_FOR_SECONDS && feed >= this.reportedAt - CLOCK_TRUSTED_SECONDS) {
       const planes = this.live.map((plane) => {
-        const since = Math.min(Math.max(seconds - plane.seen, 0), MOVED_ON_MOST_SECONDS);
+        const since = Math.min(Math.max(feed - plane.seen, 0), MOVED_ON_MOST_SECONDS);
         const course = plane.track * RADIANS;
         const [lng, lat] = offset([plane.lng, plane.lat], Math.sin(course) * plane.speed * since, Math.cos(course) * plane.speed * since);
         const airline = AIRLINES[CALL_SIGNS[plane.callsign.slice(0, 3)] ?? CALL_SIGNS[plane.callsign.slice(0, 2)] ?? 4];
@@ -369,8 +395,13 @@ export class Flights {
           body: airline.body,
         };
       });
-      return { kind: 'live', source: this.source, planes };
+      // (Where no receiver hears the airport, its own landings and take-offs as it flies them at this hour;
+      // the airliners that typically pass over are not wanted: the real ones are there.)
+      const hearsAirport = planes.some((plane) => plane.alt < HEARD_LOW_METERS && fromAirport([plane.lng, plane.lat]) < HEARD_NEAR_AIRPORT_METERS);
+      const added = hearsAirport ? [] : typicalFlights(seconds, { windFrom }).filter((plane) => plane.phase !== 'cruise');
+      return { kind: 'live', source: this.source, planes: [...planes, ...added], live: planes.length, typical: added.length };
     }
-    return { kind: 'typical', source: null, planes: typicalFlights(seconds, { windFrom }) };
+    const planes = typicalFlights(seconds, { windFrom });
+    return { kind: 'typical', source: null, planes, live: 0, typical: planes.length };
   }
 }

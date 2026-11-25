@@ -30,6 +30,7 @@ import {
   speedLimitRoads,
   unpackSignals,
   weatherSummary,
+  cloudField,
 } from './lib.js';
 import { parseOpenSky } from './flights.js';
 
@@ -337,38 +338,164 @@ export async function weatherAt(position) {
   }
 }
 
+// ── The clouds round the city ─────────────────────────────────────────────
+
+// For the sky over the 3D city: how much cloud there is in each of its three layers at 25 places round
+// the city, a third of a degree (some 38 km) apart, and the wind at the height of each layer. The grid
+// is laid on a fixed lattice, so that it is the same wherever in the city one is, and a place is only
+// told to the nearest third of a degree.
+const FIELD_STEP = 0.35;
+const FIELD_SIDE = 5;
+const FIELD_NOW = 'cloud_cover_low,cloud_cover_mid,cloud_cover_high';
+const FIELD_ALOFT = 'wind_speed_250hPa,wind_direction_250hPa,wind_speed_500hPa,wind_direction_500hPa,wind_speed_700hPa,wind_direction_700hPa';
+const FIELD_SLOT_MS = 15 * 60 * 1000; // the service has a new reading every quarter of an hour
+const FIELD_LEAST_MS = 5 * 60 * 1000; // and is not asked again sooner than this
+const FIELD_FAILED_AGAIN_MS = 5 * 60 * 1000;
+let field = null; // { key, asked, reading }
+let fieldBusy = false;
+let fieldRetryAt = 0;
+let fieldAloft = true; // (should the service ever refuse the winds aloft, it is asked without them from then on)
+
+/** The grid of places the clouds are asked about round a position: { key, lats, lngs }, rows south to north and columns west to east. */
+export function cloudGrid(position) {
+  const lines = (middle) => Array.from({ length: FIELD_SIDE }, (_, k) => Math.round((Math.round(middle / FIELD_STEP) + k - (FIELD_SIDE - 1) / 2) * FIELD_STEP * 1000) / 1000);
+  const lats = lines(position.lat);
+  const lngs = lines(position.lng);
+  return { key: `${lats[0]},${lngs[0]}`, lats, lngs };
+}
+
+/**
+ * The clouds round a position as the weather service has them now, place by place (see cloudField() in
+ * lib.js), or null when they are not to be had. Asked again once the service has a newer reading (every
+ * quarter of an hour), not sooner than every five minutes; or when one moves on into another grid.
+ */
+export async function cloudFieldAround(position) {
+  const grid = cloudGrid(position);
+  const now = Date.now();
+  const same = field && field.key === grid.key;
+  const fresh = same && (now - field.asked < FIELD_LEAST_MS || now < field.reading.at + FIELD_SLOT_MS);
+  if (fresh || fieldBusy || now < fieldRetryAt) return same ? field.reading : null;
+  fieldBusy = true;
+  try {
+    const points = grid.lats.flatMap((lat) => grid.lngs.map((lng) => [lat, lng]));
+    const ask = (aloft) => {
+      const params = new URLSearchParams({ latitude: points.map(([lat]) => lat).join(','), longitude: points.map(([, lng]) => lng).join(','), current: FIELD_NOW, wind_speed_unit: 'ms', timezone: 'GMT' });
+      if (aloft) {
+        params.set('hourly', FIELD_ALOFT);
+        params.set('past_hours', '1');
+        params.set('forecast_hours', '2');
+      }
+      return fetchJson(`${WEATHER_URL}?${params}`, { timeout: 12000 });
+    };
+    let answer;
+    try {
+      answer = await ask(fieldAloft);
+    } catch (error) {
+      // (400 is the service saying it does not know something it was asked.)
+      if (!fieldAloft || !/ answered 400$/.test(String(error?.message))) throw error;
+      fieldAloft = false;
+      answer = await ask(false);
+    }
+    const reading = cloudField(answer, grid.lats, grid.lngs, Date.now());
+    if (!reading) throw new Error('The weather service answered with no clouds');
+    field = { key: grid.key, asked: Date.now(), reading };
+    return reading;
+  } catch {
+    fieldRetryAt = Date.now() + FIELD_FAILED_AGAIN_MS;
+    return field && field.key === grid.key ? field.reading : null;
+  } finally {
+    fieldBusy = false;
+  }
+}
+
 // ── Aircraft ──────────────────────────────────────────────────────────────
 
 // The sky over Riyadh and its airport: one fixed box, the same whoever asks and wherever in the city they
 // are, so that nothing about the asker goes with the question.
 const AIRCRAFT_URL = 'https://opensky-network.org/api/states/all';
-const AIRCRAFT_BOX = { lamin: '24.2', lomin: '45.9', lamax: '25.6', lomax: '47.5' };
-const AIRCRAFT_AGAIN_MS = 40 * 1000; // while there are aircraft to follow
-const AIRCRAFT_EMPTY_AGAIN_MS = 10 * 60 * 1000; // the feed has few receivers here: an empty sky is not asked about again at once
-const AIRCRAFT_FAILED_AGAIN_MS = 30 * 60 * 1000;
+// (As far round the city as an aircraft is drawn from: 150 km. A box this size, 8 square degrees, costs
+// the feed's least, one question, as a smaller one does.)
+const AIRCRAFT_BOX = { lamin: '23.4', lomin: '45.2', lamax: '26.1', lomax: '48.2' };
+// The feed tells where each aircraft was every ten seconds to anyone who asks without an account, and
+// allows such a one 400 questions a day (one for a box this small): asked every 15 s while it has
+// aircraft to follow, every 2 minutes while it has none; and once the day's questions are near spent, not
+// again until the next day (by the clock in Greenwich, as the feed counts them).
+const AIRCRAFT_AGAIN_MS = 15 * 1000;
+const AIRCRAFT_EMPTY_AGAIN_MS = 2 * 60 * 1000;
+const AIRCRAFT_FAILED_AGAIN_MS = 10 * 60 * 1000;
+const AIRCRAFT_A_DAY = 380; // of the 400, so many: the rest are left in hand
+const AIRCRAFT_COUNT_KEY = 'video-map:aircraft-asked';
 let aircraftBusy = false;
 let aircraftRetryAt = 0;
+let aircraftHeard = null; // what the feed last answered: 'aircraft', 'none', 'spent' or 'failed' (null: not yet asked)
+
+/** How many times the feed has been asked today, and on what day: kept on the phone, so that a reload does not forget. */
+function aircraftAsked(add = 0) {
+  const day = new Date().toISOString().slice(0, 10);
+  let kept = { day, count: 0 };
+  try {
+    const stored = JSON.parse(localStorage.getItem(AIRCRAFT_COUNT_KEY) ?? 'null');
+    if (stored && stored.day === day && Number.isFinite(stored.count)) kept = stored;
+  } catch {
+    // (No storage to be had: the count lasts as long as the page.)
+  }
+  kept = { day, count: kept.count + add };
+  if (add) {
+    try {
+      localStorage.setItem(AIRCRAFT_COUNT_KEY, JSON.stringify(kept));
+    } catch {
+      // (As above.)
+    }
+  }
+  return kept.count;
+}
+
+/** When the next day begins by the clock in Greenwich, in ms. */
+const nextDay = () => {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+};
 
 /**
  * The aircraft in the air over Riyadh right now, from the OpenSky Network's
  * open feed: { planes, seconds, source }, or null when it is not to be had
- * (or was asked for too lately: it is asked every 40 s at the most, and far
- * less often while it has nothing or does not answer).
+ * (or was asked for too lately: it is asked every 15 s at the most while it
+ * has aircraft, less often while it has nothing or does not answer, and not
+ * at all once the day's allowance of questions is spent).
  */
 export async function aircraftOverRiyadh() {
   if (aircraftBusy || Date.now() < aircraftRetryAt) return null;
+  if (aircraftAsked() >= AIRCRAFT_A_DAY) {
+    aircraftRetryAt = nextDay();
+    aircraftHeard = 'spent';
+    return null;
+  }
   aircraftBusy = true;
   try {
+    aircraftAsked(1);
     const answer = await fetchJson(`${AIRCRAFT_URL}?${new URLSearchParams(AIRCRAFT_BOX)}`, { timeout: 12000, credentials: 'omit', referrerPolicy: 'no-referrer' });
     const planes = parseOpenSky(answer);
     aircraftRetryAt = Date.now() + (planes.length > 0 ? AIRCRAFT_AGAIN_MS : AIRCRAFT_EMPTY_AGAIN_MS);
+    aircraftHeard = planes.some((plane) => !plane.ground) ? 'aircraft' : 'none';
     return { planes, seconds: Number(answer?.time) || Date.now() / 1000, source: 'The OpenSky Network' };
-  } catch {
-    aircraftRetryAt = Date.now() + AIRCRAFT_FAILED_AGAIN_MS;
+  } catch (error) {
+    // (429: the day's questions are spent, by the feed's own count.)
+    const spent = / answered 429$/.test(String(error?.message));
+    aircraftRetryAt = spent ? nextDay() : Date.now() + AIRCRAFT_FAILED_AGAIN_MS;
+    aircraftHeard = spent ? 'spent' : 'failed';
     return null;
   } finally {
     aircraftBusy = false;
   }
+}
+
+/**
+ * How the feed of live aircraft stands: { heard: what it last answered ('aircraft', 'none', 'spent',
+ * 'failed', or null before it is first asked), asked: how many times today, allowed: how many a day,
+ * again: when it is next to be asked, in ms }.
+ */
+export function aircraftFeed() {
+  return { heard: aircraftHeard, asked: aircraftAsked(), allowed: AIRCRAFT_A_DAY, again: aircraftRetryAt };
 }
 
 // ── OSRM ──────────────────────────────────────────────────────────────────

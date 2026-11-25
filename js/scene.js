@@ -1122,6 +1122,8 @@ export class SceneLayer {
   /**
    * onFrame(): called before each picture is drawn, to move things on. It
    * returns true while there is movement to show, which keeps the pictures coming.
+   * onView(matrix), if set: called as each picture is drawn, with what takes
+   * the scene's metres to the picture (as WebGL's clip space).
    */
   constructor(id, { onFrame } = {}) {
     this.id = id;
@@ -1795,6 +1797,8 @@ export class SceneLayer {
     // the map's own scale holds, over how deep in the picture that middle lies.
     const solved = eyeOf(m);
     if (solved) this.eye = solved;
+    // (Whatever is laid over the picture, the names of the aircraft, is placed by this same measure.)
+    this.onView?.(m);
     const depth = m[3] * this.focus[0] + m[7] * this.focus[1] + m[15];
     const pixelPerDepth = depth > 1e-9 ? this.pixel / depth : this.pixel;
 
