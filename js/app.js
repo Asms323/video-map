@@ -24,7 +24,7 @@ import {
 import { LIGHT_MODES, MAP_TYPES, MapView } from './map.js';
 import { aircraftFeed, cloudFieldAround, drivingRoute, placeAt, placeDetails, riyadhSignals, searchPlaces, speedLimitsNear, weatherAt } from './services.js';
 
-const VERSION = '1.13.0';
+const VERSION = '1.14.0';
 const STORE_PREFIX = 'video-map:';
 
 const $ = (id) => document.getElementById(id);

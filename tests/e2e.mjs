@@ -105,7 +105,7 @@ const YOUTUBE_STUB =
 
 // ── Stand-ins for the data services ───────────────────────────────────────
 
-const asked = { overpass: [], weather: 0, weatherAt: [], route: 0, photoDay: 0, archive: 0, photoTiles: {}, photoMaps: {}, search: [] };
+const asked = { overpass: [], weather: 0, weatherAt: [], clouds: 0, aircraft: 0, route: 0, photoDay: 0, archive: 0, photoTiles: {}, photoMaps: {}, search: [] };
 // The sharpest level the stand-in for the photo service has: as in a town, one short of what a big city gets.
 const PHOTO_SHARPEST = 18;
 
@@ -263,10 +263,21 @@ async function standIns(context, { recordMap = false, noMap = false, buildings =
   await context.route(/^https:\/\/overpass-api\.de\//, answerOverpass);
   await context.route(/^https:\/\/photon\.komoot\.io\//, answerPhoton);
   await context.route(/^https:\/\/api\.open-meteo\.com\//, (route) => {
-    asked.weather += 1;
     const where = new URL(route.request().url()).searchParams;
+    // The clouds round the city, place by place (see cloudFieldAround in services.js): a clear sky at all 25.
+    if (where.get('latitude').includes(',')) {
+      asked.clouds += 1;
+      const lats = where.get('latitude').split(',');
+      return json(route, lats.map(() => ({ current: { time: '2026-11-21T12:00', cloud_cover_low: 0, cloud_cover_mid: 0, cloud_cover_high: 0 } })));
+    }
+    asked.weather += 1;
     asked.weatherAt.push([Number(where.get('latitude')), Number(where.get('longitude'))]);
     return json(route, { current: { time: '2026-11-21T12:00', temperature_2m: 23.4, weather_code: 0 } });
+  });
+  // The live aircraft (see aircraftOverRiyadh in services.js): none over the city just now.
+  await context.route(/^https:\/\/opensky-network\.org\//, (route) => {
+    asked.aircraft += 1;
+    return json(route, { time: Math.floor(Date.now() / 1000), states: null });
   });
   await context.route(/^https:\/\/router\.project-osrm\.org\//, (route) => {
     asked.route += 1;
