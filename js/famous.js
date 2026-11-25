@@ -1,0 +1,252 @@
+// More of Riyadh's famous buildings, each built as a true model with its details.
+//
+// The towers of the skyline were built first (see landmarks.js), then the financial district (kafd.js).
+// Here are the buildings the city is known by that are not towers: each looked up, studied in
+// photographs and in the satellite photo the app shows, and built face by face (see models.js and
+// solids.js). What is known of each, what was measured and what is a judgement is said where it is built.
+//
+// Nothing here touches the browser. Measurements are in metres; a model is measured from the middle of
+// its own footprint, east and north being its own (it is turned with its landmark's bearing).
+
+import { ballProfile, beam, frame, lathe } from './solids.js';
+
+const TAU = Math.PI * 2;
+
+const raised = (ring, up) => ring.map(([east, north]) => [east, north, up]);
+
+/**
+ * The walls between two outlines of as many corners, one over the other (each corner [east, north, up],
+ * going round anticlockwise): a face for every side. way: 1 if they look outwards, -1 if inwards.
+ * lines: along which edges of each face a line is drawn: [its foot, its far end, its top, its near end].
+ * bands: between these heights the faces are of other stuff (see models.js).
+ */
+function between(model, low, high, stuff, { way = 1, lines = [false, false, false, false], bands = null, lit = null } = {}) {
+  const count = low.length;
+  for (let i = 0; i < count; i += 1) {
+    const j = (i + 1) % count;
+    const [a, b, c, d] = [low[i], low[j], high[j], high[i]];
+    const long = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (long < 1e-6 && Math.hypot(c[0] - d[0], c[1] - d[1]) < 1e-6) continue;
+    const out = [(b[1] - a[1]) * way, -(b[0] - a[0]) * way, 0];
+    // (lit: [outwards, up]: the light falls on each face as on one that looks so far outwards and so far up, whichever way it leans.)
+    const looks = lit && long > 1e-6 ? [(out[0] / long) * lit[0], (out[1] / long) * lit[0], lit[1]] : null;
+    model.quad(a, b, c, d, stuff, { out, lines, along: [b[0] - a[0], b[1] - a[1]], from: [a[0], a[1]], ...(bands ? { bands } : {}), ...(looks ? { normals: [looks, looks, looks, looks] } : {}) });
+  }
+}
+
+// ── The Ministry of Interior ──────────────────────────────────────────────
+
+/** How long each step of the building's stepped corners is, along either of its sides. */
+const STEP = 9.07;
+
+/**
+ * A square of so wide a half-width whose four corners are cut back in steps: so many steps to a
+ * corner, each STEP long both ways (none: a plain square). Anticlockwise, from the east side's
+ * northern end.
+ */
+export function stepped(half, steps = 0, step = STEP) {
+  const corner = [];
+  for (let k = 0; k <= steps; k += 1) {
+    corner.push([half - k * step, half - (steps - k) * step]);
+    if (k < steps) corner.push([half - (k + 1) * step, half - (steps - k) * step]);
+  }
+  const ring = [];
+  for (let turn = 0; turn < 4; turn += 1) {
+    for (const [east, north] of corner) {
+      // (A quarter turn anticlockwise, turn times.)
+      ring.push(turn === 0 ? [east, north] : turn === 1 ? [-north, east] : turn === 2 ? [-east, -north] : [north, -east]);
+    }
+  }
+  return ring;
+}
+
+// The ministry's measures, in metres.
+export const MINISTRY = {
+  storey: 4.8, // from one floor of the pyramid to the next
+  floors: 5,
+  podium: 4, // the height of the podium the hall stands on
+  foot: 9.6, // the underside of the pyramid
+  narrow: 56.2, // the half-width of the pyramid at its foot…
+  widening: 5.2, // …and how much wider each floor is than the one below it
+  window: 2.4, // the height of each floor's band of glass
+  recess: 1, // how far the glass stands back from the edge of the sill under it
+  tip: 33.6, // the widest edge of the building, 82.2 m from its middle: the top of the fifth floor
+  terrace: 37.8, // the terrace the white roof slopes up to…
+  terraceHalf: 76.4,
+  upperHalf: 69.3, // …and the top storey that stands back on it
+  roof: 41.6,
+  lantern: [55, 48.6, 43.6], // the glazed lantern on that roof: the half-width of its foot and of its top, and its top's height
+  rim: [30.5, 26.8, 44.6], // the low rim round the terrace of the dome: outer and inner half-width, and height
+  court: 43.6, // that terrace: the foot of the dome
+  domeRadius: 21.75,
+  domeTop: 55.2,
+  top: 56.2, // with the cap on the dome
+  eyes: 32, // the round windows in a ring about the dome…
+  eyesOut: 18.25, // …so far from its axis
+};
+
+/**
+ * The Ministry of Interior (Archisystems with Musalli, Shakir and Mandill; built by Hyundai, 1980 to
+ * 1989), on King Fahd Road at Al Olaya: the upside-down pyramid with a dome on it, 55 m high, that the
+ * city calls the flying saucer.
+ *
+ * It is a square that stands corner-on to the road, and each of its five floors is wider than the one
+ * under it: 112 m across at the foot, 164 m at the top. Every floor shows as a band of pale stone that
+ * leans outwards, the underside of the floor above, over a dark band of glass set back in its shade. The
+ * four corners are not points: each is cut back in three steps, on every floor, so that the corner of
+ * the building is a stair of prows. Under the pyramid stands a glass hall among columns, on a low
+ * podium of stone.
+ *
+ * On top the roof slopes up, white, from the widest edge to a terrace; a top storey stands back on that,
+ * and on its roof a long glazed lantern, with sixteen round skylights; and in the middle, on a terrace
+ * of its own, the dome: 43 m across and 12 m high, a ring of round windows about it and a cap on top. By night the stone
+ * bands are floodlit, a line of lamps runs along the edge of every floor, and the dome is lit.
+ *
+ * (Its height, 55 m, and its builders are as published; the height is taken here as that of the
+ * dome. Its plan was measured on the satellite photo the app shows: the steps of the corners, the
+ * terrace, the lantern, the court, the dome and its ring of windows, the skylights. That photo is taken
+ * at a slant, which is how the heights of what stands on the roof were told apart, each to a couple of
+ * metres; where the building stands on the ground is worked back from the same slant and from its
+ * shadow, and is good to some five metres. The height of a floor, how far each widens, and the hall and
+ * podium under them are read off photographs from the road, with the dome for a measure. The two
+ * pavilions at its foot are placed from the satellite photo and built plainly.)
+ */
+function ministryOfInterior(model) {
+  const M = MINISTRY;
+  const to = frame([0, 0], 0);
+  const stone = '#d8cbae';
+  // The leaning bands of stone: floodlit by night, and a line of lamps along the upper edge of each.
+  // (They look down, and no sun reaches them; but the pale ground under them throws the sun's light
+  // up at them, and they are as bright as a wall that faces it. So the light falls on each as on a
+  // wall that looks the way it does, and the shadow of the floors over it is not counted.)
+  const band = { kind: 'plain', colour: stone, light: '#ffe9c4', glow: 0.5, ridge: 0.8, open: true };
+  // The glass behind them: dark bronze, in narrow bays; by night some of the offices are lit.
+  const glass = { kind: 'glass', colour: '#1f1c19', storey: M.window, bay: 1.5, lit: 0.4, floors: 0, mirror: 0 };
+  const plain = { kind: 'plain', colour: stone };
+
+  // The podium, the hall that stands on it under the pyramid, and the columns round the hall.
+  const podium = stepped(58);
+  between(model, raised(podium, 0), raised(podium, M.podium), { kind: 'pierced', colour: '#ddd1b6', storey: M.podium, bay: 3.4, holes: 0.3, lit: 0.5, light: '#ffe9c4', glow: 0.25 });
+  const hall = stepped(27);
+  model.flat(raised(podium, M.podium), { kind: 'plain', colour: '#d2c7ae' }, { holes: [raised(hall, M.podium)] });
+  between(model, raised(hall, M.podium), raised(hall, M.foot), { kind: 'glass', colour: '#3a332b', storey: (M.foot - M.podium) / 2, bay: 2.2, lit: 0.9, floors: 0.2, mirror: 0.15 });
+  const column = { kind: 'plain', colour: '#e2d7bf', light: '#ffe9c4', glow: 0.45 };
+  for (let side = 0; side < 4; side += 1) {
+    for (let k = -3; k < 3; k += 1) {
+      const [along, out] = [(k + 0.5) * 13.2, 40];
+      const [east, north] = side === 0 ? [out, along] : side === 1 ? [-along, out] : side === 2 ? [-out, -along] : [along, -out];
+      beam(model, [east, north, M.podium], [east, north, M.foot], 1.2, column);
+    }
+  }
+  // The underside of the pyramid: lit from below by night.
+  const footRing = stepped(M.narrow, 3);
+  model.flat(raised(footRing, M.foot), { kind: 'plain', colour: '#cfc3a8', light: '#ffe9c4', glow: 0.4 }, { out: [0, 0, -1], holes: [raised(hall, M.foot)] });
+
+  // The five floors: each a band of glass, set back, and over it the leaning band of stone that carries
+  // the floor above out past it.
+  for (let floor = 0; floor < M.floors; floor += 1) {
+    const sill = M.foot + floor * M.storey;
+    const head = sill + M.window;
+    const pane = stepped(M.narrow + floor * M.widening - M.recess, 3);
+    const next = stepped(M.narrow + (floor + 1) * M.widening, 3);
+    between(model, raised(pane, sill), raised(pane, head), glass);
+    between(model, raised(pane, head), raised(next, sill + M.storey), band, { lines: [false, false, true, false], lit: [1, -0.3] });
+  }
+
+  // The roof: white, sloping up from the widest edge to the terrace; the top storey standing back on
+  // the terrace, glass under a band of stone; and its flat roof.
+  const tipRing = stepped(M.narrow + M.floors * M.widening, 3);
+  const terrace = stepped(M.terraceHalf, 3);
+  const upper = stepped(M.upperHalf, 3);
+  between(model, raised(tipRing, M.tip), raised(terrace, M.terrace), { kind: 'plain', colour: '#efe9da' });
+  model.flat(raised(terrace, M.terrace), { kind: 'plain', colour: '#c9b8a0' }, { holes: [raised(upper, M.terrace)] });
+  between(model, raised(upper, M.terrace), raised(upper, M.roof), { ...glass, storey: M.roof - M.terrace + 0.4 }, { bands: [{ from: M.roof - 1.1, to: M.roof + 0.1, stuff: { kind: 'plain', colour: stone, light: '#ffe9c4', glow: 0.5 } }] });
+  const [lanternFoot, lanternTop, lanternUp] = M.lantern;
+  const roofing = { kind: 'plain', colour: '#d9ceb5' };
+  model.flat(raised(upper, M.roof), roofing, { holes: [raised(stepped(lanternFoot, 2), M.roof)] });
+
+  // The lantern on it: its sides slanting glass in a white frame, its top flat, with the skylights.
+  const skylight = { kind: 'glass', colour: '#77858c', storey: 2.6, bay: 1.3, lit: 0.8, floors: 0.8, mirror: 0.3 };
+  between(model, raised(stepped(lanternFoot, 2), M.roof), raised(stepped(lanternTop, 2), lanternUp), skylight, { lines: [true, false, true, false] });
+  const [rimOut, rimIn, rimUp] = M.rim;
+  model.flat(raised(stepped(lanternTop, 2), lanternUp), roofing, { holes: [raised(stepped(rimOut + 3.6, 1), lanternUp)] });
+  // (Sixteen round skylights, each a bubble of glass: three along each side and one at each corner.)
+  const bubble = { kind: 'glass', colour: '#4f6672', storey: 3, bay: 3, lit: 1, floors: 0, mirror: 0.6 };
+  const bubbles = [];
+  for (const turn of [0, 1, 2, 3]) {
+    for (const along of [-9.2, 0, 9.2]) bubbles.push([36.4, along, turn]);
+    bubbles.push([27.6, 27.6, turn]);
+  }
+  for (const [east, north, turn] of bubbles) {
+    const at = turn === 0 ? [east, north] : turn === 1 ? [-north, east] : turn === 2 ? [-east, -north] : [north, -east];
+    lathe(model, to, at, [[2.3, lanternUp], [2.1, lanternUp + 0.7], [1.2, lanternUp + 1.3], [0, lanternUp + 1.5]], bubble, { cuts: 8 });
+  }
+
+  // The low rim round the terrace of the dome: slanting glass outside, a white top, and a step down to the terrace.
+  between(model, raised(stepped(rimOut + 3.6, 1), lanternUp), raised(stepped(rimOut, 1), rimUp), skylight, { lines: [true, false, true, false] });
+  model.flat(raised(stepped(rimOut, 1), rimUp), { kind: 'plain', colour: '#efe9da' }, { holes: [raised(stepped(rimIn, 1), rimUp)] });
+  between(model, raised(stepped(rimIn, 1), M.court), raised(stepped(rimIn, 1), rimUp), { kind: 'plain', colour: '#e4dcc8' }, { way: -1 });
+  model.flat(raised(stepped(rimIn, 1), M.court), { kind: 'plain', colour: '#e9e2d0', open: true });
+
+  // The dome: a cap of a ball, 43.5 m across at its foot on the terrace and 11.6 m high.
+  const rise = M.domeTop - M.court;
+  const ball = (M.domeRadius ** 2 + rise ** 2) / (2 * rise); // the radius of the ball it is a cap of
+  const middle = M.domeTop - ball; // the height of that ball's middle
+  const dome = { kind: 'plain', colour: '#e3d5b3', light: '#f1f5ff', glow: 0.75 };
+  lathe(model, to, [0, 0], ballProfile(ball, middle, { rings: 9, from: 0.05, until: Math.asin(M.domeRadius / ball) }), dome, { cuts: 40 });
+  // Its ring of round windows: dark by day, lit by night.
+  const eye = { kind: 'lamp', colour: '#3b3832', light: '#ffeccb', glow: 0.9 };
+  const down = Math.asin(M.eyesOut / ball); // how far down from the top of the ball the ring lies
+  for (let k = 0; k < M.eyes; k += 1) {
+    const angle = ((k + 0.5) / M.eyes) * TAU;
+    const out = [Math.sin(down) * Math.cos(angle), Math.sin(down) * Math.sin(angle), Math.cos(down)];
+    const at = [out[0] * (ball + 0.12), out[1] * (ball + 0.12), middle + out[2] * (ball + 0.12)];
+    // (Each a little round of eight sides, lying on the dome.)
+    const aside = [-Math.sin(angle), Math.cos(angle), 0];
+    const up = [-Math.cos(down) * Math.cos(angle), -Math.cos(down) * Math.sin(angle), Math.sin(down)];
+    const round = Array.from({ length: 8 }, (_, i) => {
+      const [s, t] = [Math.cos((i / 8) * TAU) * 0.85, Math.sin((i / 8) * TAU) * 0.85];
+      return [at[0] + aside[0] * s + up[0] * t, at[1] + aside[1] * s + up[1] * t, at[2] + aside[2] * s + up[2] * t];
+    });
+    model.flat(round, eye, { out });
+  }
+  // The cap on top, and the red lamp on it.
+  lathe(model, to, [0, 0], [[1.7, M.domeTop - 0.5], [1.7, M.domeTop + 0.35], [1.1, M.domeTop + 0.75], [0.25, M.top - 0.1]], { kind: 'plain', colour: '#b9a57a', light: '#f1f5ff', glow: 0.6 }, { cuts: 10 });
+  lathe(model, to, [0, 0], [[0.25, M.top - 0.1], [0.22, M.top + 0.25], [0, M.top + 0.4]], { kind: 'lamp', colour: '#a02a22', light: '#ff3a2c', glow: 1 }, { cuts: 6 });
+
+  // The two pavilions at its foot that the roof does not hide: the square one by the south-eastern side,
+  // with its nine glass domes, and the long one by the south-western, with three.
+  const pavilion = { kind: 'pierced', colour: '#ddd1b6', storey: 6, bay: 3, holes: 0.3, lit: 0.5, light: '#ffe9c4', glow: 0.25 };
+  const little = { kind: 'glass', colour: '#5a7480', storey: 3, bay: 3, lit: 1, floors: 0, mirror: 0.6 };
+  for (const { box: [east0, east1, north0, north1], domes } of [
+    { box: [69.4, 87.4, 1.3, 19.3], domes: [-6, 0, 6].flatMap((east) => [-6, 0, 6].map((north) => [78.4 + east, 10.3 + north])) },
+    { box: [-25, 3, -90.8, -78.8], domes: [-9, 0, 9].map((east) => [-11 + east, -84.8]) },
+  ]) {
+    const ring = [[east0, north0], [east1, north0], [east1, north1], [east0, north1]];
+    between(model, raised(ring, 0), raised(ring, 6), pavilion);
+    model.flat(raised(ring, 6), { kind: 'plain', colour: '#d2c7ae' });
+    for (const at of domes) lathe(model, to, at, [[2, 6], [1.8, 6.7], [1, 7.3], [0, 7.5]], little, { cuts: 8 });
+  }
+  return {};
+}
+
+/**
+ * The famous buildings built here, as landmarks for the map (see landmarks.js): where each stands
+ * ([lng, lat]), which way it is turned, how tall it is, within what distance of its middle the map's
+ * own blocks are taken out for it, and the round its shadow is thrown from.
+ */
+export const FAMOUS = [
+  {
+    id: 'interior-ministry',
+    name: 'Ministry of Interior',
+    at: [46.695906, 24.670242],
+    bearing: 45,
+    height: MINISTRY.top,
+    clear: 60,
+    reach: 125,
+    model: ministryOfInterior,
+    within: 9000,
+    // (Its shadow is that of its widest floor: under that floor the building itself stands in it.)
+    shade: { radius: 78, height: 33 },
+  },
+];

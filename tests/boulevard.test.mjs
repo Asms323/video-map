@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { BOULEVARD_WORLD, WORLD_PARTS, fountainJets, inFairground, lagoonRings, onLagoon, worldPlace } from '../js/boulevard.js';
+import { FAMOUS } from '../js/famous.js';
 import { KAFD_PARTS } from '../js/kafd.js';
 import { LANDMARKS, landmarkModels, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
@@ -135,7 +136,10 @@ test('the parts of Boulevard World are landmarks of the map, built only for a vi
   const mesh = new ModelMesh();
   assert.equal(landmarkModels(mesh, { lng: BOULEVARD_WORLD[0], lat: BOULEVARD_WORLD[1] }), 9 + WORLD_PARTS.length + district.length);
   const here = mesh.count;
-  assert.equal(landmarkModels(mesh, { lng: 46.72, lat: 24.64 }), 9 + district.filter((one) => !one.within).length);
+  // (…and of the famous buildings that are not towers, those within their own reach of there: the Ministry of Interior, 4 km off.)
+  const famous = FAMOUS.filter((one) => !one.within || Math.hypot((one.at[0] - 46.72) * 101200, (one.at[1] - 24.64) * 111320) < one.within).length;
+  assert.equal(famous, 1);
+  assert.equal(landmarkModels(mesh, { lng: 46.72, lat: 24.64 }), 9 + district.filter((one) => !one.within).length + famous);
   assert.ok(mesh.count < here / 3);
   // Each stands where it should: the Sphere's ball over its own middle, 190 m north of the fairground's mark.
   landmarkModels(mesh, { lng: BOULEVARD_WORLD[0], lat: BOULEVARD_WORLD[1] });
