@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { FAMOUS, KAFD_STATION, LIBRARY, MAJDOUL, MASMAK, MINISTRY, MURABBA, NATIONAL_MUSEUM, RAFAL, TURKI_MOSQUE, TV_TOWER, WATER_TOWER, inset, kafdStation, majdoulAnnex, majdoulSquare, majdoulTower, murabbaShades, museumHalls, museumShades, museumWall, rafalHalf, rafalRim, rafalTower, stationOutline, stationRing, stationShades, stepped, turkiShades, tvTower, waterTower } from '../js/famous.js';
+import { FAMOUS, KAFD_STATION, KAPSARC, LIBRARY, MAJDOUL, MASMAK, MINISTRY, MURABBA, NATIONAL_MUSEUM, RAFAL, TURKI_MOSQUE, TV_TOWER, WATER_TOWER, inset, kafdStation, kapsarcEaves, kapsarcRise, kapsarcShades, majdoulAnnex, majdoulSquare, majdoulTower, murabbaShades, museumHalls, museumShades, museumWall, rafalHalf, rafalRim, rafalTower, stationOutline, stationRing, stationShades, stepped, turkiShades, tvTower, waterTower } from '../js/famous.js';
+import { KAPSARC_CELLS, KAPSARC_FOCUS } from '../js/kapsarc-data.js';
 import { LANDMARKS, ghostsOfLandmarks, landmarkBeacons, landmarkModels, landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
 import { facesOf } from './model-faces.mjs';
@@ -26,7 +27,7 @@ const lookOf = ({ corners: [a, b, c] }) => {
 };
 
 test('the famous buildings are landmarks of the map: each where it stands, with its clearing and its shadow', () => {
-  assert.deepEqual(FAMOUS.map((one) => one.id), ['interior-ministry', 'king-fahd-library', 'masmak-fort', 'imam-turki-mosque', 'murabba-palace', 'national-museum']);
+  assert.deepEqual(FAMOUS.map((one) => one.id), ['interior-ministry', 'king-fahd-library', 'masmak-fort', 'imam-turki-mosque', 'murabba-palace', 'national-museum', 'kapsarc']);
   for (const one of FAMOUS) {
     assert.equal(LANDMARKS.find((landmark) => landmark.id === one.id), one);
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
@@ -974,4 +975,71 @@ test('the National Museum: a long wall of stone that curves like a dune and rise
     placed([[-130, 0], [-110, 0], [-110, 20], [-130, 20]]), // a house in the park west of it
   ];
   assert.deepEqual([...ghostsOfLandmarks(data.map((ring, id) => ({ id, ring })))].sort(), [0, 1]);
+});
+
+test('KAPSARC: a honeycomb of cells traced from the photo, each with its courtyard; low at the middle, rising to the edge', () => {
+  const K = KAPSARC;
+  const one = famous('kapsarc');
+  const inside = (ring, [x, y]) => {
+    let hit = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+      if ((ring[i][1] > y) !== (ring[j][1] > y) && x < ((ring[j][0] - ring[i][0]) * (y - ring[i][1])) / (ring[j][1] - ring[i][1]) + ring[i][0]) hit = !hit;
+    }
+    return hit;
+  };
+  const middle = (ring) => ring.reduce((sum, [x, y]) => [sum[0] + x / ring.length, sum[1] + y / ring.length], [0, 0]);
+  // Eighty-five cells, three in four with a courtyard; each anticlockwise, none inside another; 44,000 m2 of roofs in all.
+  assert.equal(KAPSARC_CELLS.length, 85);
+  assert.equal(KAPSARC_CELLS.filter((cell) => cell.court).length, 75);
+  for (const { ring, court } of KAPSARC_CELLS) {
+    assert.ok(ring.length >= 3 && squareMeters(ring) > 25, JSON.stringify(ring));
+    if (court) assert.ok(squareMeters(court) > 1.5 && court.every((corner) => inside(ring, corner)), 'a courtyard lies within its cell');
+  }
+  // (No corner of one cell lies inside another, but by the 0.1 m the outlines are rounded to: they meet along seams, and do not overlap.)
+  const edgeDistance = (ring, [x, y]) => Math.min(...ring.map(([ax, ay], k) => {
+    const [bx, by] = ring[(k + 1) % ring.length];
+    const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / ((bx - ax) ** 2 + (by - ay) ** 2 || 1)));
+    return Math.hypot(x - ax - t * (bx - ax), y - ay - t * (by - ay));
+  }));
+  KAPSARC_CELLS.forEach(({ ring }, i) => KAPSARC_CELLS.forEach((other, j) => i !== j && ring.forEach((corner) => assert.ok(!inside(other.ring, corner) || edgeDistance(other.ring, corner) < 0.2, `a corner of cell ${i} in cell ${j}`))));
+  const roofs = KAPSARC_CELLS.reduce((sum, { ring }) => sum + squareMeters(ring), 0);
+  assert.ok(roofs > 42000 && roofs < 47000, String(roofs));
+  // They fan out from the middle: the cells near it are small, those at the edge large.
+  const byReach = KAPSARC_CELLS.map(({ ring }) => [Math.hypot(middle(ring)[0] - KAPSARC_FOCUS[0], middle(ring)[1] - KAPSARC_FOCUS[1]), squareMeters(ring)]);
+  const mean = (list) => list.reduce((sum, [, area]) => sum + area, 0) / list.length;
+  assert.ok(mean(byReach.filter(([reach]) => reach < 40)) * 4 < mean(byReach.filter(([reach]) => reach > 90)));
+  // The eaves rise from 7 m at the middle to 19 m at the edge, and never fall as one goes out.
+  const eaves = KAPSARC_CELLS.map(({ ring }) => kapsarcEaves(ring));
+  assert.ok(Math.min(...eaves) >= K.low && Math.max(...eaves) <= K.high && Math.max(...eaves) - Math.min(...eaves) > 10);
+  const order = byReach.map(([reach], i) => [reach, eaves[i]]).sort((a, b) => a[0] - b[0]);
+  order.forEach(([, height], i) => i && assert.ok(height >= order[i - 1][1] - 1e-9));
+  // A roof rises to the rim of its courtyard: 2.2 m at most, less on a narrow one.
+  for (const cell of KAPSARC_CELLS) assert.ok(kapsarcRise(cell) >= 0.3 && kapsarcRise(cell) <= K.rise);
+  assert.ok(KAPSARC_CELLS.filter((cell) => kapsarcRise(cell) === K.rise).length > 30);
+
+  const { faces, made } = built('kapsarc');
+  assert.deepEqual(made, {});
+  assert.equal(Math.min(...heights(faces)), 0);
+  assert.ok(Math.max(...heights(faces)) <= K.high + K.rise + 1e-3 && one.height === K.high + K.rise);
+  // Walls of pale panels with bands of glass, lit by night; white roofs that take no shadow of the blocks that throw the cells' own.
+  const walls = faces.filter((face) => face.kind === 'pierced');
+  assert.ok(walls.length > 800 && walls.every((face) => near(face.storey, K.storey, 1e-5) && near(face.fins, 0.72, 0.01) && face.lit > 0.5));
+  const roof = faces.filter((face) => face.colour === '#f1efe9');
+  // (All of it faces up, but for a few slivers where a courtyard's corner comes close to its cell's edge.)
+  assert.ok(roof.length > 900 && roof.every((face) => face.open && face.normal[2] > 0) && roof.filter((face) => face.normal[2] < 0.5).length <= 5);
+  // Each courtyard: glass walls down to a floor that gives light by night, 2.6 m under its rim.
+  const floors = faces.filter((face) => face.kind === 'lamp');
+  assert.ok(floors.length >= 75 && floors.every((face) => face.glow > 0.5 && near(face.normal[2], 1, 1e-6)));
+  assert.ok(faces.filter((face) => face.kind === 'glass').every((face) => face.lit === 1 && face.open));
+  // Every cell throws its own shadow, from its outline to its eaves; the data's single block for the campus goes.
+  const shades = kapsarcShades();
+  assert.equal(shades.length, 85);
+  shades.forEach((shade, i) => assert.ok(shade.ring === KAPSARC_CELLS[i].ring && shade.height === eaves[i]));
+  assert.ok(one.within === 5000 && one.bearing === 0);
+  const squeeze = METERS * Math.cos((one.at[1] * Math.PI) / 180);
+  const placed = (points) => [...points, points[0]].map(([east, north]) => [one.at[0] + east / squeeze, one.at[1] + north / METERS]);
+  const block = placed([[-150, -120], [-60, -150], [60, -140], [130, -60], [140, 60], [80, 130], [-40, 140], [-110, 80]]);
+  // (A block whose middle is the data's: 30 m west and 2 m south of the landmark's mark.)
+  const shifted = block.map(([lng, lat]) => [lng + (-29.7 - (-150 - 60 + 60 + 130 + 140 + 80 - 40 - 110) / 8) / squeeze, lat + (-1.8 - (-120 - 150 - 140 - 60 + 60 + 130 + 140 + 80) / 8) / METERS]);
+  assert.deepEqual([...ghostsOfLandmarks([{ id: 1, ring: shifted }])], [1]);
 });

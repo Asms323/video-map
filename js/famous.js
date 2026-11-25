@@ -10,6 +10,7 @@
 // Nothing here touches the browser. Measurements are in metres; a model is measured from the middle of
 // its own footprint, east and north being its own (it is turned with its landmark's bearing).
 
+import { KAPSARC_CELLS, KAPSARC_FOCUS } from './kapsarc-data.js';
 import { ballProfile, beam, block, frame, lathe, prism, taper } from './solids.js';
 
 const TAU = Math.PI * 2;
@@ -1924,6 +1925,136 @@ export function museumShades() {
   ];
 }
 
+// ── KAPSARC ───────────────────────────────────────────────────────────────
+
+// The honeycomb's measures, in metres. (Its cells' outlines are in kapsarc-data.js.)
+export const KAPSARC = {
+  low: 7, // the eaves of the cells at the middle of the honeycomb…
+  high: 19, // …and of those at its edge
+  reach: 115, // how far from the middle the cells reach their full height
+  rise: 2.2, // how much higher a roof is at the rim of its courtyard than at its eaves, at most (less on a small cell)
+  well: 2.6, // how far down the glass walls of a courtyard go, to its glass floor
+  storey: 4.2, // the bands of glass in the walls
+};
+
+/** How high the eaves of a cell are: low at the middle of the honeycomb, rising towards its edge. */
+export function kapsarcEaves(ring) {
+  const K = KAPSARC;
+  const [east, north] = ring.reduce((sum, [x, y]) => [sum[0] + x / ring.length, sum[1] + y / ring.length], [0, 0]);
+  const share = Math.min(Math.hypot(east - KAPSARC_FOCUS[0], north - KAPSARC_FOCUS[1]) / K.reach, 1);
+  return Math.round((K.low + (K.high - K.low) * share * share * (3 - 2 * share)) * 10) / 10;
+}
+
+const squareMetres = (ring) => Math.abs(ring.reduce((sum, [x0, y0], i) => sum + x0 * ring[(i + 1) % ring.length][1] - ring[(i + 1) % ring.length][0] * y0, 0)) / 2;
+
+/** How far a point is from the nearest side of a ring. */
+const offRing = (ring, [x, y]) => Math.min(...ring.map(([ax, ay], k) => {
+  const [bx, by] = ring[(k + 1) % ring.length];
+  const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / ((bx - ax) ** 2 + (by - ay) ** 2 || 1)));
+  return Math.hypot(x - ax - t * (bx - ax), y - ay - t * (by - ay));
+}));
+
+/**
+ * How much a cell's roof rises from its eaves to the rim of its courtyard (or to its middle): less where the roof
+ * is narrow, and never steeper than it is wide where its courtyard comes nearest to its edge.
+ */
+export function kapsarcRise({ ring, court }) {
+  const across = Math.sqrt(squareMetres(ring)) - (court ? Math.sqrt(squareMetres(court)) : 0);
+  const nearest = court ? Math.min(...court.map((corner) => offRing(ring, corner))) : Infinity;
+  return Math.round(Math.max(Math.min(0.2 * across, KAPSARC.rise, 0.9 * nearest), 0.3) * 100) / 100;
+}
+
+/**
+ * The band of faces between an outer ring and an inner one inside it (each [[east, north, up], …], anticlockwise,
+ * the inner one, or a single point, round a place the outer one is seen whole from): a roof that rises, or falls,
+ * from one to the other.
+ */
+function band(model, outer, inner, stuff) {
+  const [cx, cy] = inner.reduce((sum, p) => [sum[0] + p[0] / inner.length, sum[1] + p[1] / inner.length], [0, 0]);
+  const angleOf = (p) => Math.atan2(p[1] - cy, p[0] - cx);
+  // Each ring from its point of least angle, its angles rising once round.
+  const unwrap = (ring) => {
+    const start = ring.reduce((best, p, i) => (angleOf(p) < angleOf(ring[best]) ? i : best), 0);
+    const turned = [...ring.slice(start), ...ring.slice(0, start)];
+    const angles = [];
+    for (const p of turned) {
+      let a = angleOf(p);
+      while (angles.length && a < angles[angles.length - 1] - 1e-9) a += TAU;
+      angles.push(a);
+    }
+    return { points: turned, angles };
+  };
+  const O = unwrap(outer);
+  const I = unwrap(inner);
+  const n = O.points.length;
+  const m = I.points.length;
+  const next = (list, angles, k) => (k + 1 < list.length ? angles[k + 1] : angles[0] + TAU);
+  let i = 0;
+  let j = 0;
+  while (i < n || j < m) {
+    const a = i < n ? next(O.points, O.angles, i) : Infinity;
+    const b = j < m ? next(I.points, I.angles, j) : Infinity;
+    if (a <= b) {
+      model.facet(O.points[i % n], O.points[(i + 1) % n], I.points[j % m], stuff, { out: [0, 0, 1], lines: [true, false, false] });
+      i += 1;
+    } else {
+      model.facet(O.points[i % n], I.points[(j + 1) % m], I.points[j % m], stuff, { out: [0, 0, 1], lines: [false, false, false] });
+      j += 1;
+    }
+  }
+}
+
+/**
+ * The King Abdullah Petroleum Studies and Research Center, KAPSARC (Zaha Hadid Architects; finished in
+ * 2017), in the north of the city: a campus of some 70,000 square metres for the study of energy, built as one
+ * honeycomb of uneven hexagonal cells with a courtyard in each, which fans out from a point near its middle,
+ * the cells small there and long at its edge, like the seeds of a sunflower.
+ *
+ * Every cell is a prism: walls of pale panels with bands of glass, and a white roof that rises from its
+ * eaves to the rim of its courtyard, so that each roof is a ring of facets that the sun picks out one by one.
+ * In each courtyard glass walls go down to a floor of glass, and by night the courtyards are lit from below
+ * and the bands of glass from within. The cells are low at the middle and rise towards the edge, so the
+ * honeycomb lifts like a crystal at its rim.
+ *
+ * (Its floor area, its architects, its year, and that it is a honeycomb of cells with courtyards are as
+ * published. The outline of every cell and of its courtyard was traced on the satellite photo the app shows
+ * and moved back from the slant of that photo (see tools/kapsarc): most to a metre or two, a dozen at the
+ * south and east edges to some five. The heights are a judgement, not a survey: no photograph of it from the
+ * ground could be found to measure them against; the dark of its south walls in the satellite photo, seen
+ * aslant, gives some 15 to 20 m at the edge, and the cells at the middle look lower. How each roof rises,
+ * the bands of glass and the glass floors of the courtyards are a likeness. The canopies over the paths
+ * between the buildings and the campus round them are not built.)
+ */
+export function kapsarc(model) {
+  const K = KAPSARC;
+  const up = (ring, height) => ring.map(([east, north]) => [east, north, height]);
+  const roof = { kind: 'plain', colour: '#f1efe9', open: true };
+  const wall = { kind: 'pierced', colour: '#dcd6c9', storey: K.storey, bay: 3.2, holes: 0.72, lit: 0.55, light: '#ffe2b8', glow: 0.25 };
+  const glass = { kind: 'glass', colour: '#2b3940', storey: K.well, bay: 1.6, lit: 1, floors: 0, mirror: 0.35, open: true };
+  const floor = { kind: 'lamp', colour: '#27323a', light: '#ffe6c2', glow: 0.55, open: true };
+  for (const cell of KAPSARC_CELLS) {
+    const { ring, court } = cell;
+    const eaves = kapsarcEaves(ring);
+    const rise = kapsarcRise(cell);
+    between(model, up(ring, 0), up(ring, eaves), wall, { lines: [false, true, true, true] });
+    if (court) {
+      const rim = eaves + rise;
+      band(model, up(ring, eaves), up(court, rim), roof);
+      between(model, up(court, rim - K.well), up(court, rim), glass, { way: -1, lines: [false, false, false, false] });
+      model.flat(up(court, rim - K.well), floor);
+    } else {
+      const [east, north] = ring.reduce((sum, [x, y]) => [sum[0] + x / ring.length, sum[1] + y / ring.length], [0, 0]);
+      band(model, up(ring, eaves), [[east, north, eaves + rise * 0.6]], roof);
+    }
+  }
+  return {};
+}
+
+/** What throws KAPSARC's shadows: every cell, from its own outline, to its eaves. */
+export function kapsarcShades() {
+  return KAPSARC_CELLS.map(({ ring }) => ({ ring, height: kapsarcEaves(ring) }));
+}
+
 /** The way the mosque's own north points: along its qibla wall, north-north-westwards. */
 const TURKI_BEARING = 333.93;
 
@@ -2055,5 +2186,19 @@ export const FAMOUS = [
     // it, and a strip of the park to the south: they go, and the model's parts throw the shadows.)
     ghosts: [[8.4, 3], [22.9, -104.4]],
     shades: museumShades(),
+  },
+  {
+    id: 'kapsarc',
+    name: 'KAPSARC',
+    at: [46.7218, 24.87525],
+    bearing: 0,
+    height: KAPSARC.high + KAPSARC.rise,
+    clear: 0,
+    reach: 205,
+    model: kapsarc,
+    within: 5000,
+    // (The buildings data has the whole honeycomb as one block of 6 m: it goes, and every cell throws its own shadow.)
+    ghosts: [[-29.7, -1.8]],
+    shades: kapsarcShades(),
   },
 ];

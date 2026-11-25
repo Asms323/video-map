@@ -34,6 +34,7 @@ const SHELL = [
   './js/boulevard.js',
   './js/kafd.js',
   './js/kafd-data.js',
+  './js/kapsarc-data.js',
   './js/famous.js',
   './js/solids.js',
   './js/props.js',

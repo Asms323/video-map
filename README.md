@@ -161,6 +161,13 @@ map opens on the city and keeps to it, and places are looked for in it.
   the low halls with tall bays of windows, two gardens and a round hall;
   the doors in a front of glass under a deep canopy of warm wood, and a
   paved square before them. By night the stone is floodlit, golden.
+- **KAPSARC.** Zaha Hadid's research centre in the north of the city is
+  built cell by cell: eighty-five uneven hexagons, traced from the satellite
+  photo, that fan out from a point near the middle, small there and long at
+  the edge; each with walls of pale panels and bands of glass, a white roof
+  that rises to the rim of its courtyard, and the courtyard's glass going
+  down to a floor that glows by night. The cells rise from 7 m at the middle
+  to 19 m at the edge, so the honeycomb lifts like a crystal at its rim.
 - **The financial district, building by building.** Round the PIF Tower the
   King Abdullah Financial District stands as it is built: seventy-four
   buildings, each a model on its own outline. Crystals of dark and blue glass, folded
@@ -496,6 +503,7 @@ Everything is free and needs no account or key.
 | The Riyadh Water Tower | Its rim and its roof: the satellite photo above (Esri World Imagery) and the buildings data's outline. Its outline from the side, its stripes and their colours: four photographs found through [Openverse](https://openverse.org) on Flickr (by EVITAS WEBFOTOS, CC BY-NC-SA 2.0; distar97, CC BY-ND 2.0; and oboudiold, public domain mark). Its height, its designer and the tower it was modelled on: Wikipedia's article on the tower and Saudipedia's, as found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The King Fahd National Library | Its plan, its roof and its court: the satellite photo above (Esri World Imagery), measured by hand, and the buildings data's outline. Its veil by day and by night: two photographs found through [Openverse](https://openverse.org) on Flickr (by 'guerrilla' strategy, CC BY-NC-SA 2.0, and Mâřš, CC BY-NC-ND 2.0). How the veil is made: what its architects, Gerber Architekten, and its engineers, Bollinger + Grohmann, have published of it | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The Grand Mosque of Riyadh | Its plan, the towers on its roof, its court, its minaret and the minaret's shadow: the satellite photo above (Esri World Imagery), measured by hand, and the buildings data's outlines. What it looks like from the ground: four street photographs out of OpenStreetView-5M (see above; by the Mapillary contributors janvanbekkum and mjoodealtamimi, CC BY-SA 4.0). What it holds, the ground it covers, its builders and dates, its stone, the bridges to the palace and the height of its minarets: Wikipedia's articles on the mosque and on Qasr Al-Hukm, Saudipedia's, and a report by Sabq, as found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
+| KAPSARC | Its cells and their courtyards: the satellite photo above (Esri World Imagery), traced by a script (`tools/kapsarc`); its place: the buildings data's outline and OpenStreetMap's name for it, found through Photon. Its floor area, architects and year: reports of it found by a web search | Studied, not shown: the model is built from the traced outlines. No photograph is in the app or fetched by it |
 | The National Museum | Its wall's foot and its halls: the buildings data below; its gardens, round hall, canopy and square: the satellite photo above (Esri World Imagery), measured by hand. What it looks like by day and by night: three photographs found through [Openverse](https://openverse.org) on Flickr (two by SammySix, CC BY 2.0; one by Timon91, CC BY-NC-SA 2.0). Its architects, its year and the dunes it was drawn from: reports of it found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The KAFD metro station | Its outline: the buildings data below; its corners and the fields of glass on its roof: the satellite photo above (Esri World Imagery). Its shell, its rows of lattice, its lids, its foot and its arches: four photographs found through [Openverse](https://openverse.org) on Flickr (three by Ali Lajami, CC BY 2.0; one by Bader Otaby, CC BY-NC-SA 2.0). The ground it covers and the lines it serves: Wikipedia's article on the station. How its architects describe its shell: reports of it found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | Murabba Palace | Its outline: the buildings data below. Its court: the satellite photo above (Esri World Imagery), measured by hand. Its walls, windows, bands and battlements: two street photographs out of OpenStreetView-5M (see above; by the Mapillary contributor mustafakamil, CC BY-SA 4.0). Its dates, its floors and rooms, what it is built of and the ground it covers: Wikipedia's article on the palace and Saudipedia's, as found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
@@ -614,6 +622,20 @@ is a likeness: how the wall ends in the north, which no photograph showed;
 the bays of windows, which follow one wall in that photograph and are given
 to all. The courts inside the halls, the glazed passages over them and what
 stands on the roofs are not built.
+
+KAPSARC (`js/famous.js`, `js/kapsarc-data.js`). What is real: its floor area,
+its architects and its year, and that it is a honeycomb of cells with a
+courtyard in each, as published; the outline of every cell and of its
+courtyard, traced on the satellite photo by a script and moved back from the
+photo's slant (see `tools/kapsarc`): most to a metre or two, a dozen at the
+south and east edges, where the photo left gaps, to some five. What is judged:
+the heights, 7 m at the middle rising to 19 m at the edge; no photograph of it
+from the ground could be found to measure them against, and the dark of its
+south walls in the satellite photo, seen aslant, is all they rest on. What is
+a likeness: how each roof rises to its courtyard, the bands of glass in its
+walls, which make it look plainer from the street than it is, and the glass
+floors of the courtyards. The canopies over the paths between its parts and
+the campus round it are not built.
 
 The KAFD metro station (`js/famous.js`). What is real: where it stands and its
 outline, 210.4 m by 39.6 m on the average (the buildings data's: some 8,250
@@ -1069,9 +1091,10 @@ js/boulevard.js         Boulevard World: its lagoon and what stands round it
 js/kafd.js              the King Abdullah Financial District: every building on its own outline
 js/famous.js            the famous buildings that are not towers, each with its details: the Ministry of Interior,
                         the King Fahd National Library, Masmak Fort, the Grand Mosque of Riyadh, Murabba
-                        Palace, the National Museum; and towers built again with theirs:
+                        Palace, the National Museum, KAPSARC; and towers built again with theirs:
                         Al Majdoul Tower, Burj Rafal, the TV Tower, the water tower, the KAFD metro station
 js/kafd-data.js         those outlines, and the buildings' heights (written by tools/kafd)
+js/kapsarc-data.js      the cells of KAPSARC's honeycomb and their courtyards (written by tools/kapsarc)
 js/fronts.js            houses dressed as real houses look: a front out of the kit on each one's own plot
 js/kit.js               the kit: where in models/fronts.jpg each front lies, and its measures (written by tools/fronts)
 js/props.js             models that carry a picture, each made from a photograph:
@@ -1080,6 +1103,7 @@ models/                 those models: name.vmm (the mesh), name.jpg (its picture
 tools/models/           how such a model is made: see its README
 tools/fronts/           the kit the houses are dressed from: its pictures, their measures, how it is built
 tools/kafd/             the outlines and heights of the financial district's buildings: where they come from
+tools/kapsarc/          the cells of KAPSARC: how they were traced, and how they are written out
 js/districts.js         the city's districts and what each is like
 js/districts-data.js    where each district lies
 js/plots.js             the walls and gates round the houses the map gives singly
