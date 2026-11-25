@@ -8,8 +8,8 @@
 // part gives a taper, a twist or an arch. One by one they have been rebuilt
 // as true models instead: flat faces that lean and fold, which the light
 // falls on as it does on the real building (see models.js; the later ones are
-// built in famous.js). The water tower and the financial district's metro
-// station are slabs still, and so are the low halls some of the towers stand on.
+// built in famous.js). The financial district's metro station is slabs
+// still, and so are the low halls some of the towers stand on.
 //
 // Where each one stands, which way it is turned and how large its footprint
 // is comes from the buildings data (Overture Maps, release 2026-11-18). Its
@@ -18,7 +18,7 @@
 // Nothing here touches the browser. Measurements are in metres.
 
 import { WORLD_PARTS, worldPlace } from './boulevard.js';
-import { FAMOUS, majdoulAnnex, majdoulTower, rafalTower, tvTower } from './famous.js';
+import { FAMOUS, majdoulAnnex, majdoulTower, rafalTower, tvTower, waterTower } from './famous.js';
 import { KAFD_PARTS, kafdPlace } from './kafd.js';
 import { Model, ModelMesh } from './models.js';
 import { PROPS } from './props.js';
@@ -854,40 +854,6 @@ function pifTower(model) {
 }
 
 /**
- * Riyadh Water Tower, 61 m: a stem that opens out into a wide bowl, striped
- * from top to bottom, with a flat lid.
- */
-function waterTower() {
-  const slabs = [];
-  const profile = [[0, 9], [6, 6.5], [26, 6], [34, 9], [42, 15], [50, 22.5], [54, 26], [58, 26]];
-  const stripes = 16;
-  const paints = ['#2d5ea6', '#f0ede2'];
-  const radiusAt = (z) => {
-    for (let i = 1; i < profile.length; i += 1) {
-      if (z <= profile[i][0]) {
-        const [z0, r0] = profile[i - 1];
-        const [z1, r1] = profile[i];
-        return r0 + ((r1 - r0) * (z - z0)) / (z1 - z0);
-      }
-    }
-    return profile[profile.length - 1][1];
-  };
-  // Each level is cut like a cake, so the stripes can run up and down.
-  for (let base = 0; base < 58; base += 4) {
-    const top = Math.min(base + 4, 58);
-    const r = radiusAt((base + top) / 2);
-    for (let i = 0; i < stripes; i += 1) {
-      const from = (i / stripes) * TAU;
-      const to = ((i + 1) / stripes) * TAU;
-      const middle = (from + to) / 2;
-      slabs.push({ outline: [[0, 0], [Math.cos(from) * r, Math.sin(from) * r], [Math.cos(middle) * r, Math.sin(middle) * r], [Math.cos(to) * r, Math.sin(to) * r]], base, top, paint: paints[i % 2] });
-    }
-  }
-  slabs.push({ outline: circle(23, 24), base: 58, top: 61, paint: '#e6e2d6' });
-  return slabs;
-}
-
-/**
  * The metro station of the King Abdullah Financial District, 210 m long: a
  * white shell whose sides ripple like wind-blown sand, a different ripple at
  * every level, under a roof that rolls in waves from one end to the other.
@@ -943,7 +909,7 @@ function kafdStation() {
  * own buildings are taken out, so the model does not stand inside a block.
  * shade: a footprint and height for its shadow, where the map data has none
  * (shades: several, each with its own place, in metres east and north of the
- * landmark's middle). covers(lng, lat): ground the landmark takes whole, a
+ * landmark's middle; base: for one that begins up in the air). covers(lng, lat): ground the landmark takes whole, a
  * lake say; the map's own buildings standing on it are taken out as well.
  * within: its model is built only for a view whose middle is no further off
  * than this, in metres (without it: always, to be seen from across the city).
@@ -965,7 +931,19 @@ export const LANDMARKS = [
   { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20.5, height: 244, clear: 44, build: majdoulAnnex, model: majdoulTower, nights: { '#e9e6dc': '#57534a' } },
   // (It stands on open ground: nothing is cleared for it, and it brings its own shadow.)
   { id: 'tv-tower', name: 'Riyadh TV Tower', at: [46.69601, 24.64322], bearing: 0, height: 170, clear: 0, reach: 16, model: tvTower, shade: { radius: 5, height: 150 } },
-  { id: 'water-tower', name: 'Riyadh Water Tower', at: [46.712275, 24.645119], bearing: 0, height: 61, clear: 30, build: waterTower, shade: { radius: 12, height: 58 }, nights: { '#2d5ea6': '#2a5aa6', '#f0ede2': '#aeaba1', '#e6e2d6': '#56544f' } },
+  // (The buildings data has the round of its bowl as if that stood on the ground: it goes altogether (ghosts). The tower's
+  // shadow is thrown by its stem; by its bowl, which is up in the air; and by the storey on top of that.)
+  {
+    id: 'water-tower',
+    name: 'Riyadh Water Tower',
+    at: [46.712275, 24.645119],
+    bearing: 0,
+    height: 61,
+    clear: 30,
+    model: waterTower,
+    ghosts: [[0, 0]],
+    shades: [{ radius: 5.5, height: 39 }, { radius: 15, base: 39, height: 46 }, { radius: 26, base: 46, height: 53.4 }, { radius: 17.5, base: 53.4, height: 56.4 }],
+  },
   {
     id: 'kafd-station',
     name: 'KAFD Metro Station',
@@ -1144,7 +1122,8 @@ export function landmarkShades() {
       const [east, north] = shade.at ?? [0, 0];
       const ring = circle(shade.radius, 12).map(([u, v]) => place(landmark, east + u, north + v, true));
       ring.push(ring[0]);
-      shades.push({ height: shade.height, base: 0, polygons: [[ring]] });
+      // (base: for what throws its shadow from up in the air: the bowl of the water tower.)
+      shades.push({ height: shade.height, base: shade.base ?? 0, polygons: [[ring]] });
     }
   }
   // The masts of the cable-stayed bridges.

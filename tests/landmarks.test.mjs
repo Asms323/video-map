@@ -61,10 +61,10 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   // And last the famous buildings that are not towers: see famous.test.mjs.)
   const world = [...WORLD_PARTS.map((one) => one.id), ...KAFD_PARTS.map((one) => one.id), ...FAMOUS.map((one) => one.id)];
   assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station', ...world]);
-  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', ...world.filter((id) => id !== 'kafd')]);
+  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', ...world.filter((id) => id !== 'kafd')]);
   // (The towers of the city that are true models: built for a view from anywhere.)
   const city = LANDMARKS.filter((one) => one.model && !world.includes(one.id)).length;
-  assert.equal(city, 12);
+  assert.equal(city, 13);
   for (const one of LANDMARKS) {
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
     if (world.includes(one.id)) continue;
@@ -125,8 +125,8 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   for (const corner of facesOf(mesh).flatMap((face) => face.corners)) {
     // (And the two Al Anoud Towers across the road from that one, and Al Faisaliah a little south and east of it.)
     // (And Al Majdoul Tower up King Fahd Road, 1.1 km west and 4.4 km north; and Burj Rafal further up it, with its podium;
-    // and the TV Tower in the old town, 2.6 km east and 6.3 km south.)
-    const spots = [[-2880, 7090], [446, 1263], [1297, -883], [1169, -913], [1518, -1091], [1244, -767], [1242, -317], [-1089, 4354], [2630, -6321]];
+    // and the TV Tower in the old town, 2.6 km east and 6.3 km south, and the water tower beyond it.)
+    const spots = [[-2880, 7090], [446, 1263], [1297, -883], [1169, -913], [1518, -1091], [1244, -767], [1242, -317], [-1089, 4354], [2630, -6321], [4275, -6109]];
     if (Math.hypot(corner[0] + 3809, corner[1] - 10286) < 105) continue;
     // (…the ministry's tower north of Hamad Tower, and the Olaya Towers beyond Tahlia Street. The district's towers stand round the PIF Tower, within 800 m of it.)
     // (And each famous building where it stands: the ministry 2.6 km east and 3.3 km south, a hundred metres from its middle to its corners.)
@@ -743,7 +743,8 @@ test('replacedByLandmarks picks the tower\'s own outline, not the block it stand
   ];
   assert.deepEqual([...replacedByLandmarks(outlines)].sort(), [1, 3]);
   assert.equal(replacedByLandmarks([]).size, 0);
-  // The TV tower stands on open ground: nothing is cleared for it. It and the water tower bring their own shadow.
+  // The TV tower stands on open ground: nothing is cleared for it. It and the water tower bring their own shadow:
+  // the TV tower one, the water tower four (its stem; its bowl, up in the air, in two; and the storey on that).
   assert.equal(landmark('tv-tower').clear, 0);
   const shades = landmarkShades();
   // (Between those two and the bridge's masts come the shades of Boulevard World: nine, three of them the pyramids';
@@ -753,13 +754,16 @@ test('replacedByLandmarks picks the tower\'s own outline, not the block it stand
   // and those of the famous buildings that are not towers.)
   // (A famous building may bring one shadow, or several: each of Masmak Fort's towers has its own.)
   const district = KAFD_PARTS.filter((one) => one.shade).length + FAMOUS.reduce((sum, one) => sum + (one.shade ? 1 : 0) + (one.shades?.length ?? 0), 0);
-  assert.equal(shades.length, 4 + 9 + district + PROPS.length);
-  assert.deepEqual(shades.slice(0, 2).map((shade) => [shade.height, shade.base, shade.polygons.length, shade.polygons[0][0].length]), [[150, 0, 1, 13], [58, 0, 1, 13]]);
-  assert.deepEqual(shades.slice(2, 11).map((shade) => Math.round(shade.height)), [34, 100, 7, 13, 15, 22, 10, 12, 28]);
+  assert.equal(shades.length, 7 + 9 + district + PROPS.length);
+  assert.deepEqual(shades.slice(0, 5).map((shade) => [shade.height, shade.base, shade.polygons.length, shade.polygons[0][0].length]), [[150, 0, 1, 13], [39, 0, 1, 13], [46, 39, 1, 13], [53.4, 46, 1, 13], [56.4, 53.4, 1, 13]]);
+  // (The bowl's own round, 26 m, where the tower stands.)
+  const water = landmark('water-tower');
+  assert.ok(shades[3].polygons[0][0].every((corner) => near(Math.hypot(...from(water, corner)), 26, 0.01)));
+  assert.deepEqual(shades.slice(5, 14).map((shade) => Math.round(shade.height)), [34, 100, 7, 13, 15, 22, 10, 12, 28]);
   // So do the two masts of the Wadi Laban Bridge, which stand 405 m apart along its deck.
   const bridge = STAYED_BRIDGES[0];
   assert.deepEqual([bridge.id, bridge.masts, bridge.masts[1] - bridge.masts[0]], ['wadi-laban', [-202.5, 202.5], 405]);
-  assert.deepEqual(shades.slice(11 + district, 19 + district).map((shade) => shade.height), [25, 11, 13, 6.5, 11, 11, 9, 7]);
+  assert.deepEqual(shades.slice(14 + district, 22 + district).map((shade) => shade.height), [25, 11, 13, 6.5, 11, 11, 9, 7]);
   const masts = shades.slice(-2).map((shade) => {
     const ring = shade.polygons[0][0];
     const middle = [(ring[0][0] + ring[2][0]) / 2, (ring[0][1] + ring[2][1]) / 2];
@@ -785,8 +789,12 @@ test('ghostsOfLandmarks picks the outlines the data has where a tower only lies 
   assert.equal(ghostsOfLandmarks([]).size, 0);
   // (The tower's model stands in for the ghost as well, being within its clearing; it is the ghost's shadow that must not be thrown.)
   assert.deepEqual([...replacedByLandmarks(outlines)].sort(), [1, 2]);
+  // The water tower has one too: the round of its bowl, which the data has as if it stood on the ground.
+  const water = landmark('water-tower');
+  const round = Array.from({ length: 18 }, (_, i) => [water.at[0] + (Math.cos((i / 17) * Math.PI * 2) * 26.3) / squeeze, water.at[1] + (Math.sin((i / 17) * Math.PI * 2) * 26.3) / METERS]);
+  assert.deepEqual([...ghostsOfLandmarks([{ id: 7, ring: round }])], [7]);
   // No other landmark has any.
-  assert.deepEqual(LANDMARKS.filter((one) => one.ghosts).map((one) => one.id), ['burj-rafal']);
+  assert.deepEqual(LANDMARKS.filter((one) => one.ghosts).map((one) => one.id), ['burj-rafal', 'water-tower']);
 });
 
 test('the KAFD station: a long white shell with rippling sides under a rolling roof', () => {

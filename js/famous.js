@@ -925,6 +925,68 @@ export function tvTower(model) {
   return { beacons: [[0, 0, tip + 0.6]] };
 }
 
+// ── The Riyadh Water Tower ────────────────────────────────────────────────
+
+// The tower's measures, in metres.
+export const WATER_TOWER = {
+  stripes: 32, // round it, tan and blue by turns
+  stem: 5.45, // the radius of its stem
+  // Its outline from the ground up: [radius, height]. The stem; where it begins to open; the bowl's straight slope; its widest edge; the top of its rim.
+  profile: [[5.45, 0], [5.45, 31], [5.45, 34.9], [5.9, 36.3], [6.7, 37.5], [7.75, 38.5], [10.43, 40.5], [26, 52.1], [25, 53.4]],
+  storey: [15.5, 56.4], // the round top storey on the terrace: its radius, and the height of its eaves
+  eaves: 17.5, // how far out the roof's eaves reach
+  top: 61, // the point of its roof
+  mast: 67.5, // the tip of the mast on it
+};
+
+/**
+ * The Riyadh Water Tower (Sune Lindström of VBB, 1971), in Al Watan Park by the old town: 61 m, after his
+ * "mushroom" at Örebro in Sweden: a stem that opens into a wide flat bowl of water, with a round storey
+ * and a look-out on top.
+ *
+ * The stem is 11 m thick and stands straight for 35 m; then it turns outwards in a tight curve and runs
+ * on as a flat cone to a rim 52 m across. All of it is painted in thirty-two stripes that run up the
+ * stem and out across the underside of the bowl to the rim: every other one tan, and between them
+ * stripes that are cream on the stem, white where it turns, and sky-blue on the bowl. On top is a
+ * terrace behind a railing; a round glazed storey; a low cone of a roof; and a thin mast.
+ *
+ * (Its height, its designer and the tower it was modelled on are as published. Its rim, 52 m across,
+ * and the roof on its terrace are measured on the satellite photo the app shows, and the buildings data
+ * has the same round. Its outline from the side, the stripes, their number and their colours are read
+ * off a photograph of about 2010, taken from the park; it has been painted otherwise before, in yellow
+ * and white and in yellow and black, and may be again. The stem's lower third was behind trees in that
+ * photograph: it is taken to run straight to the ground, as an older one shows it.)
+ */
+export function waterTower(model) {
+  const T = WATER_TOWER;
+  const to = frame([0, 0], 0);
+  const lit = { light: '#ffeccb', glow: 0.5 };
+  const tan = { kind: 'plain', colour: '#86733f', ...lit };
+  const cream = { kind: 'plain', colour: '#efe2b4', ...lit };
+  const white = { kind: 'plain', colour: '#f1f3f1', ...lit };
+  const pale = { kind: 'plain', colour: '#c4d9ec', ...lit };
+  const blue = { kind: 'plain', colour: '#4d86c4', ...lit };
+  // (The stripes between the tan ones: cream up the stem to 31 m, white from there over the turn, paling into blue on the bowl.)
+  const others = [cream, white, white, white, white, pale, blue, blue];
+  lathe(model, to, [0, 0], T.profile, (piece, cut) => (cut % 2 === 0 ? tan : others[piece]), { cuts: T.stripes });
+
+  // The terrace, inside the rim; its railing: a post at every stripe, and a rail.
+  const [rimRadius, terrace] = T.profile[T.profile.length - 1];
+  const [storeyRadius, eavesUp] = T.storey;
+  const round = (radius, up, count = T.stripes) => Array.from({ length: count }, (_, k) => [Math.cos((k / count) * TAU) * radius, Math.sin((k / count) * TAU) * radius, up]);
+  model.flat(round(rimRadius, terrace), { kind: 'plain', colour: '#d5dadb' }, { holes: [round(storeyRadius, terrace)] });
+  const rail = { kind: 'plain', colour: '#f4f5f3' };
+  for (const [east, north] of round(rimRadius - 0.3, 0)) beam(model, [east, north, terrace], [east, north, terrace + 1.15], 0.12, rail);
+  lathe(model, to, [0, 0], [[rimRadius - 0.3, terrace + 1.05], [rimRadius - 0.3, terrace + 1.2]], rail, { cuts: T.stripes });
+  // The round storey: glass between cream posts, its lamps on by night; and its roof, a low cone that stands out past it.
+  lathe(model, to, [0, 0], [[storeyRadius, terrace], [storeyRadius, eavesUp]], (piece, cut) => (cut % 4 === 0 ? cream : { kind: 'glass', colour: '#3c4a52', storey: 3.2, bay: 2, lit: 1, floors: 0, mirror: 0.3 }), { cuts: T.stripes * 2 });
+  model.flat(round(T.eaves, eavesUp), { kind: 'plain', colour: '#e4dcc0', light: '#ffeccb', glow: 0.6 }, { out: [0, 0, -1], holes: [round(storeyRadius, eavesUp)] });
+  lathe(model, to, [0, 0], [[T.eaves, eavesUp], [T.eaves, eavesUp + 0.35], [0, T.top]], { kind: 'plain', colour: '#a9a48e' }, { cuts: T.stripes });
+  // The mast, and the red lamp on its tip.
+  beam(model, [0, 0, T.top - 0.3], [0, 0, T.mast], 0.25, rail, { ends: true });
+  return { beacons: [[0, 0, T.mast + 0.6]] };
+}
+
 /**
  * The famous buildings built here, as landmarks for the map (see landmarks.js): where each stands
  * ([lng, lat]), which way it is turned, how tall it is, within what distance of its middle the map's

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { FAMOUS, LIBRARY, MAJDOUL, MASMAK, MINISTRY, RAFAL, TV_TOWER, inset, majdoulAnnex, majdoulSquare, majdoulTower, rafalHalf, rafalRim, rafalTower, stepped, tvTower } from '../js/famous.js';
+import { FAMOUS, LIBRARY, MAJDOUL, MASMAK, MINISTRY, RAFAL, TV_TOWER, WATER_TOWER, inset, majdoulAnnex, majdoulSquare, majdoulTower, rafalHalf, rafalRim, rafalTower, stepped, tvTower, waterTower } from '../js/famous.js';
 import { LANDMARKS, landmarkBeacons, landmarkModels, landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
 import { facesOf } from './model-faces.mjs';
@@ -554,4 +554,59 @@ test('the Riyadh TV Tower: a shaft of concrete on four fins, a lantern of glass 
   assert.ok(near(far(mast.filter((face) => face.corners.some((corner) => corner[2] > 165))), 0.35 * Math.SQRT2, 1e-3) && near(far(mast.filter((face) => face.corners.some((corner) => corner[2] < 155))), 0.7 * Math.SQRT2, 1e-3));
   assert.deepEqual(made.beacons, [[0, 0, 170.6]]);
   assert.ok(near(Math.max(...heights(faces)), 170, 1e-3) && Math.min(...heights(faces)) === 0);
+});
+
+test('the Riyadh Water Tower: a stem that opens into a wide bowl, in thirty-two stripes; a terrace, a round storey and a cone of a roof on top', () => {
+  const T = WATER_TOWER;
+  const mesh = new ModelMesh();
+  const made = waterTower(new Model(mesh));
+  const faces = facesOf(mesh);
+  const out = (corner) => Math.hypot(corner[0], corner[1]);
+  // Its outline: a stem of 10.9 m to 34.9 m; a tight turn; a straight slope out to a rim 52 m across at 52.1 m; the rim's top, a little in, at 53.4 m.
+  assert.deepEqual(T.profile[0], [5.45, 0]);
+  assert.deepEqual(T.profile.at(-2), [26, 52.1]);
+  assert.deepEqual(T.profile.at(-1), [25, 53.4]);
+  for (let i = 1; i < T.profile.length; i += 1) assert.ok(T.profile[i][1] > T.profile[i - 1][1] && (T.profile[i][0] >= T.profile[i - 1][0] || i === T.profile.length - 1), 'it only ever opens as it rises, but for its rim');
+  // (The slope is straight from 38.5 m to the rim: the point between lies on the line.)
+  const [[r0, z0], [r1, z1], [r2, z2]] = [T.profile[5], T.profile[6], T.profile[7]];
+  assert.ok(near((r1 - r0) / (z1 - z0), (r2 - r0) / (z2 - z0), 0.01));
+  // Thirty-two stripes round it, tan and another by turns, from the ground to the rim: the other is cream on the stem, white at the turn, blue on the bowl.
+  const striped = faces.filter((face) => ['#86733f', '#efe2b4', '#f1f3f1', '#c4d9ec', '#4d86c4'].includes(face.colour) && face.corners.every((corner) => corner[2] <= 53.4 + 1e-3) && Math.abs(face.normal[2]) < 0.95);
+  const stripeOf = (face) => {
+    const middle = [0, 1].map((k) => (face.corners[0][k] + face.corners[1][k] + face.corners[2][k]) / 3);
+    return Math.floor((((Math.atan2(middle[1], middle[0]) / (Math.PI * 2)) % 1) + 1) % 1 * 32 + 1e-6);
+  };
+  const colourAt = (stripe, from, to) => [...new Set(striped.filter((face) => stripeOf(face) === stripe && face.corners.every((corner) => corner[2] >= from - 1e-3 && corner[2] <= to + 1e-3)).map((face) => face.colour))];
+  for (let stripe = 0; stripe < 32; stripe += 1) {
+    if (stripe % 2 === 0) {
+      assert.deepEqual(colourAt(stripe, 0, 53.4), ['#86733f'], `stripe ${stripe}: tan all the way`);
+    } else {
+      assert.deepEqual(colourAt(stripe, 0, 31), ['#efe2b4'], `stripe ${stripe}: cream on the stem`);
+      assert.deepEqual(colourAt(stripe, 31, 38.5), ['#f1f3f1'], 'white at the turn');
+      assert.deepEqual(colourAt(stripe, 40.5, 53.4), ['#4d86c4'], 'blue on the bowl');
+    }
+  }
+  assert.ok(striped.every((face) => face.kind === 'plain' && face.glow > 0.4), 'floodlit by night');
+  // (The bowl's underside looks down and out; the stem's wall stands upright.)
+  assert.ok(striped.filter((face) => face.corners.every((corner) => corner[2] >= 40.5 - 1e-3 && corner[2] <= 52.1 + 1e-3)).every((face) => face.normal[2] < -0.5));
+  assert.ok(striped.filter((face) => face.corners.every((corner) => corner[2] <= 31 + 1e-3)).every((face) => near(face.normal[2], 0, 1e-6) && face.corners.every((corner) => near(out(corner), 5.45, 1e-3))));
+  // On top: the terrace, from the rim in to the round storey; a railing of thirty-two posts and a rail.
+  const terrace = faces.filter((face) => face.colour === '#d5dadb');
+  assert.ok(terrace.length > 30 && terrace.every((face) => face.normal[2] > 0.99 && face.corners.every((corner) => near(corner[2], 53.4, 1e-3) && out(corner) <= 25 + 1e-3 && out(corner) >= 15.5 * Math.cos(Math.PI / 32) - 1e-3)));
+  const rail = faces.filter((face) => face.colour === '#f4f5f3' && face.corners.every((corner) => corner[2] <= 54.61));
+  assert.equal(rail.length, 32 * 8 + 32 * 2);
+  assert.ok(rail.every((face) => face.corners.every((corner) => Math.abs(out(corner) - 24.7) < 0.1 && corner[2] >= 53.4 - 1e-3)));
+  // The round storey: glass with its lamps on, a cream post at every fourth piece; from the terrace to the eaves, 3 m.
+  const storey = faces.filter((face) => face.corners.every((corner) => near(out(corner), 15.5, 1e-3) && corner[2] >= 53.4 - 1e-3 && corner[2] <= 56.4 + 1e-3));
+  assert.equal(storey.length, 64 * 2);
+  assert.equal(storey.filter((face) => face.kind === 'glass' && face.lit === 1).length, 48 * 2);
+  assert.equal(storey.filter((face) => face.colour === '#efe2b4').length, 16 * 2);
+  // Its roof: a low cone that stands out 2 m past the storey, to a point at 61 m; and the mast, to 67.5 m, with the red lamp.
+  const roof = faces.filter((face) => face.colour === '#a9a48e');
+  assert.ok(roof.length >= 32 && near(Math.max(...roof.flatMap((face) => face.corners.map(out))), 17.5, 1e-3));
+  const cone = roof.filter((face) => face.normal[2] > 0.5);
+  assert.ok(cone.length === 32 && cone.every((face) => face.corners.some((corner) => near(corner[2], 61, 1e-3) && out(corner) < 1e-6)));
+  assert.ok(near(Math.max(...heights(faces)), 67.5, 1e-3) && Math.min(...heights(faces)) === 0);
+  assert.deepEqual(made.beacons, [[0, 0, 68.1]]);
+  assert.ok(near(Math.max(...faces.flatMap((face) => face.corners.map(out))), 26, 1e-3), 'nothing reaches past its rim');
 });
