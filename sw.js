@@ -18,6 +18,7 @@ const SHELL = [
   './js/plots.js',
   './js/roadside.js',
   './js/cuttings.js',
+  './js/airliner.js',
   './js/sky.js',
   './js/stars.js',
   './js/flights.js',

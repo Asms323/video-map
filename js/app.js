@@ -128,6 +128,10 @@ const speedEl = $('speed');
 const speedValue = $('speedValue');
 const speedUnit = $('speedUnit');
 const followBtn = $('followBtn');
+const watchBtn = $('watchBtn');
+const flightBar = $('flightBar');
+const flightText = $('flightText');
+const mapPane = $('mapPane');
 const placeEl = $('place');
 const placeTitle = $('placeTitle');
 const placeAlt = $('placeAlt');
@@ -506,7 +510,51 @@ async function applyMapType() {
   if (shown) setStatus(locationStatus());
   labelFollow();
   updateSignals();
+  syncWatch();
 }
+
+// ── Watching a flight ─────────────────────────────────────────────────────
+
+/** The button that watches a flight shows in the 3D city while the traffic (and so the aircraft) is on. */
+function syncWatch() {
+  watchBtn.hidden = !(activeMapType() === 'city' && settings.traffic);
+}
+
+/** Watch a flight with the camera: the one told (by its id), or the one best worth watching just now. */
+function watchFlight(id = null) {
+  if (!mapView) return;
+  const flight = id ?? mapView.pickFlight();
+  if (!flight) {
+    setStatus('No aircraft in the sky just now. Try again in a minute.');
+    setTimeout(() => setStatus(locationStatus()), 4000);
+    return;
+  }
+  setFollow('off');
+  mapView.followFlight(flight);
+}
+
+/** What the flight being watched is doing, in words: who, how high, how fast. Null: none is watched. */
+function showWatched(flight) {
+  mapPane.classList.toggle('watching', Boolean(flight));
+  watchBtn.setAttribute('aria-pressed', String(Boolean(flight)));
+  flightBar.hidden = !flight;
+  if (!flight) return;
+  const who = flight.callsign || (flight.phase === 'landing' ? 'Landing' : flight.phase === 'takeoff' ? 'Taking off' : 'Passing over');
+  const height = settings.unit === 'mph' ? `${(Math.round((flight.alt * 3.28084) / 50) * 50).toLocaleString('en-US')} ft` : `${(Math.round(flight.alt / 10) * 10).toLocaleString('en-US')} m`;
+  const where = flight.alt < 1 ? (flight.phase === 'landing' ? 'on the runway' : 'taking off') : height;
+  const speed = formatSpeed(flight.speed, settings.unit);
+  flightText.textContent = `${who} · ${where} · ${speed.value} ${speed.unit}`;
+  // (In full for a screen reader, and on a long press: whose flight, and whether it is a real one.)
+  const whose = flight.kind === 'live' ? 'a live flight' : "the airport's usual traffic, not a particular flight";
+  flightBar.title = `${flight.phase === 'landing' ? 'Coming in to land at' : flight.phase === 'takeoff' ? 'Climbing away from' : 'Passing over Riyadh, not using'} King Khalid International Airport: ${whose}`;
+}
+
+watchBtn.addEventListener('click', () => {
+  if (!mapView) return;
+  if (watchBtn.getAttribute('aria-pressed') === 'true') mapView.followFlight(null);
+  else watchFlight();
+});
+$('flightStop').addEventListener('click', () => mapView?.followFlight(null));
 
 /** Say what the follow button does now. The view that does not turn is isometric in the 3D city, north up elsewhere. */
 function labelFollow() {
@@ -1056,6 +1104,7 @@ optTraffic.addEventListener('change', () => {
   saveSettings();
   if (mapView) mapView.setLife(settings.traffic);
   updateSignals();
+  syncWatch();
 });
 
 optPhoto.addEventListener('change', () => {
@@ -1096,6 +1145,8 @@ function initMap() {
       view: hasSaved ? saved : null,
       handlers: {
         onUserPan: () => setFollow('off'),
+        onPlaneTap: (id) => watchFlight(id),
+        onFollowFlight: (flight) => showWatched(flight),
         onViewChange: (view) => store.set('mapView', view),
         onPlaceTap: (place) => showPlace(place),
         onLongPress: (point) => showPlace({ title: 'Dropped pin', lat: point.lat, lng: point.lng, lookup: true }),

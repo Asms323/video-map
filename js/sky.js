@@ -26,6 +26,7 @@
 // Nothing here touches the browser. Directions are [east, north, up];
 // places in the scene are metres east, north and up of its origin.
 
+import { AIRLINERS as AIRLINER_SIZES, AIRLINER_PARTS as AIRLINER_PARTS_PAINT, airliner, wingEndsOf } from './airliner.js';
 import { STARS } from './stars.js';
 
 const RADIANS = Math.PI / 180;
@@ -914,9 +915,160 @@ export function drawStars(lights, points, seconds = 0) {
 const AIRCRAFT_LIFE_SIZE_WITHIN_METERS = 1750;
 const AIRCRAFT_DWINDLES_FROM_METERS = 45000;
 const AIRCRAFT_SEEN_WITHIN_METERS = 150000;
+// Nearer than this an aircraft is drawn whole and true (see drawAirliner()): in its real depth, so that
+// it passes in front of the buildings under it and behind those before it. Further off it is drawn as
+// part of the sky, behind everything.
+export const NEAR_AIRCRAFT_METERS = 15000;
+// How its parts are painted: the body, the belly, the fin and the engines from its airline's colours
+// (see flights.js); the rest the same for all.
+const AIRLINER_FIXED = { cockpit: [34, 42, 56], wing: [196, 200, 206], intake: [48, 52, 60], exhaust: [98, 100, 106], strut: [150, 152, 158], tyre: [34, 34, 36], window: [40, 48, 62] };
+const BELLY = [196, 200, 206];
+const WINDOW_GLOW = [255, 212, 150]; // a cabin's light by night
+const WINDOWS_LIT_WITHIN_METERS = 2500; // (further off, a window is less than a pixel, and only flickers)
+const PLANE_SHADOW_BELOW_METERS = 1000; // the shadow of one lower than this shows on the ground: fainter the higher it is, as the sun's own width blurs it
 // The trail a high aircraft leaves: how far behind it each part is, how wide there, and how solid.
 const TRAIL = [[150, 16, 0], [1100, 34, 0.66], [3600, 90, 0.56], [8000, 190, 0.42], [14000, 300, 0.26], [22000, 400, 0]];
 const TRAIL_FROM_METERS = 8000; // how high it must fly to leave one
+
+/**
+ * One aircraft near enough to be seen whole (see NEAR_AIRCRAFT_METERS): the airliner of airliner.js, as
+ * it flies just now (its nose up as it climbs or comes in to land, a wing down in a turn, its wheels and
+ * flaps down near the ground), lit by the sun as the buildings are. Into near.body the aircraft itself,
+ * and its shadow on the ground when it flies low by day; into near.glow its lit windows and the glare of
+ * its landing lamps; into near.lamps the points of its lamps. at: where it is in the scene's metres (its
+ * wheels); scale: how much larger than life it is drawn.
+ */
+export function drawAirliner(near, plane, { at, far, scale = 1, sun = null, lampsOn = 0, seconds = 0, eye = [0, 0, 0] }) {
+  const landing = plane.phase === 'landing';
+  const onGround = plane.alt < 1;
+  const gear = onGround || (landing ? plane.alt < 900 : plane.alt < 250);
+  const flaps = landing ? (plane.alt < 1300 ? 30 : plane.alt < 2600 ? 15 : 0) : plane.phase === 'takeoff' && plane.alt < 700 ? 15 : 0;
+  const model = airliner(plane.wide ? 'wide' : 'narrow', { gear, flaps });
+  // Its attitude: along its path, the nose a few degrees above it (more as it climbs away, less in the
+  // cruise), level on the ground; and banked into a turn.
+  const course = plane.track * RADIANS;
+  const path = Math.atan2(plane.climb ?? 0, Math.max(plane.speed ?? 100, 30));
+  const pitch = onGround ? 0 : path + (landing ? 5 : plane.phase === 'takeoff' ? 8 : 2.5) * RADIANS;
+  const bank = (plane.bank ?? 0) * RADIANS;
+  const ahead = [Math.sin(course) * Math.cos(pitch), Math.cos(course) * Math.cos(pitch), Math.sin(pitch)];
+  const flatRight = [Math.cos(course), -Math.sin(course), 0];
+  const flatRoof = [-Math.sin(course) * Math.sin(pitch), -Math.cos(course) * Math.sin(pitch), Math.cos(pitch)];
+  const right = [0, 1, 2].map((k) => flatRight[k] * Math.cos(bank) - flatRoof[k] * Math.sin(bank));
+  const roof = [0, 1, 2].map((k) => flatRoof[k] * Math.cos(bank) + flatRight[k] * Math.sin(bank));
+  const turn = (x, y, z) => [right[0] * x + ahead[0] * y + roof[0] * z, right[1] * x + ahead[1] * y + roof[1] * z, right[2] * x + ahead[2] * y + roof[2] * z];
+  const place = (x, y, z) => {
+    const t = turn(x * scale, y * scale, z * scale);
+    return [at[0] + t[0], at[1] + t[1], at[2] + t[2]];
+  };
+  // Its paint, and the light on it: the sun's, as on the buildings (from at least 35° up), or by night
+  // the same all round (the night itself is laid on by the scene).
+  const body = plane.body ?? [244, 244, 244];
+  const tail = plane.tail ?? [60, 90, 150];
+  const paint = {
+    ...AIRLINER_FIXED,
+    body,
+    belly: [0, 1, 2].map((k) => body[k] * 0.35 + BELLY[k] * 0.65),
+    fin: tail,
+    engine: [0, 1, 2].map((k) => body[k] * 0.8 + 200 * 0.2),
+  };
+  const colours = AIRLINER_PARTS_PAINT.map((name) => paint[name]);
+  const light = sun && sun.altitude > 3 ? directionOf(sun.azimuth, Math.max(sun.altitude, 35)) : null;
+  const { corners, normals, parts } = model;
+  const count = parts.length;
+  near.body.room(count * 3);
+  for (let i = 0; i < count; i += 1) {
+    const n = turn(normals[i * 3], normals[i * 3 + 1], normals[i * 3 + 2]);
+    const shade = light ? Math.min(0.6 + 0.4 * Math.max(n[0] * light[0] + n[1] * light[1] + n[2] * light[2], 0) + 0.05 * n[2], 1.04) : 0.82;
+    const colour = colours[parts[i]];
+    const [r, g, b] = [Math.min(colour[0] * shade, 255), Math.min(colour[1] * shade, 255), Math.min(colour[2] * shade, 255)];
+    for (let k = 0; k < 3; k += 1) {
+      const c = i * 9 + k * 3;
+      const p = place(corners[c], corners[c + 1], corners[c + 2]);
+      near.body.corner(p[0], p[1], p[2], r, g, b, 1);
+    }
+  }
+
+  // Its shadow on the ground, when it flies low under the sun: its body, wings and tailplane, laid down
+  // along the sun's rays, fainter the higher it is.
+  if (sun && sun.altitude > 10 && plane.alt < PLANE_SHADOW_BELOW_METERS) {
+    const way = directionOf(sun.azimuth, sun.altitude);
+    const strength = 0.3 * (1 - plane.alt / PLANE_SHADOW_BELOW_METERS) ** 0.7;
+    const ground = (x, y, z) => {
+      const p = place(x, y, z);
+      const down = p[2] - 0.25;
+      return [p[0] - (way[0] / way[2]) * down, p[1] - (way[1] / way[2]) * down, 0.25];
+    };
+    const size = AIRLINER_SIZES[model.kind];
+    const half = size.width / 2;
+    const [root, tip] = wingEndsOf(size);
+    const outline = [
+      [[-half, size.length / 2 - 2, size.centre], [half, size.length / 2 - 2, size.centre], [half, -size.length / 2 + 2, size.centre], [-half, -size.length / 2 + 2, size.centre]],
+      ...[-1, 1].map((side) => [[side * half, root[1], root[2]], [side * tip[0], tip[1], tip[2]], [side * tip[0], tip[1] - tip[3], tip[2]], [side * half, root[1] - root[3], root[2]]]),
+    ];
+    near.body.room(outline.length * 6);
+    for (const corners4 of outline) {
+      const [a, b, c, d] = corners4.map((p) => ground(...p));
+      near.body.face(a, b, c, d, 0, 0, 0, strength);
+    }
+  }
+
+  if (!(lampsOn > 0.02)) return;
+  // By night: the cabin's windows lit, seen from near by; its lamps (red on the left wing tip, green on
+  // the right, white at the tail; the red beacons flashing once a second, the white flashes at the tips
+  // twice); and below three kilometres, coming in or going out, its landing lamps.
+  if (far < WINDOWS_LIT_WITHIN_METERS) {
+    near.glow.room(model.windows.length * 6);
+    for (const [x, y, z] of model.windows) {
+      const out = Math.sign(x) * 0.02;
+      const quad = [place(x + out, y + 0.14, z - 0.2), place(x + out, y - 0.14, z - 0.2), place(x + out, y - 0.14, z + 0.2), place(x + out, y + 0.14, z + 0.2)];
+      for (const p of [quad[0], quad[1], quad[2], quad[0], quad[2], quad[3]]) near.glow.glow(p[0], p[1], p[2], WINDOW_GLOW[0], WINDOW_GLOW[1], WINDOW_GLOW[2], 0.85 * lampsOn);
+    }
+  }
+  const beat = (((seconds + (plane.id ? plane.id.length * 0.37 : 0)) % 1) + 1) % 1;
+  const lamp = (where, colour, strength) => {
+    const p = place(...where);
+    near.lamps.glow(p[0], p[1], p[2], colour[0], colour[1], colour[2], strength * lampsOn);
+  };
+  const L = model.lamps;
+  near.lamps.room(10);
+  lamp(L.left, [255, 60, 50], 1);
+  lamp(L.right, [70, 255, 120], 1);
+  lamp(L.tail, [255, 255, 255], 0.8);
+  if (beat < 0.12) {
+    lamp(L.top, [255, 60, 50], 1);
+    lamp(L.bottom, [255, 60, 50], 1);
+  }
+  if (beat > 0.5 && (beat < 0.56 || (beat > 0.62 && beat < 0.68))) {
+    lamp(L.left, [255, 255, 255], 1);
+    lamp(L.right, [255, 255, 255], 1);
+  }
+  if (plane.phase !== 'cruise' && plane.alt < 3200) {
+    for (const where of L.landing) lamp(where, [255, 248, 232], 1);
+    // (And their glare, so wide whatever the distance, where they point at the eye.)
+    const middle = place(0, model.size.length * 0.2, AIRLINER_SIZES[model.kind].centre - 1);
+    const to = [middle[0] - eye[0], middle[1] - eye[1], middle[2] - eye[2]];
+    const away = Math.hypot(to[0], to[1], to[2]) || 1;
+    const facing = -(ahead[0] * to[0] + ahead[1] * to[1] + ahead[2] * to[2]) / away;
+    const strength = smooth(0.3, 0.95, facing) * 0.9;
+    if (strength > 0.05) {
+      const wide = Math.max(away * 0.004, 2.5);
+      const way = [to[0] / away, to[1] / away, to[2] / away];
+      let side = [way[1], -way[0], 0];
+      const size = Math.hypot(side[0], side[1]) || 1;
+      side = [side[0] / size, side[1] / size, 0];
+      const up = [side[1] * way[2] - side[2] * way[1], side[2] * way[0] - side[0] * way[2], side[0] * way[1] - side[1] * way[0]];
+      const sides = 10;
+      near.glow.room(sides * 3);
+      for (let k = 0; k < sides; k += 1) {
+        near.glow.glow(middle[0], middle[1], middle[2], 255, 246, 224, strength * lampsOn);
+        for (const t of [(k / sides) * TAU, ((k + 1) / sides) * TAU]) {
+          const [c, s2] = [Math.cos(t) * wide, Math.sin(t) * wide];
+          near.glow.glow(middle[0] + side[0] * c + up[0] * s2, middle[1] + side[1] * c + up[1] * s2, middle[2] + side[2] * c + up[2] * s2, 255, 246, 224, 0);
+        }
+      }
+    }
+  }
+}
 
 /**
  * Draw the aircraft into two meshes: each where it is, in the scene's
@@ -937,9 +1089,10 @@ const TRAIL_FROM_METERS = 8000; // how high it must fly to leave one
  *
  * Returns how many were drawn.
  */
-export function drawAircraft(mesh, lights, { eye, origin, planes = [], night = 0, sun = null, moon = null, cover = {}, seconds = 0, shown = null } = {}) {
+export function drawAircraft(mesh, lights, { eye, origin, planes = [], night = 0, sun = null, moon = null, cover = {}, seconds = 0, shown = null, near = null, far: farOnes = true } = {}) {
   mesh.clear();
   lights.clear();
+  if (near) for (const part of [near.body, near.glow, near.lamps]) part.clear();
   if (planes.length === 0) return 0;
   const dark = clamp01(night);
   const squeeze = Math.cos(origin.lat * RADIANS) * 111320;
@@ -954,10 +1107,22 @@ export function drawAircraft(mesh, lights, { eye, origin, planes = [], night = 0
     const at = [(plane.lng - origin.lng) * squeeze, (plane.lat - origin.lat) * 111320, plane.alt - (flat * flat) / (2 * EARTH_CURVE_METERS)];
     const to = [at[0] - eye[0], at[1] - eye[1], at[2] - eye[2]];
     const far = Math.hypot(to[0], to[1], to[2]);
-    if (!(far > 120) || far > AIRCRAFT_SEEN_WITHIN_METERS || to[2] / far < 0.004) continue;
     const seen = (plane.alt > CLOUD_LAYERS[2].to ? overLow : 1) * (plane.alt > CLOUD_LAYERS[1].to ? overMid : 1) * (plane.alt > CLOUD_LAYERS[0].to ? overHigh : 1);
+    // An aircraft far off is drawn larger than life (see above): but only as far as it is seen against
+    // the sky. Seen from above, against the city, it is as large as it is.
+    const enlarged = Math.max(far / AIRCRAFT_LIFE_SIZE_WITHIN_METERS, 1) * Math.min(AIRCRAFT_DWINDLES_FROM_METERS / far, 1) ** 0.66;
+    if (near && far < NEAR_AIRCRAFT_METERS) {
+      // Near: whole, in its true depth, wherever the eye is (below it, level with it, above it).
+      if (!(far > 12) || !(seen > 0.35)) continue;
+      const large = 1 + (enlarged - 1) * smooth(0.004, 0.03, to[2] / far);
+      drawAirliner(near, plane, { at, far, scale: large, sun, lampsOn, seconds, eye });
+      drawn += 1;
+      shown?.push({ id: plane.id, kind: plane.kind, callsign: plane.callsign, phase: plane.phase, alt: plane.alt, at, seen, far });
+      continue;
+    }
+    if (!farOnes || !(far > 120) || far > AIRCRAFT_SEEN_WITHIN_METERS || to[2] / far < 0.004) continue;
     if (!(seen > 0.03)) continue;
-    const large = Math.max(far / AIRCRAFT_LIFE_SIZE_WITHIN_METERS, 1) * Math.min(AIRCRAFT_DWINDLES_FROM_METERS / far, 1) ** 0.66;
+    const large = enlarged;
     const long = (plane.wide ? 64 : 38) * large;
     // Its own directions: ahead (nose up or down as it climbs), to its right, and up through its roof.
     const course = plane.track * RADIANS;

@@ -100,6 +100,8 @@ const BOUND = [280, 110, 330, 200, 60, 250, 20]; // Jeddah, the Gulf, the north,
 const CROSSINGS = [305, 125, 20, 200, 80, 260];
 const CROSSING_SECONDS = 300; // either side of its nearest
 const SLOT_SECONDS = 75; // no two landings closer together than this (and they take the two runways by turns)
+const GRAVITY = 9.81;
+const MOST_BANK = 30; // an airliner turns banked no more than this
 const CROSSING_SLOT_SECONDS = 240;
 const RIYADH_HOURS_EAST = 3;
 
@@ -214,6 +216,11 @@ export function typicalFlights(seconds, { windFrom } = {}) {
     };
     const now = phase === 'cruise' ? placeAt(0) : blend(0);
     const next = phase === 'cruise' ? placeAt(4) : blend(4);
+    const after = phase === 'cruise' ? placeAt(8) : blend(8);
+    // (How far it is banked: as much as its turn, at its speed, needs; a turn to the right is positive.)
+    const track = now.track ?? bearingTo(now.at, next.at);
+    const turning = ((((now.track ?? bearingTo(next.at, after.at)) - track + 540) % 360) - 180) / 4; // degrees a second
+    const bank = Math.max(Math.min(Math.atan((now.speed * turning * RADIANS) / GRAVITY) / RADIANS, MOST_BANK), -MOST_BANK);
     const airline = airlineFor(chance(slot, 53));
     planes.push({
       id,
@@ -222,9 +229,10 @@ export function typicalFlights(seconds, { windFrom } = {}) {
       lng: now.at[0],
       lat: now.at[1],
       alt: now.alt,
-      track: now.track ?? bearingTo(now.at, next.at),
+      track,
       speed: now.speed,
       climb: now.climb,
+      bank: Math.round(bank * 10) / 10 || 0,
       wide: chance(slot, 59) < 0.25,
       airline: airline.name,
       tail: airline.tail,

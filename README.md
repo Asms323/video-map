@@ -451,11 +451,39 @@ map opens on the city and keeps to it, and places are looked for in it.
   the real wind of the moment has them in use, down the real three-degree
   approach. Those carry no tag: they are typical, not particular. With no
   live aircraft known at all, the airliners that usually pass over are
-  added too. All are drawn larger than life or they would be specks; the
-  high ones leave trails; by night each shows its lamps (red on the left
-  wing, green on the right, white at the tail, the flashing ones) and,
-  coming in, its landing lamps. Shown with the traffic; switched off with
-  it.
+  added too. Shown with the traffic; switched off with it.
+- **The aircraft themselves, true to size.** Within 15 km of the eye each
+  one is a whole airliner at its true size: a single-aisle one, as the
+  A320 family most flights at Riyadh are flown with (37.6 m long, 35.8 m
+  across, 11.8 m tall), or a wide-bodied one, as the 787 and the A350. Its
+  round body, swept wings and their blades, engines under the wings,
+  tailplane, the fin in its airline's colour, the windows of its flight deck
+  and a row of cabin windows down each side; its wheels and flaps come down
+  as it comes in to land, and go up after it leaves; it climbs nose up,
+  comes in nose a little up, and banks into its turns. It is lit by the
+  sun as the buildings are, and it is a solid thing in the scene: it passes
+  in front of the buildings under it and behind those before it, so it is
+  seen from under it along the street and from above as it passes over the
+  city in the 3D map. Flying low by day it throws its shadow on the
+  ground, the fainter the higher it is. By night it is dark against the
+  city's lights, its cabin windows lit, its lamps on (red on the left wing,
+  green on the right, white at the tail, the red beacons and the white
+  flashes) and, coming in or going out, its landing lamps. Further off it
+  is drawn into the sky, larger than life or it would be a speck, the high
+  ones leaving trails.
+- **Watch a flight.** The plane button among the map's buttons (in the 3D
+  city, with the traffic on) takes the camera up to a flight and flies with
+  it: a live one within 60 km if the feed has one, else the nearest flight
+  coming in to land, else one climbing away. Tapping an aircraft on the
+  map, or a live one's tag, watches that one. The camera stays beside it,
+  behind and a little above at first, and turns as it turns: pinch to come
+  nearer or go further off, twist to see it from another side, tilt to see
+  it from higher or lower. The bar at the top says what it is doing: its
+  call sign (live) or what it is (landing, taking off, passing over), how
+  high and how fast. It follows it out over the desert if need be, and lets
+  go when it lands and leaves the runway, when it flies out of the sky the
+  app keeps, on a drag, on the button again, or on the cross in the bar;
+  the camera then comes back down to the ground.
 - Drawing the walls window by window and working out the shadows on them is
   more work for the phone with every picture. If the map moves slowly, both
   can be switched off under the map options ("Detailed walls and shadows");
@@ -1085,7 +1113,12 @@ Watch video only when parked, or let a passenger watch.
   live aircraft is shown where it was at most ten seconds or so before,
   moved on by its speed and course; if the phone's clock is more than half
   a minute out, the feed's clock is used instead. A tag still shows when a
-  tall building hides its aircraft.
+  tall building hides its aircraft. Every aircraft is drawn as one of the
+  two airliners, by its size: the feed says what type a live one is only
+  sometimes, and a smaller jet or a turboprop is drawn as a single-aisle
+  airliner. Its paint is a body, a light grey belly and a fin in its
+  airline's colour, with no marks or names. Watching a flight out past the
+  city, there are no buildings under it: the 3D city is Riyadh's only.
 
 ## For developers
 
@@ -1147,6 +1180,7 @@ js/sight.js             reading the satellite photo: shadows to heights, trees,
 js/sky.js               the sky: clouds, sun, moon, stars, planets, aircraft
 js/stars.js             the stars that rise over Riyadh
 js/flights.js           the aircraft: live ones, or the airport's usual traffic
+js/airliner.js          the airliners themselves, true to size, as triangles
 js/services.js          the open data services
 js/lib.js               everything that needs no browser: parsing, distances,
                         road matching, place categories, map styles by day

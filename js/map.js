@@ -54,6 +54,7 @@ import { plotWalls } from './plots.js';
 import { drawFootbridges, drawRoadside, drawSigns, medianPalms } from './roadside.js';
 import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
 import { SceneLayer } from './scene.js';
+import { AIRLINERS } from './airliner.js';
 import { aircraftOverRiyadh, buildingArchive, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
 import { footprintGrid, heightsFromShadows, passSuns, pavedGrid, photoGrid, roofColours, tilesFor, treesInPhoto } from './sight.js';
 import { CasterMesh, groundCasters, shadowCasters, shadowFall, shadowMapSize } from './shade.js';
@@ -135,6 +136,14 @@ const FLIGHTS_ASK_MS = 15000; // how often the feed of live aircraft is given th
 const PLANE_TAGS_MOST = 8; // the live aircraft named on screen: the nearest so many
 const PLANE_TAG_SEEN_FROM = 0.2; // and only one that shows through the cloud at least so much
 const PLANE_TAG_ROOM_PX = 100; // how far down the picture an aircraft must be for its name to go above it (clear of the bar at the top)
+// Watching a flight: the camera held in the air beside an aircraft as it flies (see followFlight()).
+const FOLLOW_ZOOM = 19.6; // how near the camera starts to a single-aisle airliner: it is half the width of the screen
+const FOLLOW_MOST_ZOOM = 20.5; // (the map comes no nearer than zoom 19 otherwise)
+const FOLLOW_PITCH = 74; // looking on it from a little above
+const FOLLOW_TURN = -28; // from behind it and a little to its left
+const FOLLOW_GLIDE_MS = 1500; // and the camera's way back down to the ground once it lets go
+const FOLLOW_TELL_MS = 500; // how often what it is doing is told (see handlers.onFollowFlight)
+const PLANE_TAP_REACH_PX = 34; // a tap this near an aircraft on the screen (or on it) picks it
 const PLACES_GONE_PITCH = 82; // tilted this far the places' markers are put away; four degrees short of it they are all there
 
 // Shadows are worked out for what is on screen and a margin around it, and
@@ -381,7 +390,9 @@ let photoWay = false;
 
 export class MapView {
   /**
-   * handlers: onUserPan(), onViewChange(view), onPlaceTap(place),
+   * handlers: onUserPan(), onViewChange(view), onPlaceTap(place), onPlaneTap(id) (an aircraft or its
+   * name tapped), onFollowFlight(flight) (what the flight being watched is doing, now and then: { id, kind,
+   * callsign, phase, alt, speed, wide, airline }; null when none is watched any more),
    * onLongPress({ lat, lng }), onMeTap(), onMapTap(), onStyleError(error).
    * Throws if the browser cannot draw the map (no WebGL).
    */
@@ -530,8 +541,12 @@ export class MapView {
     this.skyStarMesh = new Mesh(); // the stars and the planets
     this.skyMoonMesh = new Mesh(); // the moon's face
     this.skyCloudMeshes = [new Mesh(), new Mesh(), new Mesh()]; // the clouds: high, middle and low
-    this.skyPlaneMesh = new Mesh(); // the aircraft and their trails
+    this.skyPlaneMesh = new Mesh(); // the aircraft far off, and their trails
     this.skyPlaneLampMesh = new Mesh(); // and their lamps
+    this.planeMesh = new Mesh(); // the aircraft near enough to be drawn whole (see drawAirliner() in sky.js), and their shadows
+    this.planeGlowMesh = new Mesh(); // their lit windows and the glare of their landing lamps
+    this.planeLampMesh = new Mesh(); // and their lamps
+    this.planesMade = null;
     this.skyMade = null;
     this.skyKept = null; // what of the sky is set out only now and then
     this.skyOrdered = false; // whether the scene has had the parts of the sky, in their order
@@ -566,6 +581,11 @@ export class MapView {
     this.planeTagsWanted = []; // those to be named just now: { id, name, height, at (in the scene's metres), seen }
     this.unit = 'kmh'; // the measure heights are given in: metres, or with 'mph' feet
     this.scene.onView = (matrix) => this.placePlaneTags(matrix);
+    this.planesNow = []; // the aircraft in the sky this moment (see Flights.at() in flights.js)
+    this.planesShown = []; // and those drawn, each where it is in the scene (see drawAircraft() in sky.js)
+    this.planeFollowed = null; // the one the camera is following: { id, turn, plane, told }
+    this.followFrame = 0;
+    this.glideToken = 0;
     // For anyone looking at the scene from outside (the tests do): what it holds.
     this.scene.counts = () => ({ life: this.lifeCounts(), photo: this.photoCounts(), buildings: this.buildingCounts(), detail: this.detailCounts(), night: this.nightCounts(), busy: { ...this.busy } });
     // How often each piece of work has been done, for anyone wondering what keeps the map from coming to rest.
@@ -574,13 +594,14 @@ export class MapView {
     // The map opens on Riyadh, and keeps to it: it cannot be moved off the city, nor drawn back until
     // the city is a dot.
     const { west, south, east, north } = RIYADH.bounds;
+    this.cityBounds = [[west, south], [east, north]];
     const start = view && inRiyadh(view) ? view : { ...RIYADH.centre, zoom: RIYADH.zoom };
     this.map = new maplibregl.Map({
       container,
       style: BLANK_STYLE,
       center: [start.lng, start.lat],
       zoom: start.zoom,
-      maxBounds: [[west, south], [east, north]],
+      maxBounds: this.cityBounds,
       minZoom: 8,
       maxZoom: 19,
       maxPitch: MOST_PITCH,
@@ -639,6 +660,7 @@ export class MapView {
     });
     map.on('dragstart', () => {
       this.cameraTarget = null;
+      this.followFlight(null);
       this.handlers.onUserPan?.();
     });
     map.on('moveend', () => {
@@ -818,6 +840,11 @@ export class MapView {
       if (!element) {
         element = document.createElement('div');
         element.className = 'plane-tag';
+        const id = tag.id;
+        element.addEventListener('click', (event) => {
+          event.stopPropagation();
+          this.handlers.onPlaneTap?.(id);
+        });
         layer.appendChild(element);
         this.planeTags.set(tag.id, element);
       }
@@ -865,6 +892,7 @@ export class MapView {
   async setType(type) {
     const request = ++this.styleRequest;
     this.clearPlaneTags();
+    this.followFlight(null, { glide: false });
     let base;
     let buildings = null;
     let cityBase = null;
@@ -2512,6 +2540,7 @@ export class MapView {
     // (Has the view moved on far enough for other houses to be the nearest? Then those are the ones drawn as models.)
     if (this.frontsPicture && this.pickHouseModels()) this.layRoofs();
     this.moveSky();
+    this.movePlanes();
     if (!this.lifeOn || this.type !== 'city' || zoom < LIFE_MIN_ZOOM) {
       if (this.trafficMesh.count > 0) {
         this.trafficMesh.clear();
@@ -2761,20 +2790,72 @@ export class MapView {
       kept.starsDrawn = drawStars(this.skyStarMesh, kept.points, seconds);
       this.scene.set('skystars', ...parts.get('skystars'));
     }
-    // The aircraft: asked after now and then, where a feed of live ones can be had; flown by the clock otherwise.
-    let flying = { kind: null, source: null, planes: [] };
-    if (this.lifeOn) {
-      if (Math.abs(now - this.flightsAskedAt) > FLIGHTS_ASK_MS && !document.hidden) {
-        this.flightsAskedAt = now;
-        aircraftOverRiyadh().then((found) => {
-          if (found) this.flights.report(found.planes, found.seconds, found.source, { now: Date.now() / 1000 });
-        });
+    this.skyMade = {
+      clouds: kept.laid.reduce((sum, laid) => sum + (laid?.clouds ?? 0), 0),
+      patches: kept.laid.reduce((sum, laid) => sum + (laid?.patches ?? 0), 0),
+      stars: kept.points.length,
+      planets: kept.points.filter((point) => point.planet).map((point) => point.planet),
+      // (In words: how many stars show, the brightest by name, and the planets: all where they are this minute.)
+      tonight: skyTonight(kept.points),
+      // (Where the clouds come from: readings place by place, the moment they are for and how many; or the weather here.)
+      field: field ? { at: field.at, readings: field.lats.length * field.lngs.length, aloft: Boolean(field.aloft) } : null,
+      sun: kept.heavens.sun,
+      moon: kept.heavens.moon,
+      cover,
+    };
+  }
+
+  /** The parts of the scene the aircraft drawn whole are in (see movePlanes()). */
+  planeParts() {
+    return [
+      ['planes', this.planeMesh, { shaded: false }],
+      ['planeglow', this.planeGlowMesh, { glow: true }],
+      ['planelamps', this.planeLampMesh, { glow: true, point: POINT_METERS.vehicle }],
+    ];
+  }
+
+  /**
+   * The aircraft: asked after now and then, where a feed of live ones can be had; flown by the clock
+   * otherwise. Those near the eye are drawn whole, in their true depth, in whatever view: from under them
+   * along the street, or looking down on them as they pass over the city. Those far off are drawn as
+   * part of the sky, while the sky shows. Shown with the traffic.
+   */
+  movePlanes() {
+    const origin = this.scene.origin;
+    if (!this.lifeOn || this.type !== 'city' || !origin || this.map.getZoom() < LIFE_MIN_ZOOM) {
+      if (this.planesMade) {
+        for (const [name, mesh, how] of this.planeParts()) {
+          mesh.clear();
+          this.scene.set(name, mesh, how);
+        }
+        this.planesMade = null;
       }
-      flying = this.flights.at(seconds, { windFrom: this.weather?.windFrom });
+      if (this.planeTags.size > 0 || this.planeTagsWanted.length > 0) this.clearPlaneTags();
+      if (this.planeFollowed) this.followFlight(null);
+      return;
     }
+    const now = Date.now();
+    const seconds = now / 1000;
+    if (Math.abs(now - this.flightsAskedAt) > FLIGHTS_ASK_MS && !document.hidden) {
+      this.flightsAskedAt = now;
+      aircraftOverRiyadh().then((found) => {
+        if (found) this.flights.report(found.planes, found.seconds, found.source, { now: Date.now() / 1000 });
+      });
+    }
+    const flying = this.flights.at(seconds, { windFrom: this.weather?.windFrom });
+    const eye = this.scene.eye;
+    const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
+    const place = { lng: origin.lng + eye[0] / squeeze, lat: origin.lat + eye[1] / METERS_PER_DEGREE };
+    const sky = this.skyMade ? this.skyKept : null; // (while the sky shows, those far off are drawn in it)
+    const cover = this.coverOver(place);
     const shown = [];
-    const planes = drawAircraft(this.skyPlaneMesh, this.skyPlaneLampMesh, { eye, origin, planes: flying.planes, night: this.night, sun: this.sun, moon: kept.moon, cover, seconds, shown });
-    if (planes > 0 || this.skyMade?.planes !== 0) {
+    const near = { body: this.planeMesh, glow: this.planeGlowMesh, lamps: this.planeLampMesh };
+    const nearBefore = this.planesMade?.near ?? -1;
+    const planes = drawAircraft(this.skyPlaneMesh, this.skyPlaneLampMesh, { eye, origin, planes: flying.planes, night: this.night, sun: this.sun, moon: sky?.moon ?? null, cover, seconds, shown, near, far: Boolean(sky) });
+    const nearNow = this.planeMesh.count;
+    if (nearNow > 0 || nearBefore !== 0) for (const [name, mesh, how] of this.planeParts()) this.scene.set(name, mesh, how);
+    if (sky) {
+      const parts = new Map(this.skyParts().map(([name, mesh, how]) => [name, [mesh, how]]));
       this.scene.set('skyplanes', ...parts.get('skyplanes'));
       this.scene.set('skyplanelamps', ...parts.get('skyplanelamps'));
     }
@@ -2785,23 +2866,17 @@ export class MapView {
       .sort((a, b) => a.far - b.far)
       .slice(0, PLANE_TAGS_MOST)
       .map((one) => ({ id: one.id || one.callsign, name: one.callsign, height: this.heightText(one.alt), at: one.at, seen: one.seen }));
+    // Where each one drawn is, for a tap on it (see planeAt()); and all there are.
+    this.planesShown = shown;
+    this.planesNow = flying.planes;
     // And every live one, for anyone who asks: how far off, how high, and climbing or coming down.
     const named = flying.planes
       .filter((plane) => plane.kind === 'live')
       .map((plane) => ({ callsign: plane.callsign, alt: plane.alt, climb: plane.climb, far: Math.hypot((plane.lng - place.lng) * squeeze, (plane.lat - place.lat) * METERS_PER_DEGREE) }))
       .sort((a, b) => a.far - b.far);
-    this.skyMade = {
-      clouds: kept.laid.reduce((sum, laid) => sum + (laid?.clouds ?? 0), 0),
-      patches: kept.laid.reduce((sum, laid) => sum + (laid?.patches ?? 0), 0),
+    this.planesMade = {
       planes,
-      stars: kept.points.length,
-      planets: kept.points.filter((point) => point.planet).map((point) => point.planet),
-      // (In words: how many stars show, the brightest by name, and the planets: all where they are this minute.)
-      tonight: skyTonight(kept.points),
-      // (Where the clouds come from: readings place by place, the moment they are for and how many; or the weather here.)
-      field: field ? { at: field.at, readings: field.lats.length * field.lngs.length, aloft: Boolean(field.aloft) } : null,
-      sun: kept.heavens.sun,
-      moon: kept.heavens.moon,
+      near: nearNow,
       flights: flying.kind,
       source: flying.source,
       aloft: flying.planes.length,
@@ -2811,16 +2886,165 @@ export class MapView {
       tagged: this.planeTagsWanted.length,
       cover,
     };
+    if (this.planeFollowed) this.keepFollowing(flying.planes);
+  }
+
+  /** The aircraft drawn under a point of the screen ({ x, y } in pixels), or within reach of a finger of it: its id, or null. */
+  planeAt(point) {
+    const m = this.scene.matrix;
+    const canvas = this.map.getCanvas();
+    const [width, height] = [canvas.clientWidth, canvas.clientHeight];
+    const onScreen = ([x, y, z]) => {
+      const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+      if (!(w > 1e-6)) return null;
+      return [(((m[0] * x + m[4] * y + m[8] * z + m[12]) / w + 1) / 2) * width, ((1 - (m[1] * x + m[5] * y + m[9] * z + m[13]) / w) / 2) * height];
+    };
+    let best = null;
+    for (const one of this.planesShown) {
+      const plane = this.planesNow.find((each) => each.id === one.id);
+      const size = AIRLINERS[plane?.wide ? 'wide' : 'narrow'];
+      const middle = onScreen([one.at[0], one.at[1], one.at[2] + size.centre]);
+      const end = onScreen([one.at[0] + size.length / 2, one.at[1], one.at[2] + size.centre]);
+      if (!middle) continue;
+      // (Anywhere on it counts, as well as near it.)
+      const reach = PLANE_TAP_REACH_PX + (end ? Math.hypot(end[0] - middle[0], end[1] - middle[1]) : 0);
+      const off = Math.hypot(middle[0] - point.x, middle[1] - point.y);
+      if (off < reach && (!best || off < best.off)) best = { off, id: one.id };
+    }
+    return best?.id ?? null;
   }
 
   /**
-   * What is in the sky right now: { clouds, patches, planes, stars, planets, sun, moon, flights: 'live' |
+   * The flight best worth watching just now: a real one (from the live feed) within 60 km, the nearest;
+   * else the nearest one coming in to land that is still well up; else the nearest one climbing away;
+   * else the nearest of all that are in the air. Its id, or null.
+   */
+  pickFlight() {
+    const middle = this.map.getCenter();
+    const squeeze = Math.cos((middle.lat * Math.PI) / 180) * METERS_PER_DEGREE;
+    const away = (one) => Math.hypot((one.lng - middle.lng) * squeeze, (one.lat - middle.lat) * METERS_PER_DEGREE);
+    const flying = this.planesNow.filter((one) => one.alt > 30);
+    const nearest = (list) => list.reduce((best, one) => (!best || away(one) < away(best) ? one : best), null);
+    const pick =
+      nearest(flying.filter((one) => one.kind === 'live' && away(one) < 60000)) ??
+      nearest(flying.filter((one) => one.phase === 'landing' && one.alt > 250)) ??
+      nearest(flying.filter((one) => one.phase === 'takeoff')) ??
+      nearest(flying);
+    return pick?.id ?? null;
+  }
+
+  /**
+   * Watch a flight: the camera is held in the air beside the aircraft (id as Flights.at() gives it), at
+   * first behind it and a little above, and goes with it as it flies, turning as it turns. A pinch brings
+   * it nearer or takes it further; a twist turns it round the aircraft; a tilt looks on it from higher or
+   * lower; a drag lets it go. Null lets go of it: the camera glides back down to the ground (at once,
+   * with glide: false). Returns whether a flight is being watched.
+   */
+  followFlight(id, { glide = true } = {}) {
+    const map = this.map;
+    if (!id) {
+      if (!this.planeFollowed) return false;
+      this.planeFollowed = null;
+      if (this.followFrame) cancelAnimationFrame(this.followFrame);
+      this.followFrame = 0;
+      map.setMaxZoom(19);
+      this.handlers.onFollowFlight?.(null);
+      const from = map.getCenterElevation();
+      const token = ++this.glideToken;
+      // (And once down, the map keeps to the city again: from out over the desert it comes back to its edge.)
+      const down = () => {
+        map.setCenterClampedToGround(true);
+        map.setMaxBounds(this.cityBounds);
+      };
+      if (!glide || !(from > 1)) {
+        map.setCenterElevation(0);
+        down();
+        return false;
+      }
+      const start = performance.now();
+      const step = () => {
+        if (token !== this.glideToken || this.planeFollowed) return;
+        const t = Math.min((performance.now() - start) / FOLLOW_GLIDE_MS, 1);
+        map.setCenterElevation(from * (1 - t * t * (3 - 2 * t)));
+        if (t < 1) requestAnimationFrame(step);
+        else down();
+      };
+      requestAnimationFrame(step);
+      return false;
+    }
+    const plane = this.planesNow.find((one) => one.id === id);
+    if (!plane || this.type !== 'city') return false;
+    this.glideToken += 1;
+    const size = AIRLINERS[plane.wide ? 'wide' : 'narrow'];
+    this.planeFollowed = { id, turn: FOLLOW_TURN, plane, told: 0 };
+    map.setMaxZoom(FOLLOW_MOST_ZOOM);
+    map.setCenterClampedToGround(false);
+    // (A flight goes where it goes: out over the desert, past the edge of the city the map keeps to.)
+    map.setMaxBounds(null);
+    map.jumpTo({
+      center: [plane.lng, plane.lat],
+      elevation: plane.alt + size.centre,
+      zoom: FOLLOW_ZOOM - Math.log2(size.length / AIRLINERS.narrow.length),
+      pitch: FOLLOW_PITCH,
+      bearing: plane.track + FOLLOW_TURN,
+    });
+    this.tellFollowed(plane, true);
+    if (this.followFrame) cancelAnimationFrame(this.followFrame);
+    this.followFrame = requestAnimationFrame(() => this.followStep());
+    return true;
+  }
+
+  /**
+   * The camera moved on with the flight being watched, once a frame: before the picture is drawn, and to
+   * where the aircraft is at that very moment, so that the camera never lags behind it, however slowly
+   * the phone draws.
+   */
+  followStep() {
+    const followed = this.planeFollowed;
+    if (!followed) {
+      this.followFrame = 0;
+      return;
+    }
+    // (Asked for first: so that it comes before the map's own drawing in the next frame too.)
+    this.followFrame = requestAnimationFrame(() => this.followStep());
+    const plane = this.flights.at(Date.now() / 1000, { windFrom: this.weather?.windFrom }).planes.find((one) => one.id === followed.id);
+    if (!plane) {
+      this.followFlight(null);
+      return;
+    }
+    followed.plane = plane;
+    const map = this.map;
+    // (While a hand turns the camera round it, the way it is turned is kept.)
+    if (map.isRotating()) followed.turn = map.getBearing() - plane.track;
+    map.jumpTo({ center: [plane.lng, plane.lat], elevation: plane.alt + AIRLINERS[plane.wide ? 'wide' : 'narrow'].centre, bearing: plane.track + followed.turn });
+    this.tellFollowed(plane);
+  }
+
+  /** The aircraft in the sky, moved on: if the flight being watched is no longer among them, it is let go. */
+  keepFollowing(planes) {
+    // (Gone: landed and off the runway, flown out of the sky the app keeps, or lost by the feed.)
+    if (!planes.some((one) => one.id === this.planeFollowed.id)) this.followFlight(null);
+  }
+
+  /** Tell whoever wants to know what the flight being watched is doing (now and then; at once if told). */
+  tellFollowed(plane, now = false) {
+    const followed = this.planeFollowed;
+    const time = Date.now();
+    if (!followed || (!now && time - followed.told < FOLLOW_TELL_MS)) return;
+    followed.told = time;
+    this.handlers.onFollowFlight?.({ id: plane.id, kind: plane.kind, callsign: plane.callsign ?? null, phase: plane.phase, alt: plane.alt, speed: plane.speed, wide: Boolean(plane.wide), airline: plane.airline ?? null });
+  }
+
+  /**
+   * What is in the sky right now: { clouds, patches, stars, planets, sun, moon (while the sky shows);
+   * planes (how many aircraft are drawn), near (how much of them is drawn whole), flights: 'live' |
    * 'typical' | null, source, aloft (how many aircraft in all), live and typical (how many of each), named
    * (the live ones: { callsign, alt, climb, far }, the nearest first), tagged (how many are named on
-   * screen), cover: { low, mid, high } }, or null while no sky shows.
+   * screen), cover: { low, mid, high } }, or null while there is neither sky nor aircraft.
    */
   skyCounts() {
-    return this.skyMade;
+    if (!this.skyMade && !this.planesMade) return null;
+    return { ...(this.skyMade ?? {}), ...(this.planesMade ?? {}) };
   }
 
   /** Put out the lamps of the signals: with no traffic running they stand dark. */
@@ -2904,6 +3128,8 @@ export class MapView {
    * the isometric angle in the 3D city) or 'heading' (tilted, the way you travel is up).
    */
   setFollowMode(mode) {
+    // (Following where you are lets go of a flight that is being watched: the camera comes down at once.)
+    if (mode !== 'off') this.followFlight(null, { glide: false });
     const changed = mode !== this.followMode;
     this.followMode = mode;
     this.cameraTarget = null; // always move, even to the place the camera was last sent
@@ -3042,6 +3268,12 @@ export class MapView {
   handleTap(event) {
     // Lifting the finger after a press-and-hold also counts as a tap; that one is not meant.
     if (Date.now() < this.ignoreTapsUntil) return;
+    // An aircraft tapped: its flight is to be watched.
+    const plane = this.planeAt(event.point);
+    if (plane) {
+      this.handlers.onPlaneTap?.(plane);
+      return;
+    }
     const map = this.map;
     const layers = this.placeLayers.filter((id) => map.getLayer(id));
     let hits = [];
