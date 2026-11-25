@@ -2,12 +2,14 @@
 //
 // The map data knows a tower only as an outline and a height, so on its own it
 // draws Kingdom Centre as a plain block. The handful of buildings that make
-// the skyline are rebuilt here from photographs. Most are a stack of thin
-// slabs, the way a model maker stacks sheets of card. A slab is an outline
-// with a bottom and a top; stacking outlines that shrink, turn or part gives
-// a taper, a twist or an arch. One by one they are being rebuilt as true
-// models instead: flat faces that lean and fold, which the light falls on as
-// it does on the real building (see models.js).
+// the skyline are rebuilt here from photographs. At first each was a stack of
+// thin slabs, the way a model maker stacks sheets of card: a slab is an
+// outline with a bottom and a top, and stacking outlines that shrink, turn or
+// part gives a taper, a twist or an arch. One by one they have been rebuilt
+// as true models instead: flat faces that lean and fold, which the light
+// falls on as it does on the real building (see models.js; the later ones are
+// built in famous.js). The water tower and the financial district's metro
+// station are slabs still, and so are the low halls some of the towers stand on.
 //
 // Where each one stands, which way it is turned and how large its footprint
 // is comes from the buildings data (Overture Maps, release 2026-11-18). Its
@@ -16,7 +18,7 @@
 // Nothing here touches the browser. Measurements are in metres.
 
 import { WORLD_PARTS, worldPlace } from './boulevard.js';
-import { FAMOUS, majdoulAnnex, majdoulTower, rafalTower } from './famous.js';
+import { FAMOUS, majdoulAnnex, majdoulTower, rafalTower, tvTower } from './famous.js';
 import { KAFD_PARTS, kafdPlace } from './kafd.js';
 import { Model, ModelMesh } from './models.js';
 import { PROPS } from './props.js';
@@ -32,14 +34,6 @@ const METERS_PER_DEGREE = 111320;
 const circle = (r, n = 20, turn = 0) => Array.from({ length: n }, (_, i) => [Math.cos(turn + (i / n) * TAU) * r, Math.sin(turn + (i / n) * TAU) * r]);
 /** A rectangle, by its half-sizes and its middle. */
 const block = (halfU, halfV, atU = 0, atV = 0) => [[atU - halfU, atV - halfV], [atU + halfU, atV - halfV], [atU + halfU, atV + halfV], [atU - halfU, atV + halfV]];
-/** A square with its corners cut off, by its half-size and the size of the cut. */
-const cutSquare = (half, cut) => [[half - cut, -half], [half, -half + cut], [half, half - cut], [half - cut, half], [-half + cut, half], [-half, half - cut], [-half, -half + cut], [-half + cut, -half]];
-const turned = (outline, degrees) => {
-  const angle = (degrees * Math.PI) / 180;
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return outline.map(([u, v]) => [u * cos - v * sin, u * sin + v * cos]);
-};
 
 /**
  * Stack slabs from one height to another. outlineAt(z) gives the outline for
@@ -860,36 +854,6 @@ function pifTower(model) {
 }
 
 /**
- * Riyadh TV Tower, 170 m: a sand-coloured shaft on a base of fins, with a
- * faceted glass lantern near the top like a cut stone in its setting.
- */
-function tvTower() {
-  const slabs = [];
-  const stone = ['#d9c9a9', '#d1c09d'];
-  const shaftTop = 116;
-  const shaft = (z) => 5.6 - (z / shaftTop) * 2.1;
-  // Four fins that brace the foot of the shaft.
-  for (const degrees of [0, 90]) {
-    stack(slabs, 0, 24, 4, (z) => turned(block(13 - z * 0.33, 1.3), degrees), stone);
-  }
-  stack(slabs, 0, shaftTop, 6, (z) => cutSquare(shaft(z), shaft(z) * 0.4), stone);
-  // The lantern: it widens, holds, and draws in again.
-  const lantern = [[116, 4], [120, 7.2], [124, 9.6], [133, 9.6], [137, 7.4], [140, 4.6]];
-  for (let i = 1; i < lantern.length; i += 1) {
-    const [z0, r0] = lantern[i - 1];
-    const [z1, r1] = lantern[i];
-    const steps = Math.max(Math.round((z1 - z0) / 2), 1);
-    for (let k = 0; k < steps; k += 1) {
-      const r = r0 + ((r1 - r0) * (k + 0.5)) / steps;
-      slabs.push({ outline: circle(r, 12, Math.PI / 12), base: z0 + ((z1 - z0) * k) / steps, top: z0 + ((z1 - z0) * (k + 1)) / steps, paint: i === 3 ? (k % 2 === 0 ? '#3f566c' : '#c9a24c') : '#bfa770' });
-    }
-  }
-  stack(slabs, 140, 150, 5, () => cutSquare(2.6, 1), stone);
-  slabs.push({ outline: block(0.7, 0.7), base: 150, top: 170, paint: '#d5d7d8' });
-  return slabs;
-}
-
-/**
  * Riyadh Water Tower, 61 m: a stem that opens out into a wide bowl, striped
  * from top to bottom, with a flat lid.
  */
@@ -999,18 +963,8 @@ export const LANDMARKS = [
   { id: 'burj-rafal', name: 'Burj Rafal', at: [46.632342, 24.792398], bearing: 83, height: 308, clear: 62, reach: 105, model: rafalTower, ghosts: [[-47.5, 19.3]] },
   // (The buildings data has the tower's foot, its canopy and its low wing as one outline, 69 m from its middle to its far end: that is cleared with the tower's own.)
   { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20.5, height: 244, clear: 44, build: majdoulAnnex, model: majdoulTower, nights: { '#e9e6dc': '#57534a' } },
-  {
-    id: 'tv-tower',
-    name: 'Riyadh TV Tower',
-    at: [46.69601, 24.64322],
-    bearing: 0,
-    height: 170,
-    clear: 0,
-    build: tvTower,
-    shade: { radius: 5, height: 150 },
-    // A floodlit shaft, and the lantern lit like a lamp.
-    nights: { '#d9c9a9': '#75684f', '#d1c09d': '#6c6048', '#3f566c': '#ffe9ad', '#c9a24c': '#ffce63', '#bfa770': '#8f7d54', '#d5d7d8': '#b0b6ba' },
-  },
+  // (It stands on open ground: nothing is cleared for it, and it brings its own shadow.)
+  { id: 'tv-tower', name: 'Riyadh TV Tower', at: [46.69601, 24.64322], bearing: 0, height: 170, clear: 0, reach: 16, model: tvTower, shade: { radius: 5, height: 150 } },
   { id: 'water-tower', name: 'Riyadh Water Tower', at: [46.712275, 24.645119], bearing: 0, height: 61, clear: 30, build: waterTower, shade: { radius: 12, height: 58 }, nights: { '#2d5ea6': '#2a5aa6', '#f0ede2': '#aeaba1', '#e6e2d6': '#56544f' } },
   {
     id: 'kafd-station',

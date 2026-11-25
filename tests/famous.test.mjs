@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { FAMOUS, LIBRARY, MAJDOUL, MASMAK, MINISTRY, RAFAL, inset, majdoulAnnex, majdoulSquare, majdoulTower, rafalHalf, rafalRim, rafalTower, stepped } from '../js/famous.js';
+import { FAMOUS, LIBRARY, MAJDOUL, MASMAK, MINISTRY, RAFAL, TV_TOWER, inset, majdoulAnnex, majdoulSquare, majdoulTower, rafalHalf, rafalRim, rafalTower, stepped, tvTower } from '../js/famous.js';
 import { LANDMARKS, landmarkBeacons, landmarkModels, landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
 import { facesOf } from './model-faces.mjs';
@@ -500,4 +500,58 @@ test('Burj Rafal: a long tower of glass with bowed sides, a hollow between two h
   assert.ok(water.length === 22 && water.every((face) => face.glow > 0.4));
   const pool = onMap(water.flatMap((face) => face.corners).reduce((best, corner) => [Math.min(best[0], corner[0]), Math.max(best[1], corner[0]), Math.min(best[2], corner[1]), Math.max(best[3], corner[1])], [9e9, -9e9, 9e9, -9e9]).reduce((pair, value, i, all) => (i === 3 ? [(all[0] + all[1]) / 2, (all[2] + all[3]) / 2] : pair), [0, 0]));
   assert.ok(near(pool[0], 0, 0.1) && near(pool[1], -33, 0.1), JSON.stringify(pool));
+});
+
+test('the Riyadh TV Tower: a shaft of concrete on four fins, a lantern of glass and gold cut in facets, and a mast to 170 m', () => {
+  const T = TV_TOWER;
+  const mesh = new ModelMesh();
+  const made = tvTower(new Model(mesh));
+  const faces = facesOf(mesh);
+  const far = (list) => Math.max(...list.flatMap((face) => face.corners.map((corner) => Math.hypot(corner[0], corner[1]))));
+  const at = (list, from, to) => list.flatMap((face) => face.corners).filter((corner) => corner[2] >= from && corner[2] <= to);
+  // The shaft: eight-sided (a square with its corners cut off), 11.2 m wide at the ground and 7 m at 116 m; a line up each of its edges.
+  const concrete = faces.filter((face) => face.colour === '#d9c9a9');
+  const shaft = concrete.filter((face) => Math.abs(face.normal[2]) < 0.05 && face.corners.every((corner) => corner[2] <= T.collar[0] + 3 + 1e-3) && far([face]) < 8.5);
+  assert.equal(shaft.length, 4 * 8 * 2);
+  const width = (up) => Math.max(...at(shaft, up - 1e-3, up + 1e-3).map((corner) => Math.max(Math.abs(corner[0]), Math.abs(corner[1])))) * 2;
+  assert.ok(near(width(0), 11.2, 1e-3) && near(width(55), 2 * (5.6 - 2.1 * (55 / 116)), 1e-3) && width(86) > width(117) && near(width(117), 7, 1e-3));
+  assert.ok(shaft.every((face) => near(face.ridge, 0.45, 0.01) && face.glow > 0.3), 'ribbed by day, floodlit by night');
+  // Four fins brace its foot: each reaches 13 m from the middle at the ground and leans in to the shaft 24 m up.
+  const fins = concrete.filter((face) => far([face]) > 12.9 && face.corners.every((corner) => corner[2] <= 24 + 1e-3));
+  assert.equal(fins.length, 4 * 4);
+  assert.ok(near(far(fins), Math.hypot(13, 1.3), 1e-3));
+  for (const [east, north] of [[13, 0], [0, 13], [-13, 0], [0, -13]]) assert.ok(fins.some((face) => face.corners.some((corner) => near(Math.hypot(corner[0] - east, corner[1] - north), 1.3, 1e-3) && corner[2] === 0)));
+  // The lantern. Its belt: eight sides to the four winds and between, 25.6 m from side to side, from 125 m to 131 m; glass lit in every room, banded with gold.
+  const glass = faces.filter((face) => face.kind === 'glass');
+  assert.ok(glass.every((face) => face.colour === '#3f566c' && face.lit === 1 && face.glow > 0.8));
+  const belt = glass.filter((face) => Math.abs(face.normal[2]) < 1e-6);
+  assert.ok(belt.length >= 8 * 2 && belt.every((face) => face.corners.every((corner) => corner[2] >= 125 - 1e-3 && corner[2] <= 131 + 1e-3)));
+  const looks = [...new Set(belt.map((face) => Math.round((Math.atan2(face.normal[1], face.normal[0]) * 180) / Math.PI / 45)))].length;
+  assert.equal(looks >= 8, true, 'eight ways');
+  assert.ok(belt.some((face) => near(face.normal[0], 1, 1e-6)) && belt.some((face) => near(face.normal[1], 1, 1e-6)), 'a side to the east and one to the north');
+  const side = belt.filter((face) => near(face.normal[0], 1, 1e-6)).flatMap((face) => face.corners);
+  assert.ok(side.every((corner) => near(corner[0], 12.8, 1e-3)));
+  const bands = faces.filter((face) => face.colour === '#bfa770' && Math.abs(face.normal[2]) < 1e-6 && face.corners.every((corner) => corner[2] >= 125 - 1e-3 && corner[2] <= 131 + 1e-3));
+  assert.ok(bands.length >= 8 * 3 * 2 && bands.every((face) => face.glow > 0.8), 'three bands of gold on each side');
+  // Its underside: sixteen three-cornered facets of gold from the shaft out to the belt, looking down; its upper side: sixteen of glass up to the roof, looking up.
+  const under = faces.filter((face) => face.colour === '#bfa770' && face.normal[2] < -0.3);
+  const over = glass.filter((face) => face.normal[2] > 0.3);
+  assert.deepEqual([under.length, over.length], [16, 16]);
+  assert.ok(under.every((face) => face.corners.every((corner) => corner[2] === 114 || corner[2] === 125)) && over.every((face) => face.corners.every((corner) => corner[2] === 131 || corner[2] === 139.5)));
+  // (Three-cornered: each has two corners on one ring and one on the other, by turns.)
+  assert.equal(over.filter((face) => face.corners.filter((corner) => corner[2] === 131).length === 2).length, 8);
+  assert.equal(over.filter((face) => face.corners.filter((corner) => corner[2] === 131).length === 1).length, 8);
+  // The roof: 12 m from side to side, behind a low rim; it takes no shadow.
+  const roof = faces.filter((face) => face.colour === '#b9ad94');
+  assert.ok(roof.length === 6 && roof.every((face) => face.open && face.normal[2] > 0.99 && face.corners.every((corner) => corner[2] === 139.5)));
+  assert.ok(near(far(roof) * Math.cos(Math.PI / 8), 6, 1e-3));
+  // Over it the shaft again, 5.2 m wide, to 150 m; and the mast, thinner from 160 m, to 170 m, with the red lamp on its tip.
+  const drum = concrete.filter((face) => face.corners.every((corner) => corner[2] >= 139.5 - 1e-3));
+  assert.ok(drum.length === 16 && near(Math.max(...drum.flatMap((face) => face.corners.map((corner) => Math.abs(corner[0])))), 2.6, 1e-3) && near(Math.max(...heights(drum)), 150, 1e-3));
+  const mast = faces.filter((face) => face.colour === '#d5d7d8');
+  assert.ok(near(Math.max(...heights(mast)), 170, 1e-3) && near(Math.min(...heights(mast)), 150, 1e-3));
+  // (Half as thick over 160 m as under it.)
+  assert.ok(near(far(mast.filter((face) => face.corners.some((corner) => corner[2] > 165))), 0.35 * Math.SQRT2, 1e-3) && near(far(mast.filter((face) => face.corners.some((corner) => corner[2] < 155))), 0.7 * Math.SQRT2, 1e-3));
+  assert.deepEqual(made.beacons, [[0, 0, 170.6]]);
+  assert.ok(near(Math.max(...heights(faces)), 170, 1e-3) && Math.min(...heights(faces)) === 0);
 });

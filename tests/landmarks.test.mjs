@@ -61,10 +61,10 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   // And last the famous buildings that are not towers: see famous.test.mjs.)
   const world = [...WORLD_PARTS.map((one) => one.id), ...KAFD_PARTS.map((one) => one.id), ...FAMOUS.map((one) => one.id)];
   assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station', ...world]);
-  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', ...world.filter((id) => id !== 'kafd')]);
+  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', ...world.filter((id) => id !== 'kafd')]);
   // (The towers of the city that are true models: built for a view from anywhere.)
   const city = LANDMARKS.filter((one) => one.model && !world.includes(one.id)).length;
-  assert.equal(city, 11);
+  assert.equal(city, 12);
   for (const one of LANDMARKS) {
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
     if (world.includes(one.id)) continue;
@@ -124,8 +124,9 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   // (The PIF Tower stands 2.9 km west and 7.1 km north of there; Kingdom Centre 0.4 km east and 1.3 km north; Hamad Tower 1.3 km east and 0.9 km south.)
   for (const corner of facesOf(mesh).flatMap((face) => face.corners)) {
     // (And the two Al Anoud Towers across the road from that one, and Al Faisaliah a little south and east of it.)
-    // (And Al Majdoul Tower up King Fahd Road, 1.1 km west and 4.4 km north; and Burj Rafal further up it, with its podium.)
-    const spots = [[-2880, 7090], [446, 1263], [1297, -883], [1169, -913], [1518, -1091], [1244, -767], [1242, -317], [-1089, 4354]];
+    // (And Al Majdoul Tower up King Fahd Road, 1.1 km west and 4.4 km north; and Burj Rafal further up it, with its podium;
+    // and the TV Tower in the old town, 2.6 km east and 6.3 km south.)
+    const spots = [[-2880, 7090], [446, 1263], [1297, -883], [1169, -913], [1518, -1091], [1244, -767], [1242, -317], [-1089, 4354], [2630, -6321]];
     if (Math.hypot(corner[0] + 3809, corner[1] - 10286) < 105) continue;
     // (…the ministry's tower north of Hamad Tower, and the Olaya Towers beyond Tahlia Street. The district's towers stand round the PIF Tower, within 800 m of it.)
     // (And each famous building where it stands: the ministry 2.6 km east and 3.3 km south, a hundred metres from its middle to its corners.)
@@ -232,8 +233,9 @@ test('by night the landmarks are lit, each in its own way', () => {
   // Al Faisaliah's golden globe is lit in every room; of the offices under its sunshades, some.
   const faisaliah = modelOf('al-faisaliah');
   assert.ok(faisaliah.filter((face) => face.colour === '#c8922e').every((face) => face.lit === 1) && faisaliah.filter((face) => face.colour === '#3f5266').every((face) => near(face.lit, 0.3, 0.01)));
-  // The TV tower's lantern is lit like a lamp, and the KAFD station shines through its shell.
-  assert.ok(bright(nights('tv-tower').get('#3f566c')) === 255);
+  // The TV tower's lantern is lit in every room (it is a true model: see famous.test.mjs), and the KAFD station shines through its shell.
+  const lantern = modelOf('tv-tower').filter((face) => face.kind === 'glass');
+  assert.ok(lantern.length > 30 && lantern.every((face) => face.lit === 1 && face.glow > 0.8));
   assert.ok(bright(nights('kafd-station').get('#8fa7b8')) === 255 && bright(nights('kafd-station').get('#e6d9bb')) > 230);
 });
 

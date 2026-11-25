@@ -815,6 +815,116 @@ export function rafalTower(model) {
   return { beacons: [[0, T.long - 0.6, T.top + 0.6], [0, -(T.long - 0.6), T.top + 0.6]] };
 }
 
+// ── The Riyadh TV Tower ───────────────────────────────────────────────────
+
+// The tower's measures, in metres.
+export const TV_TOWER = {
+  foot: 5.6, // half the width of its shaft at the ground…
+  neck: 3.5, // …and under its lantern
+  shaft: 116, // how high the shaft is that wide
+  fins: [13, 1.3, 24], // the four fins that brace its foot: how far each reaches from the middle, half its thickness, and how high it rises
+  collar: [114, 4.6], // where the lantern leaves the shaft: the height, and how far its corners stand from the middle there
+  girdle: [125, 131, 12.8], // the lantern's widest belt: from this height to this, and half its width from side to side
+  roof: [139.5, 6], // the lantern's roof: its height, and half its width
+  drum: [2.6, 150], // the shaft that goes on over the lantern: half its width, and its top
+  mast: [160, 170], // the mast: where it grows thinner, and its tip
+};
+
+/** A square of so wide a half-width with its four corners cut off by so much: eight corners [east, north], anticlockwise. */
+const chamfered = (half, cut) => [[half - cut, -half], [half, -half + cut], [half, half - cut], [half - cut, half], [-half + cut, half], [-half, half - cut], [-half, -half + cut], [-half + cut, -half]];
+/** A ring of eight corners so far from the middle, the first so far round (in radians, anticlockwise from east), at a height. */
+const eight = (out, turn, up) => Array.from({ length: 8 }, (_, k) => [Math.cos(turn + (k / 8) * TAU) * out, Math.sin(turn + (k / 8) * TAU) * out, up]);
+
+/**
+ * The Riyadh TV Tower (Maurice Novarina; built in the later 1970s), in the grounds of the broadcasting
+ * authority in Al Wisham: 170 m to the tip of its mast, and until Al Faisaliah Tower the highest thing in
+ * the country.
+ *
+ * A shaft of pale concrete, square with its corners cut off, 11 m wide at the ground and 7 m under the
+ * lantern, braced at its foot by four fins. Near its top it carries the lantern it is known by: a body
+ * of glass and gold cut in facets like a stone in its setting, eight-sided, 26 m across at its belt,
+ * drawing in below to the shaft and above to a roof of 12 m. Over the lantern the shaft goes on, thinner,
+ * and ends in the mast. By night the lantern is lit from within, the shaft floodlit.
+ *
+ * (Its height and its architect are as published. The lantern's width, that it is eight-sided with its
+ * sides to the four winds, and the width of its roof are measured on the satellite photo the app shows,
+ * which looks nearly straight down on it. The heights at which the lantern begins and ends, the taper of
+ * the shaft and the fins are as the model before this one had them, from photographs seen then; that the
+ * lantern's facets are three-cornered, and the mast, are a likeness. What stands round its foot is not
+ * built: the photo shows a round paved court there, and a pointed one to the south.)
+ */
+export function tvTower(model) {
+  const T = TV_TOWER;
+  const to = frame([0, 0], 0);
+  const concrete = { kind: 'plain', colour: '#d9c9a9', light: '#ffe2ae', glow: 0.4, ridge: 0.45 };
+  const halfAt = (up) => T.foot - (T.foot - T.neck) * (Math.min(up, T.shaft) / T.shaft);
+
+  // The shaft: square with its corners cut off, drawing in as it rises; a line up each of its eight edges.
+  const levels = [0, 24, 55, 86, T.collar[0] + 3];
+  for (let i = 0; i < levels.length - 1; i += 1) {
+    const [low, high] = [levels[i], levels[i + 1]];
+    between(model, raised(chamfered(halfAt(low), halfAt(low) * 0.4), low), raised(chamfered(halfAt(high), halfAt(high) * 0.4), high), concrete, { lines: [false, true, false, true] });
+  }
+  // The four fins at its foot: each a thin wall that leans in to the shaft.
+  const [reach, thick, tall] = T.fins;
+  for (let k = 0; k < 4; k += 1) {
+    const fin = to.sub([0, 0], (k * Math.PI) / 2);
+    const inner = halfAt(tall) - 0.6;
+    for (const side of [1, -1]) {
+      model.facet(fin(inner, side * thick, 0), fin(reach, side * thick, 0), fin(inner, side * thick, tall), concrete, { out: fin.way(0, side), lines: [false, true, false] });
+    }
+    model.quad(fin(reach, -thick, 0), fin(reach, thick, 0), fin(inner, thick, tall), fin(inner, -thick, tall), concrete, { out: fin.way(1, 0, 1), lines: [false, true, false, true] });
+  }
+
+  // The lantern. Its underside, from the shaft out to the belt: sixteen three-cornered facets of gold-coloured
+  // panel, lit from below by night.
+  const gold = { kind: 'plain', colour: '#bfa770', light: '#ffce63', glow: 0.6, ridge: 0.7 };
+  const glass = { kind: 'glass', colour: '#3f566c', storey: 3.5, bay: 2, lit: 1, floors: 0.3, mirror: 0.45, ridge: 1, light: '#ffd27a', glow: 0.9 };
+  const [collarUp, collarOut] = T.collar;
+  const [beltLow, beltHigh, beltHalf] = T.girdle;
+  const [roofUp, roofHalf] = T.roof;
+  const corner = Math.cos(Math.PI / 8); // an eight-sided ring's corners stand further out than its sides, by one over this
+  const collar = eight(collarOut, 0, collarUp);
+  const low = eight(beltHalf / corner, Math.PI / 8, beltLow);
+  const high = eight(beltHalf / corner, Math.PI / 8, beltHigh);
+  const top = eight(roofHalf / corner, 0, roofUp);
+  const outwards = (...corners) => [corners.reduce((sum, one) => sum + one[0], 0), corners.reduce((sum, one) => sum + one[1], 0), 0];
+  for (let k = 0; k < 8; k += 1) {
+    const next = (k + 1) % 8;
+    // (Each corner of the belt stands between two corners of the collar, and so round: the facets are three-cornered.)
+    model.facet(collar[k], collar[next], low[k], gold, { out: outwards(collar[k], collar[next], low[k]) });
+    model.facet(low[k], collar[next], low[next], gold, { out: outwards(low[k], collar[next], low[next]) });
+    // The belt: glass, with a band of gold at its foot, at its middle and at its head.
+    model.quad(low[k], low[next], high[next], high[k], glass, {
+      out: outwards(low[k], low[next]),
+      bands: [
+        { from: beltLow, to: beltLow + 0.7, stuff: { ...gold, glow: 0.9 } },
+        { from: (beltLow + beltHigh) / 2 - 0.35, to: (beltLow + beltHigh) / 2 + 0.35, stuff: { ...gold, glow: 0.9 } },
+        { from: beltHigh - 0.7, to: beltHigh, stuff: { ...gold, glow: 0.9 } },
+      ],
+    });
+    // Its upper side, from the belt in to the roof: sixteen facets of glass.
+    model.facet(high[k], high[next], top[next], glass, { out: outwards(high[k], high[next], top[next]) });
+    model.facet(top[next], high[next], top[(next + 1) % 8], glass, { out: outwards(top[next], high[next], top[(next + 1) % 8]) });
+  }
+  // Its roof, behind a low rim of gold. (The roof, and all that stands on it, lies inside the round the
+  // tower's shadow is thrown from: it takes none.)
+  const rim = top.map(([east, north, up]) => [east, north, up + 1.1]);
+  between(model, top, rim, { ...gold, glow: 0.9 }, { lines: [false, false, true, false] });
+  between(model, top, rim, { kind: 'plain', colour: '#a8946a', open: true }, { way: -1 });
+  model.flat(top, { kind: 'plain', colour: '#b9ad94', open: true });
+  // Over the lantern: the shaft again, thinner; and the mast, in two lengths.
+  const [drumHalf, drumTop] = T.drum;
+  const drum = chamfered(drumHalf, 1);
+  between(model, raised(drum, roofUp), raised(drum, drumTop), { ...concrete, open: true }, { lines: [false, true, false, true] });
+  model.flat(raised(drum, drumTop), { kind: 'plain', colour: '#d8cfb9', open: true });
+  const steel = { kind: 'plain', colour: '#d5d7d8', light: '#ffffff', glow: 0.35, open: true };
+  const [thinner, tip] = T.mast;
+  beam(model, [0, 0, drumTop], [0, 0, thinner], 1.4, steel, { ends: true });
+  beam(model, [0, 0, thinner], [0, 0, tip], 0.7, steel, { ends: true });
+  return { beacons: [[0, 0, tip + 0.6]] };
+}
+
 /**
  * The famous buildings built here, as landmarks for the map (see landmarks.js): where each stands
  * ([lng, lat]), which way it is turned, how tall it is, within what distance of its middle the map's
