@@ -729,7 +729,8 @@ test('replacedByLandmarks picks the tower\'s own outline, not the block it stand
   // and the houses of the Greek village.)
   // (And after Boulevard World's, those of the financial district's buildings whose height the map does not know,
   // and those of the famous buildings that are not towers.)
-  const district = KAFD_PARTS.filter((one) => one.shade).length + FAMOUS.filter((one) => one.shade).length;
+  // (A famous building may bring one shadow, or several: each of Masmak Fort's towers has its own.)
+  const district = KAFD_PARTS.filter((one) => one.shade).length + FAMOUS.reduce((sum, one) => sum + (one.shade ? 1 : 0) + (one.shades?.length ?? 0), 0);
   assert.equal(shades.length, 4 + 9 + district + PROPS.length);
   assert.deepEqual(shades.slice(0, 2).map((shade) => [shade.height, shade.base, shade.polygons.length, shade.polygons[0][0].length]), [[150, 0, 1, 13], [58, 0, 1, 13]]);
   assert.deepEqual(shades.slice(2, 11).map((shade) => Math.round(shade.height)), [34, 100, 7, 13, 15, 22, 10, 12, 28]);
