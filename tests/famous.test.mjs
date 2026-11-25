@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { FAMOUS, LIBRARY, MAJDOUL, MASMAK, MINISTRY, RAFAL, TV_TOWER, WATER_TOWER, inset, majdoulAnnex, majdoulSquare, majdoulTower, rafalHalf, rafalRim, rafalTower, stepped, tvTower, waterTower } from '../js/famous.js';
-import { LANDMARKS, landmarkBeacons, landmarkModels, landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
+import { FAMOUS, LIBRARY, MAJDOUL, MASMAK, MINISTRY, RAFAL, TURKI_MOSQUE, TV_TOWER, WATER_TOWER, inset, majdoulAnnex, majdoulSquare, majdoulTower, rafalHalf, rafalRim, rafalTower, stepped, turkiShades, tvTower, waterTower } from '../js/famous.js';
+import { LANDMARKS, ghostsOfLandmarks, landmarkBeacons, landmarkModels, landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
 import { facesOf } from './model-faces.mjs';
 
@@ -26,7 +26,7 @@ const lookOf = ({ corners: [a, b, c] }) => {
 };
 
 test('the famous buildings are landmarks of the map: each where it stands, with its clearing and its shadow', () => {
-  assert.deepEqual(FAMOUS.map((one) => one.id), ['interior-ministry', 'king-fahd-library', 'masmak-fort']);
+  assert.deepEqual(FAMOUS.map((one) => one.id), ['interior-ministry', 'king-fahd-library', 'masmak-fort', 'imam-turki-mosque']);
   for (const one of FAMOUS) {
     assert.equal(LANDMARKS.find((landmark) => landmark.id === one.id), one);
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
@@ -609,4 +609,139 @@ test('the Riyadh Water Tower: a stem that opens into a wide bowl, in thirty-two 
   assert.ok(near(Math.max(...heights(faces)), 67.5, 1e-3) && Math.min(...heights(faces)) === 0);
   assert.deepEqual(made.beacons, [[0, 0, 68.1]]);
   assert.ok(near(Math.max(...faces.flatMap((face) => face.corners.map(out))), 26, 1e-3), 'nothing reaches past its rim');
+});
+
+test('the Grand Mosque of Riyadh: a low hall under eighty-four roof towers, a covered court, gatehouses on the square, and a minaret of 50 m', () => {
+  const G = TURKI_MOSQUE;
+  const { faces, made } = built('imam-turki-mosque');
+  const mosque = famous('imam-turki-mosque');
+  const flatArea = (some) => some.reduce((sum, { corners: [a, b, c] }) => sum + Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2, 0);
+  const inRect = ([west, east, south, north], [x, y], by = 1e-3) => x >= west - by && x <= east + by && y >= south - by && y <= north + by;
+  // The hall: 104.3 m along its qibla wall and 65.5 m deep; 11 m to the top of its walls, its roof a little under that.
+  const [hallWest, hallEast, hallSouth, hallNorth] = G.hall;
+  assert.ok(near(hallNorth - hallSouth, 104.3, 1e-9) && near(hallEast - hallWest, 65.5, 1e-9) && G.wall === 11 && G.roof < G.wall);
+  // On its roof, eighty-four little towers: seven across by twelve along, one every 8.5 m, all well inside its walls; each lit from within by night.
+  const L = G.lanterns;
+  assert.deepEqual(L.count, [7, 12]);
+  const lanterns = faces.filter((face) => face.colour === '#dcc9a6' && face.kind === 'pierced');
+  assert.equal(lanterns.length, 84 * 4 * 2);
+  assert.ok(lanterns.every((face) => face.open && face.lit > 0.8 && face.corners.every((corner) => inRect([hallWest + 2, hallEast - 0.3, hallSouth + 2, hallNorth - 2], corner) && corner[2] >= G.roof - 1e-3 && corner[2] <= L.top + 1e-3)));
+  const middles = new Set(lanterns.map((face) => face.corners.reduce((sum, corner) => sum + corner[0], 0) / 3).map((east) => Math.round((east - L.first[0]) / L.step[0])));
+  assert.deepEqual([...middles].sort((a, b) => a - b), [0, 1, 2, 3, 4, 5, 6]);
+  // The qibla wall: thirteen square piers, one between every two rows of towers and one at either end, a little higher than the wall.
+  const piers = faces.filter((face) => face.corners.every((corner) => corner[0] <= hallWest + 0.3 + 1e-3) && face.corners.some((corner) => near(corner[2], G.piers.top, 1e-3)) && face.normal[2] > 0.99);
+  assert.equal(piers.length, 13 * 2);
+  assert.ok(near(Math.min(...faces.flatMap((face) => face.corners.map((corner) => corner[0]))), hallWest - G.piers.proud, 1e-3), 'nothing stands further west than the piers');
+  // The court: three bays by nine, of 8.2 m; a walk behind round columns on every side: twenty-four of them.
+  const [courtWest, courtEast, courtSouth, courtNorth] = G.court;
+  assert.ok(near((courtEast - courtWest) / G.bay, 3, 1e-9) && near((courtNorth - courtSouth) / G.bay, 9, 1e-9));
+  const pillars = faces.filter((face) => face.colour === '#eadbc0');
+  // (A column: eight sides to its shaft, a square foot, a head that steps out: thirty-four triangles.)
+  assert.equal(pillars.length % 34, 0);
+  const columnsIn = (box) => pillars.filter((face) => face.corners.every((corner) => inRect(box, corner))).length / 34;
+  assert.equal(columnsIn([courtWest - 1, courtEast + 1, courtSouth - 1, courtNorth + 1]), 24);
+  // Over the court, a roof of white beams along and across, 11 m up; cloth in seven of its nine rows of squares, and the two southern rows open to the sky.
+  const cloth = faces.filter((face) => face.colour === '#a4a8a4');
+  assert.ok(near(flatArea(cloth), (courtEast - courtWest) * 7 * G.bay, 1e-2) && cloth.every((face) => face.normal[2] > 0.99 && face.corners.every((corner) => corner[1] >= courtNorth - 7 * G.bay - 1e-3)));
+  assert.equal(G.cover.rows - G.cover.open, 7);
+  const beams = faces.filter((face) => face.colour === '#f3f3ee' && face.corners.every((corner) => inRect([courtWest - 0.3, courtEast + 0.3, courtSouth - 0.3, courtNorth + 0.3], corner)));
+  assert.equal(beams.length, (4 + 10) * 8);
+  assert.ok(beams.every((face) => face.corners.every((corner) => Math.abs(corner[2] - G.cover.top) <= 0.25 + 1e-3)));
+  // Over its two open rows there is nothing but the beams: no cloth, no roof.
+  const openRows = [courtWest + 0.6, courtEast - 0.6, courtSouth + 0.6, courtNorth - 7 * G.bay - 0.6];
+  const over = faces.filter((face) => face.normal[2] > 0.99 && face.colour !== '#f3f3ee' && face.corners.every((corner) => corner[2] > 5) && inRect(openRows, face.corners.reduce((sum, corner) => [sum[0] + corner[0] / 3, sum[1] + corner[1] / 3], [0, 0])));
+  assert.equal(over.length, 0);
+  // Towards the square: six blocks in a row, the third of them the great gate: it stands further out and higher, and its doorway ends in a point 10 m up.
+  assert.equal(G.blocks.length, 6);
+  G.blocks.forEach(([south, north], index) => {
+    if (index > 0) assert.ok(G.blocks[index - 1][0] - north > 6, 'a forecourt between every two of them');
+    assert.ok(north > south);
+  });
+  const [gateSouth, gateNorth, gateTop] = G.blocks[G.gate.block];
+  assert.ok(gateTop > G.blocks[0][2] && G.gate.out > G.front[1] && near((gateSouth + gateNorth) / 2, (hallSouth + hallNorth) / 2, 2.5), 'the great gate lies on the line through the middle of the hall');
+  const doorway = faces.filter((face) => face.colour === '#3a2d22' && face.corners.every((corner) => near(corner[0], G.gate.out + 0.06, 1e-3)));
+  assert.equal(doorway.length, 3);
+  assert.ok(near(Math.max(...heights(doorway)), G.gate.door[2], 1e-3) && Math.min(...heights(doorway)) === 0 && G.gate.door[2] === 10);
+  assert.ok(near(Math.max(...doorway.flatMap((face) => face.corners.map((corner) => corner[1]))) - Math.min(...doorway.flatMap((face) => face.corners.map((corner) => corner[1]))), G.gate.door[0], 1e-3));
+  // (Two columns at the mouth of each of the five forecourts.)
+  assert.equal(columnsIn([G.front[0], G.front[1], G.blocks[5][1], G.blocks[0][0]]), 10);
+  // The minaret: at the north-east corner; 8.4 m square at its foot, 7.4 m under its crown; the floor of the crown at 46.6 m; four horns, to 50 m.
+  const M = G.minaret;
+  assert.ok(M.at[0] > courtEast && M.at[1] > courtNorth && M.at[0] + M.foot < G.front[0] && M.at[1] + M.foot < hallNorth);
+  const tan = faces.filter((face) => face.colour === '#c79f70');
+  assert.ok(tan.every((face) => face.corners.every((corner) => Math.max(Math.abs(corner[0] - M.at[0]), Math.abs(corner[1] - M.at[1])) <= M.foot + 0.13 && face.glow > 0.75)));
+  assert.ok(near(Math.max(...heights(tan)), 50, 1e-3) && Math.min(...heights(tan)) === 0);
+  const tips = new Set(tan.flatMap((face) => face.corners.filter((corner) => near(corner[2], M.horns, 1e-3)).map((corner) => `${Math.round((corner[0] - M.at[0]) * 10)},${Math.round((corner[1] - M.at[1]) * 10)}`)));
+  assert.deepEqual([...tips].sort(), ['-34,-34', '-34,34', '34,-34', '34,34']);
+  const widthAt = (height) => Math.max(...tan.filter((face) => face.corners.some((corner) => near(corner[2], height, 1e-3))).flatMap((face) => face.corners.filter((corner) => near(corner[2], height, 1e-3)).map((corner) => Math.abs(corner[0] - M.at[0])))) * 2;
+  assert.ok(near(widthAt(0), 8.4, 1e-3) && near(widthAt(M.crown), 7.4, 1e-3));
+  // (Five slits and two small openings in each of its four faces.)
+  const marks = faces.filter((face) => face.colour === '#3a2d22' && face.corners.every((corner) => Math.max(Math.abs(corner[0] - M.at[0]), Math.abs(corner[1] - M.at[1])) <= M.foot + 0.1 && corner[2] > 14));
+  assert.equal(marks.length, 4 * (5 * 2 + 2));
+  // The colonnade along the palace's square: twenty-one columns; and the long one that crosses the great square: twenty-one pairs of taller ones, 9 m.
+  assert.equal(columnsIn([G.portico[0], G.portico[1], G.portico[2], G.portico[3]]), 21);
+  const A = G.arcade;
+  assert.equal(columnsIn([A.rows[0] - 1.3, A.rows[1] + 1.3, A.from + A.step * A.bays - 1.3, A.from + 1.3]), 42);
+  assert.equal(pillars.length / 34, 24 + 10 + 21 + 42);
+  assert.ok(near(Math.abs(A.step * A.bays), 109, 1e-9));
+  // The two bridges to the palace: a storey from 5.2 m to 10.2 m, on piers; nothing of it lower but those piers.
+  for (const [west, east, far] of G.bridges) {
+    const box = [west, east, far, G.portico[2]];
+    const storey = faces.filter((face) => face.kind === 'pierced' && face.corners.every((corner) => inRect(box, corner) && corner[2] >= G.deck[0] - 1e-3));
+    assert.equal(storey.length, 4 * 2);
+    const under = faces.filter((face) => face.corners.every((corner) => inRect([west, east, far + 1.3, G.portico[2] - 1.3], corner) && corner[2] < G.deck[0] - 1e-3) && face.corners.some((corner) => corner[2] > 0.2));
+    assert.equal(under.length, 0, 'one may walk through under it, between the piers at its ends');
+  }
+  // The square is paved, with a star laid in it; and everything is of stone, lit golden by night.
+  const paving = faces.filter((face) => face.colour === '#dedbd3' && face.corners.every((corner) => near(corner[2], 0.04, 1e-6)));
+  assert.ok(near(flatArea(paving), squareMeters(G.square), 1e-2));
+  assert.ok(faces.filter((face) => face.colour === '#e3d0af' && face.glow > 0.5).length > 300);
+  assert.deepEqual(made, {});
+  assert.equal(mosque.height, 50);
+
+  // Its shadows: eighteen outlines, each part's own. The covered part of the court lies under one, its open rows under none; the minaret's is 50 m; a bridge's begins at its underside.
+  const shades = turkiShades();
+  assert.equal(shades.length, 18);
+  const within = (ring, [x, y]) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+      if ((ring[i][1] > y) !== (ring[j][1] > y) && x < ((ring[j][0] - ring[i][0]) * (y - ring[i][1])) / (ring[j][1] - ring[i][1]) + ring[i][0]) inside = !inside;
+    }
+    return inside;
+  };
+  const over2 = (spot) => shades.filter((shade) => within(shade.ring, spot));
+  assert.deepEqual(over2([24, 10]).map((shade) => shade.height), [G.parapet]);
+  assert.deepEqual(over2([24, courtSouth + 5]), []);
+  assert.deepEqual(over2([0, 0]).map((shade) => shade.height), [G.wall]);
+  assert.deepEqual(over2(M.at).map((shade) => shade.height).sort((a, b) => a - b), [G.parapet, 50]);
+  assert.deepEqual(over2([-48, -80]).map((shade) => [shade.base, shade.height]), [[5.2, 10.2]]);
+  assert.ok(shades.every((shade) => shade.height > (shade.base ?? 0) && Math.abs(squareMeters(shade.ring)) > 40));
+  // On the map they are turned with the mosque: the hall's north-western corner lies 111 m from the mosque's middle, to the north-west.
+  const squeeze = METERS * Math.cos((mosque.at[1] * Math.PI) / 180);
+  const flat = ([lng, lat]) => [(lng - mosque.at[0]) * squeeze, (lat - mosque.at[1]) * METERS];
+  const thrown = landmarkShades().filter((shade) => shade.polygons[0][0].every((corner) => Math.hypot(...flat(corner)) < 175));
+  assert.equal(thrown.length, 18);
+  const hall = thrown.find((shade) => shade.height === G.wall && shade.polygons[0][0].length === 5);
+  const corner = flat(hall.polygons[0][0][3]);
+  const turn = (mosque.bearing * Math.PI) / 180;
+  assert.ok(near(corner[0], hallWest * Math.cos(turn) + hallNorth * Math.sin(turn), 0.01) && near(corner[1], hallNorth * Math.cos(turn) - hallWest * Math.sin(turn), 0.01));
+  assert.ok(corner[0] < -70 && corner[1] > 15, 'north-west of the middle: the qibla wall looks west-south-west, towards Makkah');
+  assert.ok(Math.abs(((mosque.bearing + 270) % 360) - 244) < 3, 'the wall looks along 244 degrees, give or take: the way to Makkah from Riyadh');
+
+  // The buildings data has the mosque, its houses and the wing as one block; the bridges and the colonnade in the square as blocks on the ground; and a bed of trees as a building. They go altogether; the palace stays.
+  const placed = (points) => [...points, points[0]].map(([east, north]) => [mosque.at[0] + (east * Math.cos(turn) + north * Math.sin(turn)) / squeeze, mosque.at[1] + (north * Math.cos(turn) - east * Math.sin(turn)) / METERS]);
+  const outlines = [
+    { id: 1, ring: placed([[-60.8, 70.7], [-52.2, 90.6], [56, 49.8], [124.1, 27.4], [126, 12.6], [67.6, 12.1], [66.7, 33.7], [59.5, 33.6], [63.2, -60], [-56.5, -61.4], [-62, -60.4], [-62, 52]]) },
+    { id: 2, ring: placed([[-40.7, -81.1], [-39.8, -105.1], [-55.6, -105.3], [-56.5, -61.4], [-41.1, -61]]) },
+    { id: 3, ring: placed([[44.7, -102.9], [44.8, -59.5], [56.1, -59.7], [56.8, -102.9]]) },
+    { id: 4, ring: placed([[86, -3.6], [75.3, -3.2], [75, -17.5], [70.9, -17.2], [70.6, -25], [66.5, -24.8], [67.3, 5], [86.4, 4.7]]) },
+    { id: 5, ring: placed([[79, -36.4], [77.4, -18.7], [84.9, -18.1], [86, -27.1], [82.9, -27.3], [84.1, -39.5], [78.3, -40.3], [77.8, -36.4]]) },
+    { id: 6, ring: placed([[74.4, -43.2], [77.2, -53.6], [78.1, -44.4], [86.1, -45.3], [87.2, -34.4], [97, -35.5], [98.5, -41.1], [98, -43.2], [95.1, -44.2], [96.7, -51], [96.7, -53.5], [87.9, -55.2], [89, -58.1], [86.8, -58.9], [85.4, -74], [75.7, -76.5], [86.7, -77.6], [77.7, -79.8], [77.7, -82.3], [86.5, -80.5], [84.2, -103.6], [65.3, -101.6], [71.1, -42.7]]) },
+    { id: 7, ring: placed([[99, 7], [113.9, 5.1], [112.9, -1.6], [100, 0.4], [99.9, -3.7], [97.7, -3.2]]) },
+    { id: 8, ring: placed([[-55.6, -105.3], [63.6, -102.5], [63.1, -125.9], [18.3, -175.3], [-6.1, -221.4], [-95.7, -181.1], [-61.2, -105.6]]) }, // the palace
+    { id: 9, ring: placed([[111.8, 72.6], [104.3, 79.4], [117.2, 94.8], [128.5, 85.6], [121.8, 78.1], [118.8, 80.8]]) }, // a house across the street
+  ];
+  assert.deepEqual([...ghostsOfLandmarks(outlines)].sort(), [1, 2, 3, 4, 5, 6, 7]);
+  assert.equal(mosque.ghosts.length, 7);
+  assert.deepEqual([...replacedByLandmarks(outlines)], []);
 });

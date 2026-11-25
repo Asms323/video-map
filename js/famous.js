@@ -10,7 +10,7 @@
 // Nothing here touches the browser. Measurements are in metres; a model is measured from the middle of
 // its own footprint, east and north being its own (it is turned with its landmark's bearing).
 
-import { ballProfile, beam, frame, lathe, prism, taper } from './solids.js';
+import { ballProfile, beam, block, frame, lathe, prism, taper } from './solids.js';
 
 const TAU = Math.PI * 2;
 
@@ -987,10 +987,380 @@ export function waterTower(model) {
   return { beacons: [[0, 0, T.mast + 0.6]] };
 }
 
+// ── The Grand Mosque of Riyadh ────────────────────────────────────────────
+
+// The mosque's measures, in metres. Places are [east, north] in its own frame, which is turned with its
+// walls: the qibla wall is its west side, the square lies to its east, Imam Turki bin Abdullah Street to
+// its north and the palace to its south.
+export const TURKI_MOSQUE = {
+  hall: [-62, 3.5, -52.3, 52], // the prayer hall: its west, east, south and north walls
+  wall: 11, // the top of the hall's walls…
+  roof: 10.4, // …and its roof behind them
+  // The little towers on that roof that let light and air into the hall, one over every bay: where the
+  // north-western one stands; how far it is to the next, eastwards and southwards; how many there are,
+  // from west to east and from north to south; half their width; and how high they stand.
+  lanterns: { first: [-53.9, 45.2], step: [8.5, 8.45], count: [7, 12], half: 1.8, top: 12.9 },
+  piers: { wide: 2.6, proud: 1.2, top: 11.7 }, // the square piers of the qibla wall, one between every two rows of lanterns
+  surround: [[3.5, -54], [54.5, -54], [54.5, 50], [49.5, 52], [3.5, 52]], // the wings round the court, with the walks under them
+  wings: 10, // their roofs…
+  parapet: 10.6, // …and the walls round those
+  court: [12, 36.6, -40, 33.8], // the court itself: west, east, south, north
+  bay: 8.2, // from one column of its walks to the next
+  walk: 6, // how deep the walks behind those columns are (the western one reaches to the wall of the hall)
+  eaves: 7.6, // the underside of the beam the columns carry
+  cover: { top: 11, rows: 9, open: 2 }, // the roof of white beams and cloth over the court: its height, its rows of squares, and how many of them stand open, at the southern end
+  front: [54.5, 61], // the row of gatehouses and forecourts on the square: from the wing's wall out to their faces
+  // The blocks along that front, from north to south, each [south, north, top]: gatehouses, and between them forecourts.
+  blocks: [[26.1, 33.6, 11], [9.5, 19.1, 11], [-7.9, 3.3, 13.2], [-23.7, -14.1, 11], [-40.3, -30.7, 11], [-61.4, -47.3, 11]],
+  gate: { block: 2, out: 62.5, door: [5, 7.4, 10] }, // the great gate among them, on the line of the mihrab: which block it is, how far out its face stands, and its doorway: how wide, where it begins to narrow, its point
+  minaret: { at: [46.65, 37], foot: 4.2, top: 3.7, crown: 46.6, rim: 48.2, horns: 50 }, // half its width at the foot and under its crown; the floor of the crown, its rim, and the tips of its four horns
+  portico: [-54, 61, -61.4, -57, 7.5], // the colonnade along the palace's square: west, east, front, back, and the top of its roof
+  bridges: [[-55.5, -41, -104], [45, 56.5, -103]], // the two bridges to the palace, each: west, east, and where it meets the palace
+  deck: [5.2, 10.2], // the underside and the roof of the storey they carry
+  // The two houses between the hall and the street, and the courts in them.
+  houses: [
+    { ring: [[-60.5, 58], [-29, 58], [-29, 81.3], [-52.2, 89.6], [-60.4, 70.7]], courts: [[-55, -46.5, 64, 72.5], [-40, -33, 62, 70]] },
+    { ring: [[-25, 58], [3.5, 58], [3.5, 69.1], [-25, 79.8]], courts: [[-15, -7, 62, 70]] },
+  ],
+  house: 8,
+  wing: [[67.6, 12.4], [125, 12.4], [125, 27.1], [67.6, 46]], // the wing along the street, east of the minaret
+  wingTop: 11.5,
+  canopy: [59.8, 67.6, 33.6, 46.5, 8.1], // the white canopy between that wing and the mosque
+  arcade: { rows: [78, 86.4], from: 5, step: -5.45, bays: 20, top: 9 }, // the long colonnade that crosses the square: its two rows of columns, its northern end, the step from one pair to the next, how many steps, and the underside of its roof
+  square: [[54.5, -104], [128, -104], [128, 12.4], [61, 12.4], [61, 33.6], [54.5, 33.6]], // the paving of the great square, east of the mosque
+  star: [109.5, -40.5, 9], // the star laid in that paving: its middle, and how far its points reach
+};
+
+/**
+ * The Imam Turki bin Abdullah Grand Mosque (Rasem Badran for the Arriyadh Development Authority,
+ * opened in January 1993), in the old town beside the Justice Palace: the Friday mosque of Riyadh, on
+ * the ground where one has stood since about 1830. It holds 17,000, and with its courts and houses it
+ * covers 16,800 square metres. It was given the Aga Khan Award for Architecture in 1995.
+ *
+ * It is built in the manner of Najd, of the pale local limestone that looks golden under its lamps:
+ * plain walls with rows of small three-cornered openings, doorways that end in a point, flat roofs
+ * behind low parapets. The prayer hall is a wide low block, 104 m along its qibla wall and 66 m deep;
+ * on its roof stand eighty-four little towers, one over every bay, which let light and air down to the
+ * columns. East of it lies the court, 74 m long, with a walk behind round columns on every side and,
+ * over it, a roof of white beams and cloth that can be drawn back: here seven of its nine rows are
+ * closed and two stand open. Towards the square the mosque shows a row of gatehouses with columned
+ * forecourts between them, the great gate in the middle, on the line of the mihrab.
+ *
+ * One minaret stands at the north-east corner, by the street: a square tower of darker stone that
+ * draws in a little as it rises, 50 m high, with a slit in each face every few metres and a crown of
+ * four horns. Two bridges cross the square between the mosque and the palace, a storey carried on
+ * piers; a colonnade runs along the mosque's side of that square; the imam's and the muezzin's houses
+ * stand between the hall and the street; a wing closes the great square to the north; and a long
+ * colonnade of tall columns crosses that square from north to south.
+ *
+ * (What it holds, the ground it covers, its builders and dates, the stone, the two bridges and the
+ * height of its minarets are as published: two minarets of 50 m are spoken of. Only one could be found:
+ * in the satellite photo the app shows, in which it lies along its own shadow and both are of the
+ * length a tower of 50 m would give, and in four photographs taken from the streets and the square;
+ * so one is built. The plan is measured on that satellite photo, which is taken at a slant of about
+ * 0.3 m to the north for every metre of height: the hall and the towers on its roof, which were
+ * counted; the court and the squares of its cover; the gatehouses and forecourts; the bridges, the
+ * houses, the wing and the colonnades. The buildings data has the same outline. Heights other than the
+ * minaret's are judged from shadows there and against the minaret in the photographs: the hall some
+ * 11 m, the wings 10 m. The look of the minaret, the columns, the pointed doorways and the openings are
+ * as a photograph from the square shows them; how many doorways there are and where, the storey on
+ * each bridge and the fronts of the houses and of the wing are a likeness. No mihrab is shown on the
+ * qibla wall, which trees hide in the photo.)
+ */
+export function turkiMosque(model) {
+  const G = TURKI_MOSQUE;
+  const to = frame([0, 0], 0);
+  const up = (ring, height) => ring.map(([east, north]) => [east, north, height]);
+  const rect = ([west, east, south, north]) => [[west, south], [east, south], [east, north], [west, north]];
+  // Riyadh limestone: pale and warm by day, golden under the floodlights.
+  const stone = { kind: 'plain', colour: '#e3d0af', light: '#ffc978', glow: 0.6 };
+  const shaded = { kind: 'plain', colour: '#dcc8a6' }; // (the same stone where no floodlight reaches)
+  // (A roof lies level with the top of the block that throws the building's shadow, and what stands on it within that block: they take none.)
+  const roofing = { kind: 'plain', colour: '#e8dabd', open: true };
+  const inside = { kind: 'plain', colour: '#dcc8a6', open: true };
+  const dark = { kind: 'plain', colour: '#3a2d22' };
+  const timber = { kind: 'plain', colour: '#6f553a' };
+  const pillar = { kind: 'plain', colour: '#eadbc0', light: '#ffd9a0', glow: 0.45 };
+  // Walls with windows in them: the houses, the wing, the storeys on the bridges.
+  const windowed = { kind: 'pierced', colour: '#e1cdab', storey: 4, bay: 3.2, holes: 0.22, lit: 0.35, light: '#ffc978', glow: 0.35 };
+
+  /** The way a wall that runs from a to b looks: to the right of that way. And how long it is, and the way along it. */
+  const wallOf = (a, b) => {
+    const long = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const along = [(b[0] - a[0]) / long, (b[1] - a[1]) / long];
+    return { long, along, out: [along[1], -along[0]] };
+  };
+  /** A row of three-cornered openings on a wall from a to b, at a height: one every so often. Returns how many. */
+  const openings = (a, b, height, { every = 2.8, wide = 0.7, tall = 0.8, margin = 1.6, proud = 0.05 } = {}) => {
+    const { long, along, out } = wallOf(a, b);
+    const count = Math.floor((long - margin * 2) / every) + 1;
+    if (!(count >= 1)) return 0;
+    const first = (long - (count - 1) * every) / 2;
+    for (let k = 0; k < count; k += 1) {
+      const spot = (aside, rise) => [a[0] + along[0] * (first + k * every + aside) + out[0] * proud, a[1] + along[1] * (first + k * every + aside) + out[1] * proud, height + rise];
+      model.facet(spot(-wide / 2, 0), spot(wide / 2, 0), spot(0, tall), dark, { out: [out[0], out[1], 0], lines: [false, false, false] });
+    }
+    return count;
+  };
+  /** A doorway that ends in a point, dark, in a wall from a to b: its middle so far along, so wide, straight up to where it turns, and its point. */
+  const doorway = (a, b, at, wide, turn, point, proud = 0.06) => {
+    const { along, out } = wallOf(a, b);
+    const spot = (aside, rise) => [a[0] + along[0] * (at + aside) + out[0] * proud, a[1] + along[1] * (at + aside) + out[1] * proud, rise];
+    model.quad(spot(-wide / 2, 0), spot(wide / 2, 0), spot(wide / 2, turn), spot(-wide / 2, turn), dark, { out: [out[0], out[1], 0], lines: [false, false, false, false] });
+    model.facet(spot(-wide / 2, turn), spot(wide / 2, turn), spot(0, point), dark, { out: [out[0], out[1], 0], lines: [false, false, false] });
+  };
+  /** Openings set in a triangle over a doorway: one, two and three of them, from the top down. */
+  const cluster = (a, b, at, top) => {
+    const { along } = wallOf(a, b);
+    for (let row = 0; row < 3; row += 1) {
+      const half = row * 0.5;
+      const from = [a[0] + along[0] * (at - half - 0.5), a[1] + along[1] * (at - half - 0.5)];
+      const until = [a[0] + along[0] * (at + half + 0.5), a[1] + along[1] * (at + half + 0.5)];
+      openings(from, until, top - (row + 1) * 0.85, { every: 1, wide: 0.6, tall: 0.65, margin: 0.5 });
+    }
+  };
+  /** A round column of stone on a square foot, with a head that steps out under what it carries. */
+  const column = (east, north, top, { radius = 0.5, sides = 8 } = {}) => {
+    const at = (k, height) => [east + Math.cos((k / sides) * TAU) * radius, north + Math.sin((k / sides) * TAU) * radius, height];
+    const looks = (k) => [Math.cos((k / sides) * TAU), Math.sin((k / sides) * TAU), 0];
+    for (let k = 0; k < sides; k += 1) {
+      model.quad(at(k, 0.45), at(k + 1, 0.45), at(k + 1, top - 0.5), at(k, top - 0.5), pillar, { out: looks(k + 0.5), normals: [looks(k), looks(k + 1), looks(k + 1), looks(k)], lines: [false, false, false, false] });
+    }
+    block(model, to, [east - radius * 1.5, east + radius * 1.5, north - radius * 1.5, north + radius * 1.5], 0, 0.45, pillar);
+    taper(model, to, [east - radius * 1.1, east + radius * 1.1, north - radius * 1.1, north + radius * 1.1], [east - radius * 1.9, east + radius * 1.9, north - radius * 1.9, north + radius * 1.9], top - 0.5, top, pillar, { top: null });
+  };
+  /** A flat roof behind a parapet: the walls of an outline up to the parapet's top, the top of the parapet, its inner face, and the roof inside it, with any courts cut out of it. */
+  const roofed = (ring, top, roofAt, stuff, { courts = [], walls = true } = {}) => {
+    const within = inset(ring, 0.5);
+    if (walls) between(model, up(ring, 0), up(ring, top), stuff);
+    model.flat(up(ring, top), { kind: 'plain', colour: stone.colour, open: true }, { holes: [up(within, top)] });
+    between(model, up(within, roofAt), up(within, top), inside, { way: -1 });
+    model.flat(up(within, roofAt), roofing, { holes: courts.map((court) => up(court, roofAt)) });
+  };
+
+  // ── The prayer hall: its four walls, its roof, and the towers on the roof.
+  const [hallWest, hallEast, hallSouth, hallNorth] = G.hall;
+  roofed(rect(G.hall), G.wall, G.roof, stone);
+  const L = G.lanterns;
+  const lantern = { kind: 'pierced', colour: '#dcc9a6', storey: L.top - G.roof, bay: 0.9, holes: 0.5, lit: 0.9, light: '#ffd9a0', glow: 0.3, open: true };
+  for (let i = 0; i < L.count[0]; i += 1) {
+    for (let k = 0; k < L.count[1]; k += 1) {
+      const [east, north] = [L.first[0] + i * L.step[0], L.first[1] - k * L.step[1]];
+      block(model, to, [east - L.half, east + L.half, north - L.half, north + L.half], G.roof, L.top, lantern, { top: roofing });
+    }
+  }
+  // The qibla wall: a square pier between every two rows of towers, a little higher than the wall; and openings between the piers.
+  for (let k = 0; k <= L.count[1]; k += 1) {
+    const north = L.first[1] + L.step[1] / 2 - k * L.step[1];
+    block(model, to, [hallWest - G.piers.proud, hallWest + 0.3, north - G.piers.wide / 2, north + G.piers.wide / 2], 0, G.piers.top, stone);
+    if (k < L.count[1]) openings([hallWest, north - G.piers.wide / 2], [hallWest, north - L.step[1] + G.piers.wide / 2], 8.7, { every: 2.2, margin: 1.2 });
+  }
+  // Its north and south walls, on the lanes: openings high up, and three doorways each.
+  for (const [a, b] of [[[hallEast, hallNorth], [hallWest, hallNorth]], [[hallWest, hallSouth], [hallEast, hallSouth]]]) {
+    openings(a, b, 8.7);
+    for (const along of [12, 32.75, 53.5]) doorway(a, b, along, 2.6, 4.2, 5.6);
+  }
+
+  // ── The wings round the court: one roof with the court cut out of it; the walks under it, behind their columns.
+  const [courtWest, courtEast, courtSouth, courtNorth] = G.court;
+  const court = rect(G.court);
+  const lip = inset(court, -0.5);
+  const surround = G.surround;
+  // (Its west side is the wall of the hall, which stands higher.)
+  for (let i = 0; i < surround.length - 1; i += 1) between(model, up([surround[i], surround[i + 1]], 0), up([surround[i], surround[i + 1]], G.parapet), stone, { lines: [false, false, false, false] });
+  between(model, up([[hallEast, hallSouth], surround[0]], 0), up([[hallEast, hallSouth], surround[0]], G.parapet), stone);
+  roofed(surround, G.parapet, G.wings, stone, { courts: [lip], walls: false });
+  // (Round the court the roof ends in a parapet too; under it the beam the columns carry.)
+  model.flat(up(lip, G.parapet), { kind: 'plain', colour: stone.colour, open: true }, { holes: [up(court, G.parapet)] });
+  between(model, up(lip, G.wings), up(lip, G.parapet), inside);
+  between(model, up(court, G.eaves), up(court, G.parapet), shaded, { way: -1 });
+  // The walks: their ceilings of timber, and the walls behind them (the western one's is the wall of the hall, with its nine doorways).
+  const walks = [hallEast, courtEast + G.walk, courtSouth - G.walk, courtNorth + G.walk];
+  model.flat(up(rect(walks), G.eaves), timber, { out: [0, 0, -1], holes: [up(court, G.eaves)] });
+  const [walkWest, walkEast, walkSouth, walkNorth] = walks;
+  const backs = [[[walkWest, walkNorth], [walkEast, walkNorth]], [[walkEast, walkNorth], [walkEast, walkSouth]], [[walkEast, walkSouth], [walkWest, walkSouth]]];
+  for (const [a, b] of backs) {
+    between(model, up([b, a], 0), up([b, a], G.eaves), shaded);
+    for (let along = G.walk + G.bay / 2; along < wallOf(a, b).long - G.walk; along += G.bay) doorway(b, a, wallOf(a, b).long - along, 2.2, 3.6, 4.8);
+  }
+  for (let k = 0; k < G.cover.rows; k += 1) doorway([hallEast, courtSouth], [hallEast, courtNorth], (k + 0.5) * G.bay, 3.2, 5.4, 7);
+  // The court's floor of pale stone; its columns, one every 8.2 m on all four sides; and openings in the beam over them.
+  model.flat(up(court, 0.1), { kind: 'plain', colour: '#ebe4d3' });
+  for (let k = 0; k <= G.cover.rows; k += 1) for (const east of [courtWest, courtEast]) column(east, courtNorth - k * G.bay, G.eaves);
+  for (const east of [courtWest + G.bay, courtWest + G.bay * 2]) for (const north of [courtSouth, courtNorth]) column(east, north, G.eaves);
+  for (let i = 0; i < 4; i += 1) openings(court[(i + 1) % 4], court[i], 8.7, { every: 2.05, margin: 1 });
+  // Its cover: white beams along every row of columns and across, and cloth in the squares between; the two southern rows stand open.
+  const white = { kind: 'plain', colour: '#f3f3ee' };
+  for (let i = 0; i <= 3; i += 1) beam(model, [courtWest + i * G.bay, courtSouth, G.cover.top], [courtWest + i * G.bay, courtNorth, G.cover.top], 0.5, white);
+  for (let k = 0; k <= G.cover.rows; k += 1) beam(model, [courtWest, courtNorth - k * G.bay, G.cover.top], [courtEast, courtNorth - k * G.bay, G.cover.top], 0.5, white);
+  const closed = rect([courtWest, courtEast, courtNorth - (G.cover.rows - G.cover.open) * G.bay, courtNorth]);
+  model.flat(up(closed, G.cover.top - 0.1), { kind: 'plain', colour: '#a4a8a4' });
+  model.flat(up(closed, G.cover.top - 0.15), { kind: 'plain', colour: '#d6d6cf' }, { out: [0, 0, -1] });
+
+  // ── The front on the square: gatehouses, and between them forecourts behind two columns and a beam. The great gate stands further out and higher.
+  const [frontWest, frontEast] = G.front;
+  G.blocks.forEach(([south, north, top], index) => {
+    const great = index === G.gate.block;
+    const east = great ? G.gate.out : frontEast;
+    block(model, to, [frontWest, east, south, north], 0, top, stone, { top: roofing, faces: { west: null } });
+    // (Where it stands higher than the wing behind it, its back shows over the wing's roof.)
+    model.quad([frontWest, north, G.parapet], [frontWest, south, G.parapet], [frontWest, south, top], [frontWest, north, top], stone, { out: [-1, 0, 0] });
+    const [a, b] = [[east, south], [east, north]];
+    const middle = (north - south) / 2;
+    if (great) {
+      doorway(a, b, middle, G.gate.door[0], G.gate.door[1], G.gate.door[2]);
+      cluster(a, b, middle, top - 0.2);
+    } else if (north - south > 8) {
+      doorway(a, b, middle, 3, 5, 6.8);
+      cluster(a, b, middle, top - 0.5);
+    }
+    openings(a, b, top - 1.2, { every: great ? 1.4 : 2.4, margin: 0.9 });
+    const next = G.blocks[index + 1];
+    if (!next) return;
+    // The forecourt south of it: a door in the wing's wall, two columns at its mouth, and the beam they carry.
+    const [from, until] = [next[1], south];
+    doorway([frontWest, from], [frontWest, until], (until - from) / 2, 2.6, 4.2, 5.6);
+    for (const share of [0.3, 0.7]) column(frontEast - 0.9, from + (until - from) * share, 6.9, { radius: 0.45 });
+    block(model, to, [frontEast - 1.8, frontEast, from, until], 6.9, 7.7, stone);
+    model.flat(up(rect([frontEast - 1.8, frontEast, from, until]), 6.9), shaded, { out: [0, 0, -1] });
+  });
+
+  // ── The minaret: a square tower of darker stone that draws in as it rises; slits up each face, a band, two openings under the crown; and the crown of four horns.
+  const M = G.minaret;
+  const tower = to.sub(M.at);
+  const tan = { kind: 'plain', colour: '#c79f70', light: '#ffd08a', glow: 0.8 };
+  const halfAt = (height) => M.foot + ((M.top - M.foot) * Math.min(height, M.crown)) / M.crown;
+  taper(model, tower, [-M.foot, M.foot, -M.foot, M.foot], [-M.top, M.top, -M.top, M.top], 0, M.crown, tan, { top: { kind: 'plain', colour: '#b8946a' } });
+  const band = halfAt(36.5) + 0.12;
+  block(model, tower, [-band, band, -band, band], 36.3, 36.7, tan, { top: null });
+  for (const [east, north] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+    const face = (aside, height) => tower((halfAt(height) + 0.05) * east - aside * north, (halfAt(height) + 0.05) * north + aside * east, height);
+    const out = tower.way(east, north);
+    for (const height of [15, 20.5, 26, 31.5, 40.5]) model.quad(face(-0.18, height), face(0.18, height), face(0.18, height + 1.3), face(-0.18, height + 1.3), dark, { out, lines: [false, false, false, false] });
+    for (const aside of [-0.85, 0.85]) model.facet(face(aside - 0.32, 43.2), face(aside + 0.32, 43.2), face(aside, 43.95), dark, { out, lines: [false, false, false] });
+    // The crown on this side: its rim dips between the horns.
+    const [outer, inner, dip] = [M.top, M.top - 0.4, M.rim - 0.75];
+    const rim = (reach, aside, height) => tower(reach * east - aside * north, reach * north + aside * east, height);
+    for (const [from, until] of [[-outer, 0], [0, outer]]) {
+      const [low, high] = [from === 0 ? dip : M.rim, until === 0 ? dip : M.rim];
+      model.quad(rim(outer, from, M.crown), rim(outer, until, M.crown), rim(outer, until, high), rim(outer, from, low), tan, { out, lines: [false, false, true, false] });
+      const [within0, within1] = [Math.max(from, -inner), Math.min(until, inner)];
+      model.quad(rim(inner, within0, M.crown), rim(inner, within1, M.crown), rim(inner, within1, high), rim(inner, within0, low), tan, { out: [-out[0], -out[1], 0], lines: [false, false, true, false] });
+      model.quad(rim(outer, from, low), rim(outer, until, high), rim(inner, within1, high), rim(inner, within0, low), tan, { out: [0, 0, 1], lines: [false, false, false, false] });
+    }
+  }
+  for (const [east, north] of [[1, 1], [-1, 1], [-1, -1], [1, -1]]) {
+    // (A horn: a point over each corner.)
+    const [x0, x1] = [Math.min(east * M.top, east * (M.top - 1.1)), Math.max(east * M.top, east * (M.top - 1.1))];
+    const [y0, y1] = [Math.min(north * M.top, north * (M.top - 1.1)), Math.max(north * M.top, north * (M.top - 1.1))];
+    const [px, py] = [east * (M.top - 0.3), north * (M.top - 0.3)];
+    taper(model, tower, [x0, x1, y0, y1], [px, px, py, py], M.rim, M.horns, tan);
+  }
+
+  // ── The colonnade along the palace's square: a wall on the lane behind it, a flat roof, a row of columns.
+  const [porticoWest, porticoEast, porticoFront, porticoBack, porticoTop] = G.portico;
+  const porticoEaves = porticoTop - 0.6;
+  block(model, to, [porticoWest, porticoEast, porticoBack - 0.5, porticoBack], 0, porticoEaves, stone, { top: null });
+  block(model, to, [porticoWest, porticoEast, porticoFront, porticoBack], porticoEaves, porticoTop, stone, { top: roofing });
+  model.flat(up(rect([porticoWest, porticoEast, porticoFront, porticoBack - 0.5]), porticoEaves), timber, { out: [0, 0, -1] });
+  const porticoBays = 20;
+  for (let k = 0; k <= porticoBays; k += 1) column(porticoWest + 0.9 + ((porticoEast - porticoWest - 1.8) * k) / porticoBays, porticoFront + 0.9, porticoEaves, { radius: 0.42 });
+  openings([porticoWest, porticoBack - 0.5], [porticoEast, porticoBack - 0.5], 5.2, { every: 2.8 });
+
+  // ── The two bridges to the palace: a storey with small windows, carried on square piers; one may walk through under them.
+  const [deckLow, deckHigh] = G.deck;
+  for (const [west, east, far] of G.bridges) {
+    const body = rect([west, east, far, porticoFront]);
+    between(model, up(body, deckLow), up(body, deckHigh), { ...windowed, storey: deckHigh - deckLow });
+    model.flat(up(body, deckLow), { kind: 'plain', colour: '#bfa987' }, { out: [0, 0, -1] });
+    model.flat(up(body, deckHigh), roofing);
+    openings(body[1], body[2], deckHigh - 1, { every: 3.2 });
+    openings(body[3], body[0], deckHigh - 1, { every: 3.2 });
+    const bays = Math.round((porticoFront - far) / 6.1);
+    for (let k = 0; k <= bays; k += 1) {
+      const north = far + 0.6 + ((porticoFront - far - 1.2) * k) / bays;
+      for (const at of [west + 0.6, east - 0.6]) block(model, to, [at - 0.6, at + 0.6, north - 0.6, north + 0.6], 0, deckLow, stone, { top: null });
+    }
+  }
+
+  // ── The houses between the hall and the street, each round its courts; and the wing along the street, east of the minaret.
+  for (const { ring, courts } of G.houses) {
+    roofed(ring, G.house + 0.6, G.house, windowed, { courts: courts.map(rect) });
+    for (const yard of courts.map(rect)) {
+      between(model, up(yard, 0), up(yard, G.house), { ...windowed, glow: 0, open: true }, { way: -1 });
+      model.flat(up(yard, 0.05), { kind: 'plain', colour: '#d9cdb4', open: true });
+    }
+  }
+  const wide = { ...windowed, storey: 3.8, bay: 3.4, holes: 0.3 };
+  roofed(G.wing, G.wingTop + 0.6, G.wingTop, wide);
+  openings(G.wing[0], G.wing[1], G.wingTop - 0.6, { every: 2.4 });
+  for (let along = 6; along < G.wing[1][0] - G.wing[0][0] - 3; along += 9.2) doorway(G.wing[0], G.wing[1], along, 2.6, 4, 5.4);
+  // The white canopy between the wing and the mosque, on four posts.
+  const [canopyWest, canopyEast, canopySouth, canopyNorth, canopyTop] = G.canopy;
+  block(model, to, [canopyWest, canopyEast, canopySouth, canopyNorth], canopyTop - 0.3, canopyTop, white);
+  model.flat(up(rect([canopyWest, canopyEast, canopySouth, canopyNorth]), canopyTop - 0.3), white, { out: [0, 0, -1] });
+  for (const east of [canopyWest + 0.4, canopyEast - 0.4]) for (const north of [canopySouth + 0.4, canopyNorth - 0.4]) beam(model, [east, north, 0], [east, north, canopyTop - 0.3], 0.3, white);
+
+  // ── The colonnade that crosses the great square: two rows of tall columns under a flat roof with a ceiling of timber.
+  const A = G.arcade;
+  const arcadeSouth = A.from + A.step * A.bays;
+  const cover = [A.rows[0] - 1.3, A.rows[1] + 1.3, arcadeSouth - 1.3, A.from + 1.3];
+  block(model, to, cover, A.top, A.top + 0.9, stone, { top: roofing });
+  model.flat(up(rect(cover), A.top), timber, { out: [0, 0, -1] });
+  for (let k = 0; k <= A.bays; k += 1) for (const east of A.rows) column(east, A.from + k * A.step, A.top, { radius: 0.6 });
+  // The square itself: paved in pale stone, with a star of darker stone laid in it.
+  model.flat(up(G.square, 0.04), { kind: 'plain', colour: '#dedbd3' });
+  const [starEast, starNorth, starReach] = G.star;
+  for (const [reach, colour, lift] of [[starReach, '#c4b59b', 0.06], [starReach * 0.62, '#dedbd3', 0.08], [starReach * 0.3, '#a8977c', 0.1]]) {
+    model.flat([[starEast + reach, starNorth, lift], [starEast, starNorth + reach, lift], [starEast - reach, starNorth, lift], [starEast, starNorth - reach, lift]], { kind: 'plain', colour });
+  }
+  return {};
+}
+
+/** The way the mosque's own north points: along its qibla wall, north-north-westwards. */
+const TURKI_BEARING = 333.93;
+
+/** A place given in a model's own east and north, in true east and north: the model is turned with its landmark's bearing. */
+const swung = (bearing, east, north) => {
+  const angle = (bearing * Math.PI) / 180;
+  return [east * Math.cos(angle) + north * Math.sin(angle), north * Math.cos(angle) - east * Math.sin(angle)];
+};
+
+/**
+ * What throws the mosque's shadows: each [{ ring, height, base }], the ring in the mosque's own east and
+ * north. The hall; the wings and the covered part of the court; the wings round its open part; each
+ * block of the front; the minaret; the roof of the colonnade on the palace's square; the bridges, from
+ * their undersides up; the houses, the wing and the canopy; and the roof of the colonnade in the square.
+ */
+export function turkiShades() {
+  const G = TURKI_MOSQUE;
+  const rect = ([west, east, south, north]) => [[west, south], [east, south], [east, north], [west, north]];
+  const [courtWest, courtEast, courtSouth, courtNorth] = G.court;
+  const open = courtNorth - (G.cover.rows - G.cover.open) * G.bay; // where the cover's open rows begin
+  const [hallEast, south] = [G.hall[1], G.surround[0][1]];
+  const [east, north] = [G.surround[1][0], G.hall[3]];
+  const M = G.minaret;
+  const A = G.arcade;
+  return [
+    { ring: rect(G.hall), height: G.wall },
+    { ring: [[hallEast, open], [east, open], G.surround[2], G.surround[3], [hallEast, north]], height: G.parapet },
+    { ring: [[hallEast, south], [east, south], [east, open], [courtEast, open], [courtEast, courtSouth], [courtWest, courtSouth], [courtWest, open], [hallEast, open]], height: G.parapet },
+    ...G.blocks.map(([from, until, top], index) => ({ ring: rect([G.front[0], index === G.gate.block ? G.gate.out : G.front[1], from, until]), height: top })),
+    { ring: rect([M.at[0] - M.foot, M.at[0] + M.foot, M.at[1] - M.foot, M.at[1] + M.foot]), height: M.horns },
+    { ring: rect(G.portico.slice(0, 4)), height: G.portico[4], base: G.portico[4] - 0.6 },
+    ...G.bridges.map(([west, bridgeEast, far]) => ({ ring: rect([west, bridgeEast, far, G.portico[2]]), height: G.deck[1], base: G.deck[0] })),
+    ...G.houses.map(({ ring }) => ({ ring, height: G.house + 0.6 })),
+    { ring: G.wing, height: G.wingTop + 0.6 },
+    { ring: rect(G.canopy.slice(0, 4)), height: G.canopy[4], base: G.canopy[4] - 0.3 },
+    { ring: rect([A.rows[0] - 1.3, A.rows[1] + 1.3, A.from + A.step * A.bays - 1.3, A.from + 1.3]), height: A.top + 0.9, base: A.top },
+  ];
+}
+
 /**
  * The famous buildings built here, as landmarks for the map (see landmarks.js): where each stands
  * ([lng, lat]), which way it is turned, how tall it is, within what distance of its middle the map's
- * own blocks are taken out for it, and the round its shadow is thrown from.
+ * own blocks are taken out for it, and the round its shadow is thrown from (or, for the mosque, the
+ * outlines of its parts, and the outlines of the buildings data that go altogether for it).
  */
 export const FAMOUS = [
   {
@@ -1032,5 +1402,22 @@ export const FAMOUS = [
       const turn = (MASMAK.turn * Math.PI) / 180;
       return { at: [u * Math.cos(turn) - v * Math.sin(turn), u * Math.sin(turn) + v * Math.cos(turn)], radius: 3.6, height: 17 };
     }),
+  },
+  {
+    id: 'imam-turki-mosque',
+    name: 'Imam Turki bin Abdullah Grand Mosque',
+    at: [46.710674, 24.630815],
+    bearing: TURKI_BEARING,
+    height: TURKI_MOSQUE.minaret.horns,
+    clear: 0,
+    reach: 170,
+    model: turkiMosque,
+    within: 5000,
+    // (The buildings data has the mosque, its houses and the wing as one block, taller than any of them,
+    // court and all; each bridge as a block that stands on the ground; and the colonnade in the square as
+    // three. They go, shadows and all, and each part of the model throws its own.)
+    // (And a bed of trees in the square, which the data has as a building too.)
+    ghosts: [[22.5, 16.7], [-46.7, -82.8], [50.6, -81.2], [74.8, -10.2], [81.3, -30.5], [85.2, -60], [103.9, 0.7]].map(([east, north]) => swung(TURKI_BEARING, east, north)),
+    shades: turkiShades(),
   },
 ];

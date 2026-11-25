@@ -1118,9 +1118,13 @@ export function landmarkShades() {
   const shades = [];
   // (And of the models that carry a picture: see props.js.)
   for (const landmark of [...LANDMARKS, ...PROPS]) {
+    const angle = ((landmark.bearing ?? 0) * Math.PI) / 180;
     for (const shade of [...(landmark.shade ? [landmark.shade] : []), ...(landmark.shades ?? [])]) {
       const [east, north] = shade.at ?? [0, 0];
-      const ring = circle(shade.radius, 12).map(([u, v]) => place(landmark, east + u, north + v, true));
+      // (A round, so far east and north of the landmark's middle; or an outline in the model's own east and north, which is turned with it.)
+      const ring = shade.ring
+        ? shade.ring.map(([u, v]) => place(landmark, u * Math.cos(angle) + v * Math.sin(angle), v * Math.cos(angle) - u * Math.sin(angle), true))
+        : circle(shade.radius, 12).map(([u, v]) => place(landmark, east + u, north + v, true));
       ring.push(ring[0]);
       // (base: for what throws its shadow from up in the air: the bowl of the water tower.)
       shades.push({ height: shade.height, base: shade.base ?? 0, polygons: [[ring]] });
@@ -1139,7 +1143,10 @@ export function landmarkShades() {
 
 /**
  * Outlines the buildings data has where nothing stands at all: a tall tower
- * seen lying on its side in the photograph the data was traced from. A
+ * seen lying on its side in the photograph the data was traced from. Or
+ * where what stands is not the block the data makes of it: a mosque with its
+ * court, its houses and a wing all in one outline, a bridge as a block on the
+ * ground; the landmark's model then throws its own shadows (shades). A
  * landmark says where such lie (ghosts: [[east, north], …], in metres from
  * its middle); an outline whose middle is within ten metres of one goes
  * altogether: it is not drawn, and it throws no shadow.

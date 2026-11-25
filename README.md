@@ -142,6 +142,13 @@ map opens on the city and keeps to it, and places are looked for in it.
   gate of palm wood in the west wall under its look-out box, the square
   watchtower, the courts within. Three-cornered air holes and wooden rain
   spouts along the walls. By night it is floodlit, golden.
+- **The Grand Mosque of Riyadh.** The Imam Turki bin Abdullah mosque beside
+  the Justice Palace, in pale stone: the low prayer hall with eighty-four
+  little towers on its roof; the court under its roof of white beams and
+  cloth; a row of gatehouses with pointed doorways on the square; walks
+  behind round columns; the two bridges to the palace; and its square
+  minaret, 50 m, with a crown of four horns. The square before it is paved,
+  and crossed by its long colonnade. By night the stone is lit golden.
 - **The financial district, building by building.** Round the PIF Tower the
   King Abdullah Financial District stands as it is built: seventy-four
   buildings, each a model on its own outline. Crystals of dark and blue glass, folded
@@ -476,6 +483,7 @@ Everything is free and needs no account or key.
 | The Riyadh TV Tower | Its lantern's plan: the satellite photo above (Esri World Imagery), measured by hand. Its height, its architect and that its shaft is of concrete: Wikipedia's article on the tower and its record at Structurae, as found by a web search | Studied, not shown: the model is built by hand from them |
 | The Riyadh Water Tower | Its rim and its roof: the satellite photo above (Esri World Imagery) and the buildings data's outline. Its outline from the side, its stripes and their colours: four photographs found through [Openverse](https://openverse.org) on Flickr (by EVITAS WEBFOTOS, CC BY-NC-SA 2.0; distar97, CC BY-ND 2.0; and oboudiold, public domain mark). Its height, its designer and the tower it was modelled on: Wikipedia's article on the tower and Saudipedia's, as found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The King Fahd National Library | Its plan, its roof and its court: the satellite photo above (Esri World Imagery), measured by hand, and the buildings data's outline. Its veil by day and by night: two photographs found through [Openverse](https://openverse.org) on Flickr (by 'guerrilla' strategy, CC BY-NC-SA 2.0, and Mâřš, CC BY-NC-ND 2.0). How the veil is made: what its architects, Gerber Architekten, and its engineers, Bollinger + Grohmann, have published of it | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
+| The Grand Mosque of Riyadh | Its plan, the towers on its roof, its court, its minaret and the minaret's shadow: the satellite photo above (Esri World Imagery), measured by hand, and the buildings data's outlines. What it looks like from the ground: four street photographs out of OpenStreetView-5M (see above; by the Mapillary contributors janvanbekkum and mjoodealtamimi, CC BY-SA 4.0). What it holds, the ground it covers, its builders and dates, its stone, the bridges to the palace and the height of its minarets: Wikipedia's articles on the mosque and on Qasr Al-Hukm, Saudipedia's, and a report by Sabq, as found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | Masmak Fort | Its outline: the buildings data below. Its courts: the satellite photo above (Esri World Imagery). What it looks like, by day and floodlit by night: twelve photographs found through [Openverse](https://openverse.org) on Flickr (by airbus777, Bruno Girin, SammySix, Desert Agama and amanderson2, under Creative Commons licences), and Wikipedia's article on the fort, which gives the heights of its towers and the size of its gate | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The models in `models/` (pagoda, hall, pylon, church, house) | Each made from one photograph out of those the app's owner sent, by [TRELLIS](https://github.com/microsoft/TRELLIS) (Microsoft Research, MIT licence), run on Hugging Face under the owner's account; then cleaned of what stood beside the thing in the photograph, thinned to at most thirty thousand triangles, and packed with `tools/models/pack.mjs` | In the app as those files. Their pictures are made out of the photographs. Who took each photograph is not recorded here: if it was not the owner, the photographer's rights in it remain, and that is to be settled before the app is published to others |
 | The fronts the houses are dressed from (`models/fronts.jpg`, `js/kit.js`) | Two pictures of a new Riyadh villa that the app's owner made with an AI image generator as a reference (not photographs of a real house); three pictures made for this by [FLUX.1 Krea dev](https://huggingface.co/black-forest-labs/FLUX.1-Krea-dev) (Black Forest Labs and Krea), run on Hugging Face on the owner's account; and nine made for this by [Gamma](https://gamma.app)'s image generator on the owner's account. Each measured by hand (`tools/fronts/fronts.json`): a street tree, an open gate and a plate with writing were painted over | In the app as that one picture. None of them shows a real house: every front in the map is a likely one, not that house's own |
@@ -648,6 +656,24 @@ What is judged from photographs: the height of the walls, 9.5 m, and how the
 towers narrow. What is only a likeness: the rooms within, which are one roof
 with six courts placed from the satellite photo; which roof the square
 watchtower stands on; and the count of battlements, air holes and spouts.
+
+The Grand Mosque of Riyadh (`js/famous.js`). What is real: where it stands
+and its plan, measured on the satellite photo and borne out by the buildings
+data's outline: the hall; the eighty-four towers on its roof, which were
+counted; the court and the squares of its cover; the gatehouses and
+forecourts; the bridges, the houses, the wing and the colonnades. As
+published: what it holds, its stone, and the 50 m of its minaret. Published
+too: two minarets. Only one could be found: in the satellite photo, where it
+lies along its own shadow and both are as long as a tower of 50 m gives, and
+in four photographs from the streets; so one is built, at the north-east
+corner. What is judged: every other height (the hall some 11 m, the wings
+10 m), from shadows and against the minaret. What is a likeness: the look of
+the doorways, openings and columns, which follows one photograph; how many
+doorways there are and where; the storey on each bridge; the fronts of the
+houses and of the wing. The cover over the court can be drawn back: it is
+built as the satellite photo shows it, seven rows closed and two open. No
+mihrab is shown on the qibla wall, which trees hide in the photo. The
+Justice Palace beside it is not built: it is still the map's plain block.
 
 The financial district. Seventy-four of its buildings are built as models,
 each on its own outline (`js/kafd.js`). What is real: where each stands and its
@@ -983,7 +1009,8 @@ js/solids.js            plain solids for the models: blocks, tapers, things turn
 js/boulevard.js         Boulevard World: its lagoon and what stands round it
 js/kafd.js              the King Abdullah Financial District: every building on its own outline
 js/famous.js            the famous buildings that are not towers, each with its details: the Ministry of Interior,
-                        the King Fahd National Library, Masmak Fort; and towers built again with theirs:
+                        the King Fahd National Library, Masmak Fort, the Grand Mosque of Riyadh; and towers
+                        built again with theirs:
                         Al Majdoul Tower, Burj Rafal, the TV Tower, the water tower
 js/kafd-data.js         those outlines, and the buildings' heights (written by tools/kafd)
 js/fronts.js            houses dressed as real houses look: a front out of the kit on each one's own plot
