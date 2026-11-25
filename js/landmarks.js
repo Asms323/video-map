@@ -35,20 +35,6 @@ const circle = (r, n = 20, turn = 0) => Array.from({ length: n }, (_, i) => [Mat
 /** A rectangle, by its half-sizes and its middle. */
 const block = (halfU, halfV, atU = 0, atV = 0) => [[atU - halfU, atV - halfV], [atU + halfU, atV - halfV], [atU + halfU, atV + halfV], [atU - halfU, atV + halfV]];
 
-/**
- * Stack slabs from one height to another. outlineAt(z) gives the outline for
- * a slab from the height of its middle; paints are used in turn, one per slab.
- */
-function stack(slabs, from, to, step, outlineAt, paints, more = {}) {
-  let index = 0;
-  for (let base = from; base < to - 1e-6; base += step) {
-    const top = Math.min(base + step, to);
-    const outline = outlineAt((base + top) / 2, index);
-    if (outline && outline.length >= 3) slabs.push({ outline, base, top, paint: paints[index % paints.length], ...more });
-    index += 1;
-  }
-}
-
 // ── The towers ────────────────────────────────────────────────────────────
 
 /**
