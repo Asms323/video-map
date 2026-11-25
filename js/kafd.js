@@ -9,9 +9,9 @@
 //
 // Here every building is rebuilt as a true model (see models.js) on its own outline:
 //   - where it stands and its outline are the buildings data's (Overture Maps, as the app's own map
-//     draws it; kept in kafd-data.js). Two buildings the data lacks were traced from the satellite photo
-//     the app shows (Esri World Imagery): the great faceted hall north of the PIF Tower, and the block
-//     east of it;
+//     draws it; kept in kafd-data.js). Six buildings the data lacks were traced from the satellite photo
+//     the app shows (Esri World Imagery): the great faceted hall north of the PIF Tower and the block
+//     east of it among them;
 //   - its height is the data's where the data has one. That is the height of its highest point, a spire
 //     included. For the rest it was read off the same satellite photo, which is taken at a slant: the roof
 //     of a building lies north-north-west of its foot by 0.48 of its height. Such a height is good to some
@@ -176,9 +176,15 @@ const PLANS = {
   80: { skin: 'dark' },
   81: { skin: 'bands', roof: '#50627a' },
   82: { skin: 'blue', drop: 4 },
-  // The two traced from the photo: the hall (see hall), and a block of dark glass in white bands with a white roof.
+  // Those traced from the photo: the hall (see hall), and a block of dark glass in white bands with a white roof;
   90: { skin: 'facet' },
   91: { skin: 'bands', roof: '#f0f0ee' },
+  // a white tower in the west of the district, banded, with a long white wing beside it;
+  92: { skin: 'bands' },
+  93: { skin: 'white', roof: '#f2f2f0' },
+  // the great slab in the north, its roof in dark strips; and a slim dark tower by the oval pavilion.
+  94: { skin: 'white', roof: '#4b5158' },
+  95: { skin: 'dark', drop: 6 },
 };
 
 // ── Building ──────────────────────────────────────────────────────────────

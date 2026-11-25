@@ -1144,12 +1144,16 @@ export function landmarkModels(mesh, origin) {
   return models;
 }
 
+let lamps = null;
+
 /**
  * Where the red lamps on top of the tall landmarks are: one on each of a
  * landmark's highest slabs (the two points of Kingdom Centre, a mast), or
  * where its model says, as [lng, lat, height]. Those under 60 m have none.
+ * (Worked out once: a model is built to ask it, and there are many.)
  */
 export function landmarkBeacons() {
+  if (lamps) return lamps;
   const beacons = [];
   for (const landmark of LANDMARKS) {
     if (!(landmark.height >= 60)) continue;
@@ -1170,6 +1174,7 @@ export function landmarkBeacons() {
       beacons.push([...place(landmark, u, v, slab.north), top + 0.6]);
     }
   }
+  lamps = beacons;
   return beacons;
 }
 

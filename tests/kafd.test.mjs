@@ -23,8 +23,8 @@ const topOf = (faces) => Math.max(...faces.flatMap((face) => face.corners.map((c
 test('the district\'s buildings: each an outline of its own, anticlockwise about its middle, with a height', () => {
   assert.ok(near(KAFD_AT[0], 46.64, 1e-9) && near(KAFD_AT[1], 24.7625, 1e-9));
   assert.equal(KAFD_BUILDINGS.length, KAFD_OUTLINES.length);
-  assert.equal(KAFD_BUILDINGS.length, 70);
-  assert.equal(new Set(KAFD_BUILDINGS.map((one) => one.n)).size, 70, 'each has a number of its own');
+  assert.equal(KAFD_BUILDINGS.length, 74);
+  assert.equal(new Set(KAFD_BUILDINGS.map((one) => one.n)).size, 74, 'each has a number of its own');
   for (const one of KAFD_BUILDINGS) {
     assert.ok(one.ring.length >= 3, String(one.n));
     const area = squareMeters(one.ring);
@@ -37,7 +37,7 @@ test('the district\'s buildings: each an outline of its own, anticlockwise about
     // The district is a drop-shaped piece of ground inside its ring road, 1.4 km from south to north.
     assert.ok(one.at[0] > -360 && one.at[0] < 470 && one.at[1] > -400 && one.at[1] < 1040, String(one.n));
   }
-  // Half of the heights are on record; the rest were read off the photo, to the nearest metre or five.
+  // Not quite half of the heights are on record; the rest were read off the photo, to the nearest metre or five.
   assert.equal(KAFD_BUILDINGS.filter((one) => one.known).length, 34);
   assert.deepEqual(KAFD_BUILDINGS.filter((one) => one.height > 180).map((one) => [one.n, Math.round(one.height)]), [[2, 304], [3, 264], [4, 231], [5, 221], [6, 200], [60, 182]]);
   // Neither the PIF Tower nor the metro station is among them: those are landmarks of their own.
@@ -65,7 +65,7 @@ test('every building of the district is a landmark of the map, standing on its o
   assert.deepEqual([ground.id, ground.height, ground.clear, ground.model], ['kafd', 0, 0, undefined]);
   assert.equal(ground.covers, onKafd);
   // One to each building, but that the World Trade Center's two shafts are one landmark.
-  assert.equal(parts.length, 69);
+  assert.equal(parts.length, 73);
   assert.ok(parts.every((one) => /^kafd-\d+$/.test(one.id) && typeof one.model === 'function' && one.clear === 0));
   assert.equal(part(5), undefined);
   assert.deepEqual([part(2).name, part(46).name], ['KAFD World Trade Center', 'KAFD Grand Mosque']);
@@ -77,9 +77,9 @@ test('every building of the district is a landmark of the map, standing on its o
     // (The mosque counts as low, for all its minarets.)
     assert.equal(one.within, one.height < 60 || one.id === 'kafd-46' ? 6000 : undefined, one.id);
   }
-  assert.equal(parts.filter((one) => !one.within).length, 37);
+  assert.equal(parts.filter((one) => !one.within).length, 39);
   const mesh = new ModelMesh();
-  assert.equal(landmarkModels(mesh, { lng: KAFD_AT[0], lat: KAFD_AT[1] }), 9 + 69);
+  assert.equal(landmarkModels(mesh, { lng: KAFD_AT[0], lat: KAFD_AT[1] }), 9 + 73);
   assert.ok(mesh.count > 15000 && mesh.count < 60000, `${mesh.count} corners`);
   for (let i = 0; i < mesh.count * 3; i += 1) assert.ok(Number.isFinite(mesh.positions[i]));
 
@@ -242,6 +242,7 @@ test('the Grand Mosque: petals of pale stone under a roof of facets, and two min
 
 test('a red lamp stands on the top of every tower of the district', () => {
   const tops = landmarkBeacons();
+  assert.equal(landmarkBeacons(), tops, 'worked out once: every model is built to ask it');
   for (const one of KAFD_PARTS.slice(1)) {
     const n = Number(one.id.slice(5));
     const own = LANDMARKS.find((landmark) => landmark.id === one.id);

@@ -39,18 +39,22 @@ everything of 250 square metres or more was kept, but for
 Where the data had an outline doubling back on itself (a spike with nothing
 in it), the spike was taken out.
 
-**Two buildings the data does not have** were traced from the satellite photo
+**Six buildings the data does not have** were traced from the satellite photo
 the app shows (Esri World Imagery): the great faceted hall north of the PIF
-Tower (90) and the block east of it (91). Their corners were read off the
-photo to about a metre. The data lacks others as well, mostly in the west
-and the north of the district; those are not built.
+Tower (90), the block east of it (91), a white tower in the west with its
+long wing (92, 93), the great slab in the north (94) and a slim dark tower
+by the oval pavilion (95). The corners of each one's roof were read off the
+photo, to a metre for the first two and to some three for the rest, and
+moved back along the slant of the photo to where its foot stands. The data
+lacks others as well, mostly in the west and the north of the district;
+those are not built.
 
 ### Where the heights come from
 
 For 34 buildings the data has a height. It is the height of the building's
 highest point: of the tip of its spire, if it has one.
 
-For the other 36 the height was read off the satellite photo. The photo is
+For the other 40 the height was read off the satellite photo. The photo is
 taken at a slant: the roof of a building lies north-north-west of its foot,
 by 0.48 of its height (0.150 west and 0.454 north for every metre: measured
 on the PIF Tower, whose 385 m are known). The outline of each building was

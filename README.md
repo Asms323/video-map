@@ -126,8 +126,8 @@ map opens on the city and keeps to it, and places are looked for in it.
   the KAFD metro station each have their own shape, built from reference
   photos on the building's real outline, in place of a plain block.
 - **The financial district, building by building.** Round the PIF Tower the
-  King Abdullah Financial District stands as it is built: seventy buildings,
-  each a model on its own outline. Crystals of dark and blue glass, folded
+  King Abdullah Financial District stands as it is built: seventy-four
+  buildings, each a model on its own outline. Crystals of dark and blue glass, folded
   along slanting lines and cut off aslant; white towers pierced with diamond
   windows; blocks of tan stone; the World Trade Center's two pale shafts with
   the seam of glass between them; the Grand Mosque with its two minarets; the
@@ -452,7 +452,7 @@ Everything is free and needs no account or key.
 | Satellite photos | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. Shown only in the Satellite look. How sharp the photo comes differs from place to place: the service is asked, a square of tiles at a time, and only what it has is fetched. In the 3D city the photo is never shown: it is read on the phone, at one middling level of sharpness, for trees, shadows and the colours of roofs, and the service is asked once per area for the day the photo was taken |
 | What Riyadh's houses and house streets look like | [OpenStreetView-5M](https://huggingface.co/datasets/osv5m/osv5m) (Astruc and others, CVPR 2024): street photographs by Mapillary contributors, CC BY-SA 4.0 | Studied, not shown: the 1,629 photographs taken inside Riyadh were looked through and the houses are built by rules drawn from them. No photograph is in the app or fetched by it |
 | What stands at Boulevard World, and where | The satellite photo above (Esri World Imagery, taken in September 2025): the lagoon's shore was traced from it and every thing's place measured on it. Sixteen photographs of the place by night and the fairground's own booklet for the 2026-27 season, both sent by the app's owner | Studied, not shown: the models are built by hand from them. No photograph and no page of the booklet is in the app or fetched by it |
-| The King Abdullah Financial District, building by building | Outlines and thirty-four heights: the buildings data below (Overture Maps), kept in `js/kafd-data.js` (see `tools/kafd/`). The other heights, two outlines the data lacks, and the colours of roofs and walls: the satellite photo above (Esri World Imagery), read by hand. What the towers look like from the ground: seven photographs on [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:King_Abdullah_Financial_District) (six by Kolaiel, CC0; one by Ahmed, CC BY-SA 4.0) and Wikipedia's articles on the district, its World Trade Center and its Grand Mosque | Studied, not shown: the models are built by hand from them. No photograph is in the app or fetched by it |
+| The King Abdullah Financial District, building by building | Outlines and thirty-four heights: the buildings data below (Overture Maps), kept in `js/kafd-data.js` (see `tools/kafd/`). The other heights, six outlines the data lacks, and the colours of roofs and walls: the satellite photo above (Esri World Imagery), read by hand. What the towers look like from the ground: seven photographs on [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:King_Abdullah_Financial_District) (six by Kolaiel, CC0; one by Ahmed, CC BY-SA 4.0) and Wikipedia's articles on the district, its World Trade Center and its Grand Mosque | Studied, not shown: the models are built by hand from them. No photograph is in the app or fetched by it |
 | The models in `models/` (pagoda, hall, pylon, church, house) | Each made from one photograph out of those the app's owner sent, by [TRELLIS](https://github.com/microsoft/TRELLIS) (Microsoft Research, MIT licence), run on Hugging Face under the owner's account; then cleaned of what stood beside the thing in the photograph, thinned to at most thirty thousand triangles, and packed with `tools/models/pack.mjs` | In the app as those files. Their pictures are made out of the photographs. Who took each photograph is not recorded here: if it was not the owner, the photographer's rights in it remain, and that is to be settled before the app is published to others |
 | The fronts the houses are dressed from (`models/fronts.jpg`, `js/kit.js`) | Two pictures of a new Riyadh villa that the app's owner made with an AI image generator as a reference (not photographs of a real house); three pictures made for this by [FLUX.1 Krea dev](https://huggingface.co/black-forest-labs/FLUX.1-Krea-dev) (Black Forest Labs and Krea), run on Hugging Face on the owner's account; and nine made for this by [Gamma](https://gamma.app)'s image generator on the owner's account. Each measured by hand (`tools/fronts/fronts.json`): a street tree, an open gate and a plate with writing were painted over | In the app as that one picture. None of them shows a real house: every front in the map is a likely one, not that house's own |
 | One outline for every building in the 3D city | [Overture Maps](https://overturemaps.org) buildings, which join OpenStreetMap with outlines traced from satellite photos by Esri's community, Google and Microsoft | Read a piece at a time, with [PMTiles](https://github.com/protomaps/PMTiles), out of the one archive file Overture publishes each month. The newest release is looked up once a day |
@@ -552,19 +552,20 @@ about each building, and simplified: a model, not a survey. The water tower
 was built from memory, with no photo to check it against. The other tall
 buildings of the city remain plain blocks, but for the financial district.
 
-The financial district. Seventy of its buildings are built as models, each
-on its own outline (`js/kafd.js`). What is real: where each stands and its
+The financial district. Seventy-four of its buildings are built as models,
+each on its own outline (`js/kafd.js`). What is real: where each stands and its
 outline (the buildings data's), and the height of thirty-four of them (on
 record in that data). What is read off the satellite photo, and so only
-good to some ten metres: the height of the other thirty-six. What is a
+good to some ten metres: the height of the other forty. What is a
 likeness and not a survey: each building's skin and the cut of its top. The
 towers that can be told apart in photographs are built as the photographs
 show them; a building seen only from above is given the nearest of the
 district's kinds of skin to the colours it shows there. The World Trade
 Center and the Grand Mosque follow what is published of them, but where the
-mosque's two minarets stand is a judgement. Two buildings that the data does
-not have were traced from the satellite photo; others it does not have, in
-the west and the north of the district, are still missing, and so are the
+mosque's two minarets stand is a judgement. Six buildings that the data does
+not have were traced from the satellite photo, corners and heights to a few
+metres only; others it does not have, in the west and the north of the
+district, are still missing, and so are the
 gardens of the wadi. The skywalks between the towers are the street map's
 footbridges there, drawn as glazed bridges three storeys up: where they run
 is real, how high and how wide they are is a likeness.
@@ -997,5 +998,5 @@ phones drop their saved copy.
 - `js/kafd-data.js` and `tools/kafd/outlines.json` hold the outlines of the
   financial district's buildings, and such heights as are on record, from
   Overture Maps (© OpenStreetMap contributors and Overture Maps Foundation,
-  ODbL); two of the outlines and the other heights were read by hand off
+  ODbL); six of the outlines and the other heights were read by hand off
   Esri World Imagery (see `tools/kafd/README.md`).
