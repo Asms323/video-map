@@ -1745,6 +1745,185 @@ export function murabbaShades() {
   return [[-halfWide, halfWide, courtNorth, halfLong], [-halfWide, halfWide, -halfLong, courtSouth], [-halfWide, courtWest, courtSouth, courtNorth], [courtEast, halfWide, courtSouth, courtNorth]].map((box) => ({ ring: rect(box), height: P.wall }));
 }
 
+// ── The National Museum ───────────────────────────────────────────────────
+
+// The museum's measures, in metres east and north of a point in the middle of it.
+export const NATIONAL_MUSEUM = {
+  // The great wall along its west side: where its outer foot runs, from its north end to its point in the south.
+  wall: [[-81.4, 100.1], [-65.7, 74.6], [-57.5, 59.9], [-51.5, 45.3], [-46.7, 31.2], [-42.9, 17.6], [-38.5, -10.6], [-36.3, -35.1], [-37.5, -61]],
+  thick: 2.6, // how thick the wall is at its foot
+  lean: 0.08, // how far its outer face leans back, for every metre of height
+  high: 15, // how high it stands along most of its length…
+  point: 28, // …and at its point
+  rise: -30, // where it begins to rise to its point (how far north)
+  front: -38, // the line of the glass front under the canopy (how far north)
+  // The halls behind the wall, from where they meet its north end round by the east to the glass front.
+  halls: [[-55.9, 71.9], [53.2, 100.6], [63.5, 46.9], [70, 48.5], [73.3, 35], [62.4, 32.8], [61.9, 38.2], [10.3, 25.7], [19.6, -8.5], [65.7, 0.2], [73.3, -28], [71.7, -28], [80.3, -63.8], [82.5, -63.3], [89.6, -91.5], [47.2, -99.6], [-6, -99.6], [-11.4, -44.3], [-14.5, -38]],
+  roof: 14, // the top of the halls
+  courts: [[27, 55, -64, -36], [-16, 8, 58, 80]], // the two gardens open to the sky among them: west, east, south, north
+  drum: [13, -81.5, 18, 18.5], // the round hall: its middle, its radius, its height
+  canopy: [-31, -13.5, -46, 9.6, 10.9], // the canopy over the doors: west, east, its front (north), its underside and its top
+  plaza: [-35, -11, -76, -38], // the paved square before the doors: west, east, south, north
+};
+
+/** A smooth line through points (Catmull-Rom), a point every so many metres or less. */
+function smoothLine(points, step = 3) {
+  const out = [];
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const [p0, p1, p2, p3] = [points[Math.max(i - 1, 0)], points[i], points[i + 1], points[Math.min(i + 2, points.length - 1)]];
+    const count = Math.max(Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / step), 1);
+    for (let k = 0; k < count; k += 1) {
+      const t = k / count;
+      const [t2, t3] = [t * t, t * t * t];
+      out.push([0, 1].map((c) => 0.5 * (2 * p1[c] + (-p0[c] + p2[c]) * t + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * t2 + (-p0[c] + 3 * p1[c] - 3 * p2[c] + p3[c]) * t3)));
+    }
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
+/**
+ * The museum's great wall, from its north end to its point: at every few metres, where its outer foot is
+ * ([east, north]), the way into the building from there (one long), and how high it stands.
+ */
+export function museumWall() {
+  const N = NATIONAL_MUSEUM;
+  const line = smoothLine(N.wall);
+  const tip = line[line.length - 1][1];
+  return line.map((at, i) => {
+    const [a, b] = [line[Math.max(i - 1, 0)], line[Math.min(i + 1, line.length - 1)]];
+    const long = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const inward = [-(b[1] - a[1]) / long, (b[0] - a[0]) / long];
+    const height = at[1] > N.rise ? N.high : N.high + (N.point - N.high) * ((N.rise - at[1]) / (N.rise - tip)) ** 1.4;
+    return { at, inward, height };
+  });
+}
+
+/** The halls' outline: round by the east from where they meet the wall's north end to the glass front, then up the inner foot of the wall. Anticlockwise. */
+export function museumHalls() {
+  const N = NATIONAL_MUSEUM;
+  const wall = museumWall();
+  const innerOf = ({ at, inward }) => [at[0] + inward[0] * N.thick, at[1] + inward[1] * N.thick];
+  const inner = wall.filter(({ at }) => at[1] >= N.front).map(innerOf).reverse();
+  // (Where the wall's inner foot meets the line of the glass front.)
+  const cross = wall.findIndex(({ at }) => at[1] < N.front);
+  const [a, b] = [innerOf(wall[cross - 1]), innerOf(wall[cross])];
+  const share = (a[1] - N.front) / (a[1] - b[1]);
+  const ring = [...N.halls, [a[0] + (b[0] - a[0]) * share, N.front], ...inner];
+  let area = 0;
+  for (let i = 0; i < ring.length; i += 1) area += ring[i][0] * ring[(i + 1) % ring.length][1] - ring[(i + 1) % ring.length][0] * ring[i][1];
+  return area > 0 ? ring : ring.reverse();
+}
+
+/**
+ * The National Museum of Saudi Arabia (Moriyama and Teshima, opened in 1999), in the King Abdulaziz
+ * Historical Center beside Murabba Palace.
+ *
+ * Its west side is one long wall of tan stone, some 170 m of it, that curves like the edge of a dune and
+ * leans back a little as it rises; at its southern end it climbs to a sharp point, the prow the museum is
+ * known by, which stands free over the square before the doors. Behind the wall lie the halls: low and
+ * flat-roofed, of the same stone, with deep bays of windows; two gardens open to the sky among them, and a
+ * round hall stands up out of their roofs. The doors are in a front of glass, two storeys high, beside the
+ * prow, under a deep flat canopy whose underside is of warm wood; before them a paved square. By night
+ * the stone is floodlit, golden, and the glass shines.
+ *
+ * (Where it stands, the line of the wall's foot and the outline of the halls are the buildings data's;
+ * the satellite photo the app shows bears them out but for the halls' northern edge, which may lie some
+ * metres further north. The gardens, the round hall, the canopy and the square are measured on that photo,
+ * moved back along its slant (some 0.3 m to the north for every metre of height). Heights are judged in a
+ * photograph taken on the square: the prow some 28 m, the canopy some 10 m, the halls some 14 m; they may
+ * be out by a few metres. That the prow is the wall's southern end, and the way the wall rises to it, are
+ * read off that photograph and the satellite photo together; how the wall ends in the north, which no
+ * photograph showed, is a likeness, and so are the bays of windows, which follow that photograph on one
+ * wall and are given to all. The courts within the halls, the glazed passages over them and the roofs'
+ * machinery are not built.)
+ */
+export function nationalMuseum(model) {
+  const N = NATIONAL_MUSEUM;
+  const to = frame([0, 0], 0);
+  const up = (ring, height) => ring.map(([east, north]) => [east, north, height]);
+  const rect = ([west, east, south, north]) => [[west, south], [east, south], [east, north], [west, north]];
+  // Tan stone, floodlit golden by night; the halls' walls with their bays of windows.
+  const stone = { kind: 'plain', colour: '#d6a06b', light: '#ffc983', glow: 0.6 };
+  // (Tall narrow bays, one to every 4.5 m, as deep as the walls are high but for a band at the foot and at the top.)
+  const skin = { kind: 'pierced', colour: '#d6a06b', storey: 14, bay: 4.5, holes: 0.1, lit: 0.3, light: '#ffc983', glow: 0.45 };
+  const inside = { kind: 'plain', colour: '#c99760', open: true };
+  const roofing = { kind: 'plain', colour: '#d8c29d', open: true };
+  const plain = [false, false, false, false];
+
+  // The great wall: its outer face leaning back, a narrow top, its inner face (over the roofs, and the whole of it where it stands free), and its two ends.
+  const wall = museumWall();
+  const outerTop = ({ at, inward, height }) => [at[0] + inward[0] * N.lean * height, at[1] + inward[1] * N.lean * height, height];
+  const inner = ({ at, inward }, height) => [at[0] + inward[0] * N.thick, at[1] + inward[1] * N.thick, height];
+  for (let i = 0; i < wall.length - 1; i += 1) {
+    const [a, b] = [wall[i], wall[i + 1]];
+    const west = [-(a.inward[0] + b.inward[0]), -(a.inward[1] + b.inward[1]), 0];
+    model.quad([...a.at, 0], [...b.at, 0], outerTop(b), outerTop(a), stone, { out: west, lines: plain });
+    model.quad(outerTop(a), outerTop(b), inner(b, b.height), inner(a, a.height), stone, { out: [0, 0, 1], lines: [true, false, true, false] });
+    const free = a.at[1] < N.front + 1e-6 && b.at[1] < N.front + 1e-6;
+    const foot = free ? 0 : N.roof;
+    model.quad(inner(a, foot), inner(b, foot), inner(b, b.height), inner(a, a.height), stone, { out: [-west[0], -west[1], 0], lines: plain });
+  }
+  for (const [end, away] of [[wall[0], -1], [wall[wall.length - 1], 1]]) {
+    const along = [end.inward[1] * away, -end.inward[0] * away, 0];
+    model.quad([...end.at, 0], inner(end, 0), inner(end, end.height), outerTop(end), stone, { out: along, lines: plain });
+  }
+
+  // The halls: their walls with bays of windows (not along the great wall, which stands in front of them), the glass front, the roof.
+  const halls = museumHalls();
+  const along = new Set(wall.filter(({ at }) => at[1] >= N.front).map(({ at, inward }) => `${(at[0] + inward[0] * N.thick).toFixed(3)},${(at[1] + inward[1] * N.thick).toFixed(3)}`));
+  const onWall = (point) => along.has(`${point[0].toFixed(3)},${point[1].toFixed(3)}`);
+  const glass = { kind: 'glass', colour: '#2c3c44', storey: 4.8, bay: 2.2, lit: 1, floors: 0.3, mirror: 0.35 };
+  halls.forEach((a, i) => {
+    const b = halls[(i + 1) % halls.length];
+    if (onWall(a) && onWall(b)) return;
+    const out = [b[1] - a[1], -(b[0] - a[0]), 0];
+    // (The glass front runs from the corner of the halls to the great wall.)
+    const front = Math.abs(a[1] - N.front) < 1e-6 && Math.abs(b[1] - N.front) < 1e-6;
+    if (front) {
+      model.quad([...a, 0], [...b, 0], [...b, N.canopy[3]], [...a, N.canopy[3]], glass, { out, lines: plain });
+      model.quad([...a, N.canopy[3]], [...b, N.canopy[3]], [...b, N.roof], [...a, N.roof], stone, { out, lines: plain });
+      return;
+    }
+    model.quad([...a, 0], [...b, 0], [...b, N.roof], [...a, N.roof], skin, { out, lines: [false, true, true, true], along: [b[0] - a[0], b[1] - a[1]], from: a });
+  });
+  const courts = N.courts.map(rect);
+  const [drumEast, drumNorth, drumRadius, drumHeight] = N.drum;
+  const round = (radius, height, count = 48) => Array.from({ length: count }, (_, k) => [drumEast + Math.cos((k / count) * TAU) * radius, drumNorth + Math.sin((k / count) * TAU) * radius, height]);
+  model.flat(up(halls, N.roof), roofing, { holes: [...courts.map((court) => up(court, N.roof)), round(drumRadius, N.roof)] });
+  for (const court of courts) {
+    between(model, up(court, 0), up(court, N.roof), inside, { way: -1 });
+    model.flat(up(court, 0.05), { kind: 'plain', colour: '#9c8b62', open: true });
+  }
+
+  // The round hall: standing up out of the roofs, with a rim round its own roof.
+  lathe(model, to, [drumEast, drumNorth], [[drumRadius, 0], [drumRadius, drumHeight], [drumRadius - 0.6, drumHeight], [drumRadius - 0.6, drumHeight - 0.8]], (piece) => (piece === 0 ? stone : { ...stone, open: true }), { cuts: 48 });
+  model.flat(round(drumRadius - 0.6, drumHeight - 0.8), roofing);
+
+  // The canopy over the doors: white edged, its underside of warm wood, lit from below by night.
+  const [canopyWest, canopyEast, canopyFront, under, over] = N.canopy;
+  const canopy = [canopyWest, canopyEast, canopyFront, N.front];
+  block(model, to, canopy, under, over, { kind: 'plain', colour: '#f2efe8' }, { faces: { north: null } });
+  model.flat(up(rect(canopy), under), { kind: 'plain', colour: '#b5703c', light: '#ffd9a6', glow: 0.55 }, { out: [0, 0, -1] });
+
+  // The square before the doors: paved in warm stone.
+  model.flat(up(rect(N.plaza), 0.04), { kind: 'plain', colour: '#cfa86a' });
+  return {};
+}
+
+/** What throws the museum's shadows, in its own east and north: the halls, the round hall, and the free end of the wall up to its point. */
+export function museumShades() {
+  const N = NATIONAL_MUSEUM;
+  const [drumEast, drumNorth, drumRadius, drumHeight] = N.drum;
+  const free = museumWall().filter(({ at }) => at[1] <= N.rise);
+  const prow = [...free.map(({ at }) => at), ...free.map(({ at, inward }) => [at[0] + inward[0] * N.thick, at[1] + inward[1] * N.thick]).reverse()];
+  return [
+    { ring: museumHalls(), height: N.roof },
+    { ring: Array.from({ length: 16 }, (_, k) => [drumEast + Math.cos((k / 16) * TAU) * drumRadius, drumNorth + Math.sin((k / 16) * TAU) * drumRadius]), height: drumHeight },
+    { ring: prow, height: (N.high + N.point) / 2 },
+  ];
+}
+
 /** The way the mosque's own north points: along its qibla wall, north-north-westwards. */
 const TURKI_BEARING = 333.93;
 
@@ -1861,5 +2040,20 @@ export const FAMOUS = [
     // (The buildings data has it as one block, court and all: that goes, and its four wings throw the shadows.)
     ghosts: [[0.5, 5]],
     shades: murabbaShades(),
+  },
+  {
+    id: 'national-museum',
+    name: 'National Museum of Saudi Arabia',
+    at: [46.7106, 24.6476],
+    bearing: 0,
+    height: NATIONAL_MUSEUM.point,
+    clear: 0,
+    reach: 135,
+    model: nationalMuseum,
+    within: 4000,
+    // (The buildings data has two outlines for it, which take in its wall, its gardens and the square before
+    // it, and a strip of the park to the south: they go, and the model's parts throw the shadows.)
+    ghosts: [[8.4, 3], [22.9, -104.4]],
+    shades: museumShades(),
   },
 ];

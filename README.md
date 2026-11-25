@@ -155,6 +155,12 @@ map opens on the city and keeps to it, and places are looked for in it.
   round the walls; a row of white pointed battlements along the top; a
   footing of stone; and inside, galleries on both floors behind white
   columns. By night its walls are floodlit.
+- **The National Museum.** Beside Murabba Palace: one long wall of tan stone
+  that curves like the edge of a dune, leans back as it rises, and climbs
+  at its southern end to the sharp point the museum is known by; behind it
+  the low halls with tall bays of windows, two gardens and a round hall;
+  the doors in a front of glass under a deep canopy of warm wood, and a
+  paved square before them. By night the stone is floodlit, golden.
 - **The financial district, building by building.** Round the PIF Tower the
   King Abdullah Financial District stands as it is built: seventy-four
   buildings, each a model on its own outline. Crystals of dark and blue glass, folded
@@ -490,6 +496,7 @@ Everything is free and needs no account or key.
 | The Riyadh Water Tower | Its rim and its roof: the satellite photo above (Esri World Imagery) and the buildings data's outline. Its outline from the side, its stripes and their colours: four photographs found through [Openverse](https://openverse.org) on Flickr (by EVITAS WEBFOTOS, CC BY-NC-SA 2.0; distar97, CC BY-ND 2.0; and oboudiold, public domain mark). Its height, its designer and the tower it was modelled on: Wikipedia's article on the tower and Saudipedia's, as found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The King Fahd National Library | Its plan, its roof and its court: the satellite photo above (Esri World Imagery), measured by hand, and the buildings data's outline. Its veil by day and by night: two photographs found through [Openverse](https://openverse.org) on Flickr (by 'guerrilla' strategy, CC BY-NC-SA 2.0, and Mâřš, CC BY-NC-ND 2.0). How the veil is made: what its architects, Gerber Architekten, and its engineers, Bollinger + Grohmann, have published of it | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The Grand Mosque of Riyadh | Its plan, the towers on its roof, its court, its minaret and the minaret's shadow: the satellite photo above (Esri World Imagery), measured by hand, and the buildings data's outlines. What it looks like from the ground: four street photographs out of OpenStreetView-5M (see above; by the Mapillary contributors janvanbekkum and mjoodealtamimi, CC BY-SA 4.0). What it holds, the ground it covers, its builders and dates, its stone, the bridges to the palace and the height of its minarets: Wikipedia's articles on the mosque and on Qasr Al-Hukm, Saudipedia's, and a report by Sabq, as found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
+| The National Museum | Its wall's foot and its halls: the buildings data below; its gardens, round hall, canopy and square: the satellite photo above (Esri World Imagery), measured by hand. What it looks like by day and by night: three photographs found through [Openverse](https://openverse.org) on Flickr (two by SammySix, CC BY 2.0; one by Timon91, CC BY-NC-SA 2.0). Its architects, its year and the dunes it was drawn from: reports of it found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The KAFD metro station | Its outline: the buildings data below; its corners and the fields of glass on its roof: the satellite photo above (Esri World Imagery). Its shell, its rows of lattice, its lids, its foot and its arches: four photographs found through [Openverse](https://openverse.org) on Flickr (three by Ali Lajami, CC BY 2.0; one by Bader Otaby, CC BY-NC-SA 2.0). The ground it covers and the lines it serves: Wikipedia's article on the station. How its architects describe its shell: reports of it found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | Murabba Palace | Its outline: the buildings data below. Its court: the satellite photo above (Esri World Imagery), measured by hand. Its walls, windows, bands and battlements: two street photographs out of OpenStreetView-5M (see above; by the Mapillary contributor mustafakamil, CC BY-SA 4.0). Its dates, its floors and rooms, what it is built of and the ground it covers: Wikipedia's article on the palace and Saudipedia's, as found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | Masmak Fort | Its outline: the buildings data below. Its courts: the satellite photo above (Esri World Imagery). What it looks like, by day and floodlit by night: twelve photographs found through [Openverse](https://openverse.org) on Flickr (by airbus777, Bruno Girin, SammySix, Desert Agama and amanderson2, under Creative Commons licences), and Wikipedia's article on the fort, which gives the heights of its towers and the size of its gate | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
@@ -593,6 +600,20 @@ still stacks of thin slabs. Position, outline and height are the real ones;
 the shape was worked out from photos and from what is published about each
 building, and simplified: a model, not a survey. The other tall buildings of
 the city remain plain blocks, but for the financial district.
+
+The National Museum (`js/famous.js`). What is real: where it stands, the line
+of its great wall's foot and the outline of its halls (the buildings data's;
+the satellite photo bears them out, but for the halls' northern edge, which
+may lie some metres further north); its architects and its year. What is
+measured on the satellite photo, moved back along its slant: the two gardens,
+the round hall, the canopy and the square. What is judged in a photograph
+taken on the square: the heights, the point some 28 m, the canopy some 10 m,
+the halls some 14 m, each good to a few metres; and, with the satellite photo,
+that the point is the wall's southern end and how the wall rises to it. What
+is a likeness: how the wall ends in the north, which no photograph showed;
+the bays of windows, which follow one wall in that photograph and are given
+to all. The courts inside the halls, the glazed passages over them and what
+stands on the roofs are not built.
 
 The KAFD metro station (`js/famous.js`). What is real: where it stands and its
 outline, 210.4 m by 39.6 m on the average (the buildings data's: some 8,250
@@ -1048,7 +1069,7 @@ js/boulevard.js         Boulevard World: its lagoon and what stands round it
 js/kafd.js              the King Abdullah Financial District: every building on its own outline
 js/famous.js            the famous buildings that are not towers, each with its details: the Ministry of Interior,
                         the King Fahd National Library, Masmak Fort, the Grand Mosque of Riyadh, Murabba
-                        Palace; and towers built again with theirs:
+                        Palace, the National Museum; and towers built again with theirs:
                         Al Majdoul Tower, Burj Rafal, the TV Tower, the water tower, the KAFD metro station
 js/kafd-data.js         those outlines, and the buildings' heights (written by tools/kafd)
 js/fronts.js            houses dressed as real houses look: a front out of the kit on each one's own plot

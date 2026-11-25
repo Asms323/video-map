@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { FAMOUS, KAFD_STATION, LIBRARY, MAJDOUL, MASMAK, MINISTRY, MURABBA, RAFAL, TURKI_MOSQUE, TV_TOWER, WATER_TOWER, inset, kafdStation, majdoulAnnex, majdoulSquare, majdoulTower, murabbaShades, rafalHalf, rafalRim, rafalTower, stationOutline, stationRing, stationShades, stepped, turkiShades, tvTower, waterTower } from '../js/famous.js';
+import { FAMOUS, KAFD_STATION, LIBRARY, MAJDOUL, MASMAK, MINISTRY, MURABBA, NATIONAL_MUSEUM, RAFAL, TURKI_MOSQUE, TV_TOWER, WATER_TOWER, inset, kafdStation, majdoulAnnex, majdoulSquare, majdoulTower, murabbaShades, museumHalls, museumShades, museumWall, rafalHalf, rafalRim, rafalTower, stationOutline, stationRing, stationShades, stepped, turkiShades, tvTower, waterTower } from '../js/famous.js';
 import { LANDMARKS, ghostsOfLandmarks, landmarkBeacons, landmarkModels, landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
 import { facesOf } from './model-faces.mjs';
@@ -26,7 +26,7 @@ const lookOf = ({ corners: [a, b, c] }) => {
 };
 
 test('the famous buildings are landmarks of the map: each where it stands, with its clearing and its shadow', () => {
-  assert.deepEqual(FAMOUS.map((one) => one.id), ['interior-ministry', 'king-fahd-library', 'masmak-fort', 'imam-turki-mosque', 'murabba-palace']);
+  assert.deepEqual(FAMOUS.map((one) => one.id), ['interior-ministry', 'king-fahd-library', 'masmak-fort', 'imam-turki-mosque', 'murabba-palace', 'national-museum']);
   for (const one of FAMOUS) {
     assert.equal(LANDMARKS.find((landmark) => landmark.id === one.id), one);
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
@@ -905,4 +905,73 @@ test('the KAFD metro station: a white shell in two rows of eyes filled with latt
   const placed = (points) => [...points, points[0]].map(([east, north]) => [station.at[0] + (east * Math.cos(turn) + north * Math.sin(turn)) / squeeze, station.at[1] + (north * Math.cos(turn) - east * Math.sin(turn)) / METERS]);
   const data = placed([[17.1, -105.1], [-20.5, -104.2], [-19, 18.2], [-20.6, 103.3], [-15.5, 105.2], [19.8, 103], [19.7, 27.5], [20.6, 5.8], [18.8, -105.2]]);
   assert.deepEqual([...ghostsOfLandmarks([{ id: 1, ring: data }, { id: 2, ring: placed([[60, 0], [80, 0], [80, 20], [60, 20]]) }])], [1]);
+});
+
+test('the National Museum: a long wall of stone that curves like a dune and rises to a point, the halls behind it, a round hall, a glass front under a canopy', () => {
+  const N = NATIONAL_MUSEUM;
+  const museum = famous('national-museum');
+  const { faces, made } = built('national-museum');
+  assert.deepEqual(made, {});
+  // The wall: some 170 m from its north end to its point; its foot runs through every point the buildings data gives for it.
+  const wall = museumWall();
+  const length = wall.reduce((sum, { at }, i) => sum + (i ? Math.hypot(at[0] - wall[i - 1].at[0], at[1] - wall[i - 1].at[1]) : 0), 0);
+  assert.ok(length > 160 && length < 180, String(length));
+  for (const point of N.wall) assert.ok(wall.some(({ at }) => near(at[0], point[0], 1e-6) && near(at[1], point[1], 1e-6)), String(point));
+  // It curves one way only: the building is always on its east side, and it bends towards the building as it runs south.
+  assert.ok(wall.every(({ inward }) => inward[0] > 0.5 && near(Math.hypot(...inward), 1, 1e-9)));
+  for (let i = 1; i < wall.length; i += 1) assert.ok(wall[i].at[1] < wall[i - 1].at[1], 'it runs from north to south');
+  // 15 m high along most of it; from 30 m south of the middle it climbs, faster and faster, to its point, 28 m.
+  assert.ok(wall.filter(({ at }) => at[1] > N.rise).every(({ height }) => height === N.high));
+  const climb = wall.filter(({ at }) => at[1] <= N.rise);
+  climb.forEach(({ height }, i) => i && assert.ok(height > climb[i - 1].height));
+  assert.equal(climb.at(-1).height, N.point);
+  assert.ok(near(Math.max(...heights(faces)), N.point, 1e-3) && Math.min(...heights(faces)) === 0 && museum.height === N.point);
+  // Its outer face leans back, 0.08 m for every metre: at its point the top stands 2.24 m in from its foot.
+  const stone = faces.filter((face) => face.colour === '#d6a06b' && face.kind === 'plain');
+  assert.ok(stone.every((face) => face.glow > 0.5 && face.light === '#ffc983'), 'floodlit, golden');
+  const outer = stone.filter((face) => face.normal[2] > 0.05 && face.normal[2] < 0.1);
+  assert.equal(outer.length, (wall.length - 1) * 2);
+  assert.ok(outer.every((face) => face.normal[0] < -0.8 && near(face.normal[2], N.lean / Math.hypot(1, N.lean), 2e-3)));
+  // The halls behind it: their outline runs up the inner foot of the wall and round by the east; 17,400 m2 of them.
+  const halls = museumHalls();
+  const area = squareMeters(halls);
+  assert.ok(area > 17000 && area < 17800, String(area));
+  assert.ok(halls.some((corner) => near(corner[1], N.front, 1e-9) && corner[0] < -30), 'where the wall meets the glass front');
+  // Their roof, 14 m up, open to the sky over the two gardens and cut round the round hall.
+  const roof = faces.filter((face) => face.colour === '#d8c29d' && face.corners.every((corner) => near(corner[2], N.roof, 1e-3)));
+  const inside = (box, [east, north]) => east > box[0] && east < box[1] && north > box[2] && north < box[3];
+  const middle = (face) => [0, 1].map((k) => (face.corners[0][k] + face.corners[1][k] + face.corners[2][k]) / 3);
+  assert.ok(roof.length > 50 && roof.every((face) => face.open && N.courts.every((court) => !inside(court, middle(face)))));
+  const [drumEast, drumNorth, drumRadius, drumHeight] = N.drum;
+  assert.ok(roof.every((face) => Math.hypot(middle(face)[0] - drumEast, middle(face)[1] - drumNorth) > drumRadius - 0.5));
+  // Their walls: tall bays of windows, one every 4.5 m.
+  const bays = faces.filter((face) => face.kind === 'pierced');
+  assert.ok(bays.length === 20 * 2 && bays.every((face) => face.storey === 14 && face.bay === 4.5 && face.floors === 1));
+  // The round hall stands 4.5 m over the roofs, 36 m across.
+  const drum = stone.filter((face) => face.corners.every((corner) => near(Math.hypot(corner[0] - drumEast, corner[1] - drumNorth), drumRadius, 1e-3)));
+  assert.ok(drum.length === 48 * 2 && near(Math.max(...heights(drum)), drumHeight, 1e-3) && drumHeight - N.roof === 4.5);
+  // The glass front, two storeys, lit within; over it the canopy, 8 m deep, its underside of warm wood and lit; before it the square.
+  const glass = faces.filter((face) => face.kind === 'glass');
+  assert.ok(glass.length === 2 && glass.every((face) => face.lit === 1 && face.corners.every((corner) => near(corner[1], N.front, 1e-6) && corner[2] <= N.canopy[3] + 1e-6)));
+  const under = faces.filter((face) => face.colour === '#b5703c');
+  assert.ok(under.length === 2 && under.every((face) => face.normal[2] < -0.99 && face.glow > 0.5 && face.corners.every((corner) => near(corner[2], N.canopy[3], 1e-6))));
+  assert.ok(near(N.front - N.canopy[2], 8, 1e-9));
+  const square = faces.filter((face) => face.colour === '#cfa86a');
+  assert.ok(near(square.reduce((sum, { corners: [a, b, c] }) => sum + Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2, 0), 24 * 38, 1e-3));
+  // The wall's point stands free beside the doors: its inner face comes down to the ground there.
+  assert.ok(stone.some((face) => face.normal[0] > 0.5 && face.corners.some((corner) => corner[2] === 0 && corner[1] < N.front)));
+  assert.ok(stone.filter((face) => face.normal[0] > 0.5 && face.corners.every((corner) => corner[1] > N.front + 3)).every((face) => face.corners.every((corner) => corner[2] >= N.roof - 1e-6)));
+
+  // Its shadows: the halls, the round hall, and the free end of the wall.
+  assert.deepEqual(museumShades().map((shade) => shade.height), [N.roof, drumHeight, (N.high + N.point) / 2]);
+  assert.deepEqual(museum.shades, museumShades());
+  // The buildings data's two outlines for it go altogether.
+  const squeeze = METERS * Math.cos((museum.at[1] * Math.PI) / 180);
+  const placed = (points) => [...points, points[0]].map(([east, north]) => [museum.at[0] + east / squeeze, museum.at[1] + north / METERS]);
+  const data = [
+    placed([[-46.7, 31.2], [-51.5, 45.3], [-57.5, 59.9], [-65.7, 74.6], [-81.4, 100.1], [-76, 104.4], [-55.9, 71.9], [53.2, 100.6], [63.5, 46.9], [70, 48.5], [73.3, 35], [62.4, 32.8], [61.9, 38.2], [10.3, 25.7], [19.6, -8.5], [65.7, 0.2], [73.3, -28], [71.7, -28], [80.3, -63.8], [82.5, -63.3], [89.6, -91.5], [47.2, -99.6], [-6, -99.6], [-11.4, -44.3], [-32.5, -47.5], [-33.1, -62.2], [-36.9, -62.2], [-36.3, -35.1], [-38.5, -10.6], [-42.9, 17.6]]),
+    placed([[72.2, -30.2], [80.3, -63.8], [82.5, -63.3], [89.6, -91.5], [-0.5, -108.9], [6, -176.7], [104.8, -152.8], [110.7, -180], [13, -205.5], [13, -209.8], [4.4, -210.4], [-11.4, -44.3], [-32.5, -47.5], [-33.1, -62.2], [-36.9, -62.2], [-36.3, -35.1], [-36.9, -30.2]]),
+    placed([[-130, 0], [-110, 0], [-110, 20], [-130, 20]]), // a house in the park west of it
+  ];
+  assert.deepEqual([...ghostsOfLandmarks(data.map((ring, id) => ({ id, ring })))].sort(), [0, 1]);
 });
