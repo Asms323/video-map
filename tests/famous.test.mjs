@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { FAMOUS, LIBRARY, MAJDOUL, MASMAK, MINISTRY, RAFAL, TURKI_MOSQUE, TV_TOWER, WATER_TOWER, inset, majdoulAnnex, majdoulSquare, majdoulTower, rafalHalf, rafalRim, rafalTower, stepped, turkiShades, tvTower, waterTower } from '../js/famous.js';
+import { FAMOUS, LIBRARY, MAJDOUL, MASMAK, MINISTRY, MURABBA, RAFAL, TURKI_MOSQUE, TV_TOWER, WATER_TOWER, inset, majdoulAnnex, majdoulSquare, majdoulTower, murabbaShades, rafalHalf, rafalRim, rafalTower, stepped, turkiShades, tvTower, waterTower } from '../js/famous.js';
 import { LANDMARKS, ghostsOfLandmarks, landmarkBeacons, landmarkModels, landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
 import { facesOf } from './model-faces.mjs';
@@ -26,7 +26,7 @@ const lookOf = ({ corners: [a, b, c] }) => {
 };
 
 test('the famous buildings are landmarks of the map: each where it stands, with its clearing and its shadow', () => {
-  assert.deepEqual(FAMOUS.map((one) => one.id), ['interior-ministry', 'king-fahd-library', 'masmak-fort', 'imam-turki-mosque']);
+  assert.deepEqual(FAMOUS.map((one) => one.id), ['interior-ministry', 'king-fahd-library', 'masmak-fort', 'imam-turki-mosque', 'murabba-palace']);
   for (const one of FAMOUS) {
     assert.equal(LANDMARKS.find((landmark) => landmark.id === one.id), one);
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
@@ -744,4 +744,69 @@ test('the Grand Mosque of Riyadh: a low hall under eighty-four roof towers, a co
   assert.deepEqual([...ghostsOfLandmarks(outlines)].sort(), [1, 2, 3, 4, 5, 6, 7]);
   assert.equal(mosque.ghosts.length, 7);
   assert.deepEqual([...replacedByLandmarks(outlines)], []);
+});
+
+test('Murabba Palace: two storeys of clay round a court, windows in white surrounds, bands of zig-zag, and white battlements', () => {
+  const P = MURABBA;
+  const { faces, made } = built('murabba-palace');
+  const palace = famous('murabba-palace');
+  const [halfWide, halfLong] = P.half;
+  const [courtWest, courtEast, courtSouth, courtNorth] = P.court;
+  // 35.6 m by 47 m: the 1,680 m2 that are published, to within a hundredth; the court inside it, off its middle; two floors.
+  assert.ok(near(halfWide * 2, 35.6, 1e-9) && near(halfLong * 2, 47, 1e-9) && Math.abs(halfWide * 2 * halfLong * 2 - 1680) < 17);
+  assert.ok(courtWest > -halfWide + 6 && courtEast < halfWide - 6 && courtSouth > -halfLong + 6 && courtNorth < halfLong - 6);
+  assert.ok(P.floor > 4 && P.floor < P.roof / 2 + 0.5 && P.roof < P.wall);
+  assert.ok(near(Math.max(...heights(faces)), P.wall + P.battlement[1], 1e-3) && Math.min(...heights(faces)) === 0);
+  assert.equal(palace.height, P.wall + P.battlement[1]);
+  // Its four walls are of clay, lit by night, and stand on the outline; the footing of stone stands out a little further and is the widest thing about it.
+  const clay = faces.filter((face) => face.colour === '#b68a63');
+  assert.equal(clay.length, 4 * 2);
+  assert.ok(clay.every((face) => face.glow > 0.5 && Math.abs(face.normal[2]) < 1e-6 && face.corners.every((corner) => near(Math.abs(corner[0]), halfWide, 1e-3) || near(Math.abs(corner[1]), halfLong, 1e-3))));
+  assert.ok(near(Math.max(...faces.flatMap((face) => face.corners.map((corner) => Math.abs(corner[0])))), halfWide + 0.12, 1e-3));
+  // Along the top: a white pointed battlement every 0.9 m, a hundred and eighty-four of them, each with an outer and an inner face.
+  const points = faces.filter((face) => face.colour === '#f1ece1' && face.corners.some((corner) => near(corner[2], P.wall + P.battlement[1], 1e-3)));
+  assert.equal(points.length, 184 * 2);
+  assert.ok(near(35.6 / 40, 0.89, 1e-9) && near(47 / 52, 0.9, 0.01));
+  // Two bands of zig-zag round it: two hundred and twenty teeth each, pointing down.
+  const relief = faces.filter((face) => face.colour === '#d0aa84');
+  assert.equal(relief.length, 220 * 2);
+  for (const height of P.bands) assert.equal(relief.filter((face) => face.corners.filter((corner) => near(corner[2], height, 1e-3)).length === 2 && face.corners.some((corner) => near(corner[2], height - 0.34, 1e-3))).length, 220);
+  // Windows with round heads on the upper floor of three walls: thirty-three of them, each a pane of wood in a white surround; none in the west wall, which has small square ones on both floors.
+  const panes = faces.filter((face) => face.colour === '#6a4a2c' && face.corners.every((corner) => corner[2] > P.floor));
+  assert.equal(panes.length, 33 * 5);
+  assert.ok(panes.every((face) => face.corners.every((corner) => corner[0] > -halfWide + 0.5 || Math.abs(corner[1]) > halfLong - 0.5)), 'none on the west wall');
+  const small = faces.filter((face) => face.colour === '#2e241b' && face.corners.every((corner) => Math.max(Math.abs(corner[0]) - halfWide, Math.abs(corner[1]) - halfLong) > 0));
+  // (South: ten places, the two middle ones taken by the door; east thirteen; north ten; west nine below and nine above.)
+  assert.equal(small.length, (8 + 13 + 10 + 9 + 9) * 2);
+  // The great door: of wood, in the middle of the south wall, 2.4 m wide and 3.3 m high.
+  const door = faces.filter((face) => face.colour === '#6a4a2c' && face.corners.some((corner) => corner[2] === 0));
+  assert.ok(door.length === 2 && door.every((face) => face.corners.every((corner) => corner[1] < -halfLong && Math.abs(corner[0]) <= P.door[0] / 2 + 1e-3 && corner[2] <= P.door[1] + 1e-3)));
+  // The court: a gallery on both floors behind white columns, twenty-six to a floor; a door to every bay of each; and a screen of lattice along the upper one.
+  const posts = faces.filter((face) => face.colour === '#f1ece1' && face.corners.every((corner) => corner[0] > courtWest - 1 && corner[0] < courtEast + 1 && corner[1] > courtSouth - 1 && corner[1] < courtNorth + 1 && corner[2] < P.roof));
+  assert.equal(posts.length, 26 * 2 * (12 + 8));
+  const doors = faces.filter((face) => face.colour === '#2e241b' && face.corners.every((corner) => Math.abs(corner[0]) < halfWide - 3 && Math.abs(corner[1]) < halfLong - 3));
+  assert.equal(doors.length, 2 * (P.bays[0] + P.bays[1]) * 2 * 2);
+  const lattice = faces.filter((face) => face.kind === 'pierced');
+  assert.ok(lattice.length === 8 && lattice.every((face) => face.corners.every((corner) => corner[2] >= P.floor - 1e-3 && corner[2] <= P.floor + 0.95 + 1e-3)));
+  assert.deepEqual(made, {});
+
+  // Its shadows are thrown by its four wings; the court between them throws none.
+  const shades = murabbaShades();
+  assert.equal(shades.length, 4);
+  const inside = ({ ring }, [x, y]) => x > ring[0][0] && x < ring[1][0] && y > ring[0][1] && y < ring[2][1];
+  assert.equal(shades.filter((shade) => inside(shade, [(courtWest + courtEast) / 2, (courtSouth + courtNorth) / 2])).length, 0);
+  for (const spot of [[0, halfLong - 2], [0, -halfLong + 2], [-halfWide + 2, 0], [halfWide - 2, 0], [-halfWide + 1, halfLong - 1], [halfWide - 1, -halfLong + 1]]) assert.equal(shades.filter((shade) => inside(shade, spot)).length, 1);
+  assert.ok(shades.every((shade) => shade.height === P.wall));
+  assert.ok(near(shades.reduce((sum, shade) => sum + squareMeters(shade.ring), 0), 35.6 * 47 - (courtEast - courtWest) * (courtNorth - courtSouth), 1e-6));
+  // The buildings data has the palace as one block, court and all: it goes; the houses west of it stay.
+  const squeeze = METERS * Math.cos((palace.at[1] * Math.PI) / 180);
+  const placed = (points) => [...points, points[0]].map(([east, north]) => [palace.at[0] + east / squeeze, palace.at[1] + north / METERS]);
+  // (Its outline as the data has it, in metres east and north of the palace's middle.)
+  const own = [[-20.35, 21.2], [2.45, 25], [14.95, 25.5], [20.35, -21.2], [-14.95, -25.5]];
+  const outlines = [{ id: 1, ring: placed(own) }, { id: 2, ring: placed([[-76.2, -46.2], [-87.6, 8.7], [-116.9, 2.7], [-125.6, 43.4], [-67, 55.9], [-31.2, 58.1], [-25.2, 31.5], [-22, -27.2], [-27.4, -50.5], [-62.7, -58.1]]) }];
+  assert.deepEqual([...ghostsOfLandmarks(outlines)], [1]);
+  // And the model stands on that outline: turned 6.6 degrees west of north, its corners within half a metre of the data's.
+  const turn = (palace.bearing * Math.PI) / 180;
+  const corners = [[-halfWide, halfLong], [halfWide, halfLong], [halfWide, -halfLong], [-halfWide, -halfLong]].map(([east, north]) => [east * Math.cos(turn) + north * Math.sin(turn), north * Math.cos(turn) - east * Math.sin(turn)]);
+  [[-20.35, 21.2], [14.95, 25.5], [20.35, -21.2], [-14.95, -25.5]].forEach((corner, index) => assert.ok(Math.hypot(corner[0] - corners[index][0], corner[1] - corners[index][1]) < 0.5, `corner ${index}`));
 });

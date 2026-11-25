@@ -793,8 +793,8 @@ test('ghostsOfLandmarks picks the outlines the data has where a tower only lies 
   const water = landmark('water-tower');
   const round = Array.from({ length: 18 }, (_, i) => [water.at[0] + (Math.cos((i / 17) * Math.PI * 2) * 26.3) / squeeze, water.at[1] + (Math.sin((i / 17) * Math.PI * 2) * 26.3) / METERS]);
   assert.deepEqual([...ghostsOfLandmarks([{ id: 7, ring: round }])], [7]);
-  // No other landmark has any, but the Grand Mosque (see its own test).
-  assert.deepEqual(LANDMARKS.filter((one) => one.ghosts).map((one) => one.id), ['burj-rafal', 'water-tower', 'imam-turki-mosque']);
+  // No other landmark has any, but the Grand Mosque and Murabba Palace (see their own tests).
+  assert.deepEqual(LANDMARKS.filter((one) => one.ghosts).map((one) => one.id), ['burj-rafal', 'water-tower', 'imam-turki-mosque', 'murabba-palace']);
 });
 
 test('the KAFD station: a long white shell with rippling sides under a rolling roof', () => {

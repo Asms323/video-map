@@ -1317,6 +1317,186 @@ export function turkiMosque(model) {
   return {};
 }
 
+// ── Murabba Palace ────────────────────────────────────────────────────────
+
+// The palace's measures, in metres. Places are [east, north] in its own frame, which is turned with its walls.
+export const MURABBA = {
+  half: [17.8, 23.5], // half its width and half its length: it is 35.6 m by 47 m
+  court: [-7.3, 11.7, -14, 8.5], // the court within it: west, east, south, north
+  wall: 9.4, // the top of its walls, where the battlements stand…
+  roof: 8.6, // …its roof…
+  floor: 4.4, // …and the floor of its upper storey
+  footing: 0.9, // its footing of stone
+  battlement: [0.9, 0.62], // from one battlement to the next, and how high they stand
+  bands: [3.85, 7.75], // the two bands of zig-zag that run round it
+  windows: 3.4, // from one window to the next
+  gallery: 2.4, // how deep the galleries round the court are
+  bays: [6, 7], // how many columns apart each gallery is: across the court, and along it
+  door: [2.4, 3.3], // the great door: how wide, how high
+};
+
+/**
+ * Murabba Palace (Qasr al-Murabba), north of the old town: the palace King Abdulaziz had built outside
+ * the walls from 1936 and moved into in 1938; a museum in the King Abdulaziz Historical Center since
+ * 1999.
+ *
+ * A block of two storeys round a court, in the manner of Najd: walls of clay brick plastered with clay
+ * and straw, on a footing of stone; sixteen rooms to a floor, which open on galleries round the court,
+ * behind columns. Outside, each floor has its row of windows, the lower ones small and square, the
+ * upper ones tall with round heads, every one in a white surround; two bands of zig-zag run round the
+ * walls, one between the floors and one under the top; and along the top stands a row of white pointed
+ * battlements. By night its walls are floodlit.
+ *
+ * (Its dates, its two floors of sixteen rooms round a court and what it is built of are as published;
+ * so is the ground it covers, 1,680 square metres, which is what the buildings data's outline comes
+ * to: 35.6 m by 47 m. The court is measured on the satellite photo the app shows. Its height, some
+ * 9.4 m to the foot of the battlements, is judged from that photo's slant and from a photograph taken
+ * in the lane west of it, which also shows that west wall to be plain, with small windows only. The
+ * windows in their white surrounds, the bands of zig-zag and the battlements are as that photograph
+ * shows them on the wing across the lane, which is of the same build; how many windows the palace's
+ * other walls have, where its door is, and the galleries inside the court are a likeness. The houses
+ * and halls round it are not built: they are still the map's blocks.)
+ */
+export function murabbaPalace(model) {
+  const P = MURABBA;
+  const up = (ring, height) => ring.map(([east, north]) => [east, north, height]);
+  const rect = ([west, east, south, north]) => [[west, south], [east, south], [east, north], [west, north]];
+  const clay = { kind: 'plain', colour: '#b68a63', light: '#ffc27a', glow: 0.55 };
+  const shaded = { kind: 'plain', colour: '#ab8260' };
+  const white = { kind: 'plain', colour: '#f1ece1', light: '#fff1d6', glow: 0.5 };
+  const relief = { kind: 'plain', colour: '#d0aa84', light: '#ffc27a', glow: 0.55 };
+  const dark = { kind: 'plain', colour: '#2e241b' };
+  const wood = { kind: 'plain', colour: '#6a4a2c' };
+  const roofing = { kind: 'plain', colour: '#d6bd97', open: true };
+  const plain = [false, false, false, false];
+
+  const [halfWide, halfLong] = P.half;
+  const outline = rect([-halfWide, halfWide, -halfLong, halfLong]);
+  const court = rect(P.court);
+  const [courtWest, courtEast, courtSouth, courtNorth] = P.court;
+
+  // The walls, on their footing of stone; the roof behind its parapet, with the court cut out of it.
+  between(model, up(outline, 0), up(outline, P.wall), clay);
+  const footing = inset(outline, -0.12);
+  between(model, up(footing, 0), up(footing, P.footing), { kind: 'plain', colour: '#cbbd9f' });
+  model.flat(up(footing, P.footing), { kind: 'plain', colour: '#cbbd9f' }, { holes: [up(outline, P.footing)] });
+  const within = inset(outline, 0.45);
+  const lip = inset(court, -0.45);
+  model.flat(up(outline, P.wall), { kind: 'plain', colour: white.colour, open: true }, { holes: [up(within, P.wall)] });
+  between(model, up(within, P.roof), up(within, P.wall), { kind: 'plain', colour: '#c29a74', open: true }, { way: -1 });
+  model.flat(up(within, P.roof), roofing, { holes: [up(lip, P.roof)] });
+  between(model, up(lip, P.roof), up(lip, P.roof + 0.5), { kind: 'plain', colour: '#c29a74', open: true });
+  model.flat(up(lip, P.roof + 0.5), { kind: 'plain', colour: white.colour, open: true }, { holes: [up(court, P.roof + 0.5)] });
+
+  // Round the outside, wall by wall (the outside is to the right of the way from a to b).
+  outline.forEach((a, index) => {
+    const b = outline[(index + 1) % 4];
+    const long = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const along = [(b[0] - a[0]) / long, (b[1] - a[1]) / long];
+    const out = [along[1], -along[0], 0];
+    const spot = (at, height, proud) => [a[0] + along[0] * at + out[0] * proud, a[1] + along[1] * at + out[1] * proud, height];
+    // Along its top a white band, and on that the battlements: white, each ending in a point.
+    model.quad(spot(0, P.wall - 0.28, 0.02), spot(long, P.wall - 0.28, 0.02), spot(long, P.wall, 0.02), spot(0, P.wall, 0.02), white, { out, lines: plain });
+    const [pitch, tall] = P.battlement;
+    const teeth = Math.round(long / pitch);
+    for (let k = 0; k < teeth; k += 1) {
+      const middle = ((k + 0.5) * long) / teeth;
+      const tooth = (proud) => [spot(middle - pitch * 0.4, P.wall, proud), spot(middle + pitch * 0.4, P.wall, proud), spot(middle, P.wall + tall, proud)];
+      model.facet(...tooth(0), white, { out, lines: [false, false, false] });
+      model.facet(...tooth(-0.45), { ...white, open: true }, { out: [-out[0], -out[1], 0], lines: [false, false, false] });
+    }
+    // The two bands of zig-zag, in relief.
+    for (const height of P.bands) {
+      const count = Math.round(long / 0.75);
+      for (let k = 0; k < count; k += 1) {
+        const middle = ((k + 0.5) * long) / count;
+        model.facet(spot(middle - 0.26, height, 0.04), spot(middle + 0.26, height, 0.04), spot(middle, height - 0.34, 0.04), relief, { out, lines: [false, false, false] });
+      }
+    }
+    // Its windows, each in a white surround: small square ones below; above them tall ones with round heads, but in the west wall, which has only small ones.
+    const west = index === 3;
+    const count = Math.floor((long - 3) / (west ? P.windows * 1.5 : P.windows)) + 1;
+    const first = (long - (count - 1) * (west ? P.windows * 1.5 : P.windows)) / 2;
+    const square = (middle, foot, half, proud, stuff) => model.quad(spot(middle - half, foot, proud), spot(middle + half, foot, proud), spot(middle + half, foot + half * 2, proud), spot(middle - half, foot + half * 2, proud), stuff, { out, lines: plain });
+    /** A window with a round head: its outline, so wide, from its foot up to where it turns, and round. */
+    const arched = (middle, foot, half, turn, proud) => [[-1, 0], [1, 0], [1, turn], [0.71, turn + 0.71 * half], [0, turn + half], [-0.71, turn + 0.71 * half], [-1, turn]].map(([aside, rise]) => spot(middle + aside * half, foot + rise, proud));
+    const south = index === 0;
+    for (let k = 0; k < count; k += 1) {
+      const middle = first + k * (west ? P.windows * 1.5 : P.windows);
+      // (The great door takes the place of the two middle windows of the south wall.)
+      const door = south && Math.abs(middle - long / 2) < P.windows / 2 + 0.01;
+      if (!door) {
+        square(middle, 2.05, 0.5, 0.03, white);
+        square(middle, 2.23, 0.32, 0.05, dark);
+      }
+      if (west) {
+        square(middle, 5.9, 0.42, 0.03, white);
+        square(middle, 6.05, 0.27, 0.05, dark);
+      } else {
+        model.flat(arched(middle, 4.95, 0.62, 1.25, 0.03), white, { out });
+        model.flat(arched(middle, 5.1, 0.42, 1.12, 0.05), wood, { out });
+      }
+    }
+    if (south) {
+      const [wide, tall2] = P.door;
+      model.quad(spot(long / 2 - wide / 2 - 0.3, 0, 0.14), spot(long / 2 + wide / 2 + 0.3, 0, 0.14), spot(long / 2 + wide / 2 + 0.3, tall2 + 0.3, 0.14), spot(long / 2 - wide / 2 - 0.3, tall2 + 0.3, 0.14), white, { out, lines: plain });
+      model.quad(spot(long / 2 - wide / 2, 0, 0.16), spot(long / 2 + wide / 2, 0, 0.16), spot(long / 2 + wide / 2, tall2, 0.16), spot(long / 2 - wide / 2, tall2, 0.16), wood, { out, lines: [false, true, false, true] });
+    }
+  });
+
+  // The court: its floor; and round it, on both floors, a gallery behind white columns, with the doors of the rooms in the wall at its back.
+  model.flat(up(court, 0.08), { kind: 'plain', colour: '#e3d6bd' });
+  const back = rect([courtWest - P.gallery, courtEast + P.gallery, courtSouth - P.gallery, courtNorth + P.gallery]);
+  const [slab, ceiling] = [P.floor - 0.35, P.roof - 0.3];
+  between(model, up(back, 0), up(back, P.roof), shaded, { way: -1 });
+  model.flat(up(back, slab), { kind: 'plain', colour: '#5d4630' }, { out: [0, 0, -1], holes: [up(court, slab)] });
+  model.flat(up(back, P.floor), { kind: 'plain', colour: '#c7a47d' }, { holes: [up(court, P.floor)] });
+  model.flat(up(back, ceiling), { kind: 'plain', colour: '#5d4630' }, { out: [0, 0, -1], holes: [up(court, ceiling)] });
+  between(model, up(court, slab), up(court, P.floor), shaded, { way: -1 });
+  between(model, up(court, ceiling), up(court, P.roof + 0.5), shaded, { way: -1 });
+  // (A screen of wooden lattice along the upper gallery, waist high.)
+  between(model, up(court, P.floor), up(court, P.floor + 0.95), { kind: 'pierced', colour: '#7a5836', storey: 0.95, bay: 0.5, diamonds: true, holes: 0.7 }, { way: -1 });
+  const post = (east, north, foot, top, radius) => {
+    const at = (k, height) => [east + Math.cos((k / 6) * TAU) * radius, north + Math.sin((k / 6) * TAU) * radius, height];
+    const looks = (k) => [Math.cos((k / 6) * TAU), Math.sin((k / 6) * TAU), 0];
+    for (let k = 0; k < 6; k += 1) model.quad(at(k, foot), at(k + 1, foot), at(k + 1, top - 0.3), at(k, top - 0.3), white, { out: looks(k + 0.5), normals: [looks(k), looks(k + 1), looks(k + 1), looks(k)], lines: plain });
+    taper(model, frame([0, 0], 0), [east - radius, east + radius, north - radius, north + radius], [east - radius * 1.8, east + radius * 1.8, north - radius * 1.8, north + radius * 1.8], top - 0.3, top, white, { top: null });
+  };
+  const [across, lengthways] = P.bays;
+  const posts = [];
+  for (let k = 0; k <= lengthways; k += 1) for (const east of [courtWest, courtEast]) posts.push([east, courtSouth + ((courtNorth - courtSouth) * k) / lengthways]);
+  for (let k = 1; k < across; k += 1) for (const north of [courtSouth, courtNorth]) posts.push([courtWest + ((courtEast - courtWest) * k) / across, north]);
+  for (const [east, north] of posts) {
+    // (Each stands a little back from the edge, under the beam.)
+    const [x, y] = [east + Math.sign(east - (courtWest + courtEast) / 2) * 0.25, north + Math.sign(north - (courtSouth + courtNorth) / 2) * 0.25];
+    post(x, y, 0, slab, 0.24);
+    post(x, y, P.floor, ceiling, 0.2);
+  }
+  // The doors of the rooms: one to every bay, on both floors.
+  back.forEach((a, index) => {
+    const b = back[(index + 1) % 4];
+    const long = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const along = [(b[0] - a[0]) / long, (b[1] - a[1]) / long];
+    const inwards = [-along[1], along[0], 0];
+    const spot = (at, height) => [a[0] + along[0] * at + inwards[0] * 0.05, a[1] + along[1] * at + inwards[1] * 0.05, height];
+    const count = index % 2 === 0 ? across : lengthways;
+    for (let k = 0; k < count; k += 1) {
+      const middle = P.gallery + ((long - P.gallery * 2) * (k + 0.5)) / count;
+      for (const foot of [0, P.floor]) model.quad(spot(middle - 0.55, foot), spot(middle + 0.55, foot), spot(middle + 0.55, foot + 2.2), spot(middle - 0.55, foot + 2.2), dark, { out: inwards, lines: plain });
+    }
+  });
+  return {};
+}
+
+/** What throws the palace's shadows: its four wings, each [{ ring, height }] in its own east and north; the court between them throws none. */
+export function murabbaShades() {
+  const P = MURABBA;
+  const [halfWide, halfLong] = P.half;
+  const [courtWest, courtEast, courtSouth, courtNorth] = P.court;
+  const rect = ([west, east, south, north]) => [[west, south], [east, south], [east, north], [west, north]];
+  return [[-halfWide, halfWide, courtNorth, halfLong], [-halfWide, halfWide, -halfLong, courtSouth], [-halfWide, courtWest, courtSouth, courtNorth], [courtEast, halfWide, courtSouth, courtNorth]].map((box) => ({ ring: rect(box), height: P.wall }));
+}
+
 /** The way the mosque's own north points: along its qibla wall, north-north-westwards. */
 const TURKI_BEARING = 333.93;
 
@@ -1419,5 +1599,19 @@ export const FAMOUS = [
     // (And a bed of trees in the square, which the data has as a building too.)
     ghosts: [[22.5, 16.7], [-46.7, -82.8], [50.6, -81.2], [74.8, -10.2], [81.3, -30.5], [85.2, -60], [103.9, 0.7]].map(([east, north]) => swung(TURKI_BEARING, east, north)),
     shades: turkiShades(),
+  },
+  {
+    id: 'murabba-palace',
+    name: 'Murabba Palace',
+    at: [46.709273, 24.646491],
+    bearing: 353.4,
+    height: MURABBA.wall + MURABBA.battlement[1],
+    clear: 0,
+    reach: 35,
+    model: murabbaPalace,
+    within: 4000,
+    // (The buildings data has it as one block, court and all: that goes, and its four wings throw the shadows.)
+    ghosts: [[0.5, 5]],
+    shades: murabbaShades(),
   },
 ];
