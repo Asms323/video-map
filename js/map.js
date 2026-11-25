@@ -1455,6 +1455,9 @@ export class MapView {
     this.houseBatches = [];
     if (this.frontsPicture && this.houseModelsMade && this.houseModelsMade.ids.size > 0) {
       const dressed = this.houses.filter((house) => house.modelled !== undefined);
+      // (Each with the colour of its own roof, as the photo from above shows it: of a row of houses the map
+      // has as one block, the block's.)
+      for (const house of dressed) house.roof = this.photoOn ? (this.roofColours.get(house.block) ?? null) : null;
       for (const mesh of dressInFronts(dressed, origin)) this.houseBatches.push({ mesh, picture: this.frontsPicture, at: [0, 0, 0], turn: 0, tall: 1, lit: 0 });
     }
     this.layProps();

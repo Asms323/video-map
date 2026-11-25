@@ -138,6 +138,30 @@ test('parcelHouses divides a block of villas into houses along its street, and l
   assert.deepEqual(parcelHouses([block(6144, -20, 120, 20, 144)], network, { districtOf: villas }).divided, []);
 });
 
+test('parcelHouses leaves a house the map has whole on its own outline', () => {
+  // One house, 18 m along the street and 16 m deep, with a corner cut out of its back: one plot. It is not
+  // given made-up parts: it keeps the outline the map has, in its own measure (along its front from its
+  // front left corner, and back from it), and is as tall as a house is.
+  const ell = [[-9, 9.25], [9, 9.25], [9, 25.25], [1, 25.25], [1, 19.25], [-9, 19.25], [-9, 9.25]];
+  const own = { ...block(8192, -9, 9.25, 9, 25.25), polygons: [[ell.map(([x, y]) => [ORIGIN.lng + x * EAST, ORIGIN.lat + y * NORTH])]] };
+  const made = parcelHouses([own], street(), { districtOf: villas });
+  assert.equal(made.houses.length, 1);
+  const [house] = made.houses;
+  assert.ok(house.parts === null && house.court === null && house.pieces.length === 1 && house.cell === 0 && house.rows === 1);
+  assert.ok(Math.abs(house.wide - 18) < 1e-3 && Math.abs(house.deep - 16) < 1e-3);
+  assert.equal(house.ring.length, 6);
+  // (Its front is the side on the street: the south one. So its own measure is metres east of its west side,
+  // and metres north of its south side.)
+  const turned = house.ring.map(([a, b]) => [Math.round((a - 9) * 100) / 100, Math.round((b + 9.25) * 100) / 100]);
+  assert.deepEqual(turned, ell.slice(0, 6));
+  assert.ok(house.height >= 7.6 && house.height <= 9.2 && house.pieces[0].height === house.height);
+  // A box of a house keeps its outline too: its four corners.
+  const [box] = parcelHouses([block(9216, -9, 9.25, 9, 25.25)], street(), { districtOf: villas }).houses;
+  assert.ok(box.parts === null && box.ring.length === 4);
+  // A row of houses the map has as one block is divided as before, each plot given a house of parts.
+  for (const each of parcelHouses([block(1024, -20, 9.25, 20, 33.25)], street(), { districtOf: villas }).houses) assert.ok(each.parts.length >= 1 && each.ring === null && each.height === undefined);
+});
+
 test('parcelHouses makes two rows, back to back, of a block two plots deep', () => {
   const made = parcelHouses([block(7168, -20, 9.25, 20, 59.25)], street(), { districtOf: villas });
   assert.equal(made.houses.length, 4);

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { FRONTS_PICTURE, chanceOf, dressInFronts, faceMeasure, frontFor, frontOfHouse, layStrip, tintOf } from '../js/fronts.js';
+import { FRONTS_PICTURE, chanceOf, dressInFronts, faceMeasure, frontFor, frontOfHouse, frontageOf, layStrip, outlineOf, roofTintOf, tintOf, trianglesOf } from '../js/fronts.js';
 import { KIT } from '../js/kit.js';
 
 const near = (a, b, by = 1e-6) => Math.abs(a - b) <= by;
@@ -218,19 +218,26 @@ test('a house\'s own paint is laid over its front without turning its colour', (
   assert.ok(tintOf('#ffffff', [0.5, 0.5, 0.5]).every((part) => part === Math.round(0.65 * 255)));
 });
 
-test('along a row of houses, neighbours are not given the same front', () => {
-  // Forty houses of one style in a row of one block, all of a size: with the draws of neighbours set as far
-  // apart as can be, no front made for that style comes twice running.
+test('along a street, neighbours are not given the same front', () => {
+  // Forty houses of one style side by side along a street, each some sixteen to nineteen metres from the
+  // next: with the draws of neighbours set as far apart as can be, hardly ever the same front twice running.
+  // (Whether the map has them as one block or each as a building of its own makes no difference.)
+  const east = 1 / (111320 * Math.cos((25 * Math.PI) / 180));
   for (const style of ['modern', 'stone', 'plaster']) {
-    const row = Array.from({ length: 40 }, (_, cell) => houseOf(500 + cell, 14, 13, { block: 77, row: 0, cell, style, paint: '#d9d4c8' }));
+    let at = 0;
+    const row = Array.from({ length: 40 }, (_, n) => {
+      at += 16 + (n % 4);
+      return houseOf(500 + n, 14, 13, { at: [origin.lng + at * east, origin.lat], style, paint: '#d9d4c8' });
+    });
     const names = row.map((house) => KIT.fronts[frontOfHouse(house)].name);
     let twins = 0;
     for (let n = 1; n < names.length; n += 1) if (names[n] === names[n - 1]) twins += 1;
-    assert.ok(twins <= 2 && new Set(names).size >= 3, `${style}: ${names.join(' ')}`);
+    assert.ok(twins <= 3 && new Set(names).size >= 3, `${style}: ${twins} twins: ${names.join(' ')}`);
+    // The same street every time; the other side of it has its own run of fronts.
+    assert.deepEqual(row.map((house) => frontOfHouse(house)), row.map((house) => frontOfHouse({ ...house })));
+    const across = row.map((house) => KIT.fronts[frontOfHouse({ ...house, at: [house.at[0], house.at[1] + 40 / 111320] })].name);
+    assert.notDeepEqual(across, names);
   }
-  // (Without a place in a row, a house is given its front by its own chance alone.)
-  const lone = houseOf(9, 14, 13);
-  assert.equal(frontOfHouse(lone), frontFor(14 + 1 + 2.4, 14, 8.2 + 1.4, lone.paint, chanceOf(9)));
 });
 
 test('what a front has besides its windows: lamps, closed shutters, battlements, a face drawn out a little', () => {
@@ -287,4 +294,89 @@ test('what a front has besides its windows: lamps, closed shutters, battlements,
   const own = face.wide * ((9.6 - stone.wall.height) / face.tall);
   assert.ok(near(spanOf(own * 1.08), own * 1.08 * 0.98, 0.02), `${spanOf(own * 1.08)} of ${own * 1.08}`);
   assert.ok(spanOf(own * 1.6) > own * 1.2 && spanOf(own * 1.6) < own * 1.6, `${spanOf(own * 1.6)} beside ${own}`);
+});
+
+test('a house the map has whole is dressed on its own outline', () => {
+  // A house shaped like an L: 16 m along the street, 14 m deep, a yard cut out of its back right corner.
+  const ell = [[0, 0], [16, 0], [16, 8], [9, 8], [9, 14], [0, 14]];
+  const whole = (more = {}) => ({ ...houseOf(301, 16, 14), parts: null, ring: ell, height: 8.2, ...more });
+  // Its outline: anticlockwise, whichever way round the map gave it, no corner twice.
+  assert.deepEqual(outlineOf(whole()), ell);
+  assert.deepEqual(outlineOf(whole({ ring: [...ell].reverse().concat([[0, 14]]) })), ell);
+  assert.equal(outlineOf(whole({ ring: [[0, 0], [1, 0]] })), null);
+  // The wall its face goes on: the one on the street, the whole 16 m of it, as tall as the house and its parapet.
+  const frontage = frontageOf(whole());
+  assert.ok(frontage.wall === 0 && near(frontage.length, 16) && near(frontage.top, 9.6) && frontage.looks[1] === -1 && frontage.along[0] === 1);
+  // (Of an outline that is turned a little from its street, still the wall that looks most to the street.)
+  const turned = ell.map(([a, b]) => [a * Math.cos(0.2) - b * Math.sin(0.2), a * Math.sin(0.2) + b * Math.cos(0.2)]);
+  assert.equal(frontageOf(whole({ ring: turned })).wall, 0);
+  // Cut into triangles, an outline keeps its area: here 16 by 8 and 9 by 6. A corner on a straight side is no corner.
+  const areaOf = (ring) => trianglesOf(ring).reduce((sum, [i, j, k]) => sum + ((ring[j][0] - ring[i][0]) * (ring[k][1] - ring[i][1]) - (ring[j][1] - ring[i][1]) * (ring[k][0] - ring[i][0])) / 2, 0);
+  assert.ok(near(areaOf(ell), 16 * 8 + 9 * 6));
+  assert.ok(near(areaOf([[0, 0], [8, 0], [16, 0], [16, 8], [9, 8], [9, 14], [0, 14]]), 16 * 8 + 9 * 6));
+
+  const [mesh] = dressInFronts([whole()], origin);
+  assert.ok(mesh.corners > 300 && mesh.corners < 4000 && mesh.indices.length === (mesh.corners / 4) * 6, `${mesh.corners} corners`);
+  for (const value of mesh.positions) assert.ok(Number.isFinite(value));
+  for (const value of mesh.uvs) assert.ok(value >= 0 && value <= 1);
+  // Nothing of it outside its plot; nothing of the house itself in the yard that is cut out of it (over the
+  // height of the plot's walls); its parapet at its own height, the roof's floor a parapet lower.
+  const inYard = (east, north) => east > 9.3 && east < 15.9 && north > 8.3 && north < 13.9;
+  let roof = 0;
+  const heights = new Set();
+  for (let i = 0; i < mesh.corners; i += 1) {
+    const [east, north, up] = [mesh.positions[i * 3], mesh.positions[i * 3 + 1], mesh.positions[i * 3 + 2]];
+    assert.ok(east > -1.01 && east < 18.41 && north > -2.6 && north < 15.21 && up >= 0 && up < 14, `${east} ${north} ${up}`);
+    if (up > 3.1) assert.ok(!inYard(east, north), `${east} ${north} ${up}`);
+    heights.add(Math.round(up * 100) / 100);
+  }
+  assert.ok(heights.has(9.6) && heights.has(8.5) && heights.has(0));
+  // The roof's floor fills the outline inside its parapet: 0.22 m in from every wall.
+  for (let t = 0; t < mesh.indices.length; t += 3) {
+    const [a, b, c] = [0, 1, 2].map((k) => [0, 1, 2].map((axis) => mesh.positions[mesh.indices[t + k] * 3 + axis]));
+    if (near(a[2], 8.5, 1e-4) && near(b[2], 8.5, 1e-4) && near(c[2], 8.5, 1e-4)) roof += Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2;
+  }
+  const floor = (16 - 0.44) * (8 - 0.44) + (9 - 0.44) * 6;
+  assert.ok(near(roof, floor, 0.05), `${roof} of ${floor}`);
+  // Everything is wound anticlockwise seen from outside: the way each face looks is the way it was told to.
+  for (let t = 0; t < mesh.indices.length; t += 3) {
+    const [a, b, c] = [0, 1, 2].map((k) => [0, 1, 2].map((axis) => mesh.positions[mesh.indices[t + k] * 3 + axis]));
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const size = Math.hypot(...cross);
+    if (size < 1e-9) continue;
+    const told = [0, 1, 2].map((axis) => mesh.normals[mesh.indices[t] * 3 + axis]);
+    assert.ok((cross[0] * told[0] + cross[1] * told[1] + cross[2] * told[2]) / size > 0.999);
+  }
+  // Its face is on its wall to the street (a hand's breadth before it), and nowhere else.
+  let faced = 0;
+  for (let i = 0; i < mesh.corners; i += 1) if (near(mesh.positions[i * 3 + 1], -0.06, 1e-4) && mesh.positions[i * 3 + 2] > 3.5) faced += 1;
+  assert.ok(faced >= 8, String(faced));
+  // The same house every time; and a house with neither parts nor an outline is left as it is.
+  assert.deepEqual(dressInFronts([whole()], origin)[0].positions, mesh.positions);
+  assert.deepEqual(dressInFronts([whole({ ring: null })], origin), []);
+});
+
+test('a roof is drawn in its own colour, where that is known', () => {
+  // Not known: the kit's floor as it is. Known: brought to it, but never made black or burnt out.
+  assert.deepEqual(roofTintOf(null, KIT.floorTone), [128, 128, 128]);
+  assert.deepEqual(roofTintOf([210, 205, 201], [210 / 255, 205 / 255, 201 / 255]), [128, 128, 128]);
+  const beige = roofTintOf([214, 196, 160], KIT.floorTone);
+  assert.ok(beige[0] > beige[1] && beige[1] > beige[2] && beige[2] > 80);
+  assert.deepEqual(roofTintOf([10, 10, 10], [0.8, 0.8, 0.8]), [70, 70, 70]);
+  assert.deepEqual(roofTintOf([255, 255, 255], [0.5, 0.5, 0.5]), [159, 159, 159]);
+  assert.ok(KIT.floorTone.length === 3 && KIT.floorTone.every((part) => part > 0.5 && part < 1));
+  // On a house: the corners of its roof's floor carry that colour, and only they.
+  const plain = dressInFronts([houseOf(1, 14, 13)], origin)[0];
+  const tinted = dressInFronts([houseOf(1, 14, 13, { roof: [214, 196, 160] })], origin)[0];
+  let changed = 0;
+  for (let i = 0; i < plain.corners; i += 1) {
+    const same = [0, 1, 2].every((k) => plain.tints[i * 4 + k] === tinted.tints[i * 4 + k]);
+    if (same) continue;
+    changed += 1;
+    assert.ok(near(plain.positions[i * 3 + 2], 8.5, 1e-4));
+    assert.deepEqual([...tinted.tints.subarray(i * 4, i * 4 + 3)], beige);
+  }
+  assert.equal(changed, 4);
 });

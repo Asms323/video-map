@@ -200,10 +200,15 @@ map opens on the city and keeps to it, and places are looked for in it.
   The names of a restaurant and of a shop were painted out of the
   photographs first. (The tower of the Paris quarter was tried too, and
   came out a solid cone: it stays built by hand.)
-- **Houses dressed as real houses look, each its own.** Near the middle of
-  the view, once the map is drawn large enough, each house the app has laid
-  out is dressed from a kit of fronts instead of being drawn in plain
-  colours: its own plot, its own size, its own parts, and no two alike. A
+- **Houses dressed as real houses look, each its own, on its own outline.**
+  Near the middle of the view, once the map is drawn large enough, each
+  house is dressed from a kit of fronts instead of being drawn in plain
+  colours: its own plot, its own size, and no two alike. A house the map
+  has whole (a building of its own, as the photo from above shows it)
+  keeps exactly that outline: a wall along every side of it, a parapet
+  all round, the roof's floor inside, the face on the wall that looks to
+  the street. Only where the map gives a whole row of houses as one block
+  is the block divided by rule, and each plot given a house of parts. A
   front is a picture of a house taken straight on, measured: the wall to
   the street with its gate, the face of the house over that wall, a plain
   piece of its plaster or stone, its windows. It is never stretched over a
@@ -217,15 +222,19 @@ map opens on the city and keeps to it, and places are looked for in it.
   house has them. Which front a house gets goes mostly by its style
   (three in four houses of a style are given a front made for that style,
   so a district of new houses does not look like one of old ones), leans
-  to its own paint, and is otherwise its own chance, the same every time;
-  along a row, neighbours are not given the same. Its paint is laid over
-  it. By night the street wall catches the street lamps' light, gate lamps
-  are lit, and some windows.
-  What is true of the house and what is made up: its place, its plot and
-  its size are the map's (where the map gives a row of houses as one
-  block, the app has divided it by rule: see above). Its front is not that
-  house's front: no satellite photo shows a front, so each is a likely one.
-  What stands on its roof is placed by rule, not read from the photo.
+  to its own paint, and is otherwise chance, the same every time: drawn by
+  where the house stands along its street, so that two houses side by side
+  are seldom given the same. Its paint is laid over it, and its roof's
+  floor is in the colour the photo from above shows that roof in. By night
+  the street wall catches the street lamps' light, gate lamps are lit, and
+  some windows.
+  What is true of the house and what is made up: its place, its outline,
+  its plot and the colour of its roof are the map's and the photo's (where
+  the map gives a row of houses as one block, the app has divided it by
+  rule, and the roof's colour is the block's: see above). Its height is a
+  likely one (two storeys) unless the map has it. Its front is not that
+  house's front: no photo from above shows a front, so each is a likely
+  one. What stands on its roof is placed by rule, not read from the photo.
   The kit has eleven fronts: one from pictures of a new villa that the
   owner made with an AI image generator as a reference for the look
   wanted; three made for it with an image generator run on Hugging Face (a

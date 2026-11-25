@@ -209,7 +209,9 @@ export function houseParts(wide, deep, chance) {
  * `house` set to its house's place in `houses`); the houses, each { id,
  * block, kind, style, paint, trim, gate, tile, at: [lng, lat] of its front
  * left corner, along and back: the way its front runs and the way back from
- * it as [east, north], wide, deep, parts, court, ends: whether its left and
+ * it as [east, north], wide, deep, parts (or, of a house the map has whole,
+ * none, and ring: its own outline in its own measure, and height), court,
+ * ends: whether its left and
  * right sides are the block's own ends, plot: how far its plot reaches out
  * from it in front, to the left, to the right and behind, and how far its
  * front is from the edge of its street, row, rows and cell: which row of how
@@ -323,8 +325,12 @@ export function parcelHouses(buildings, network, { districtOf = () => ({ kind: '
             const y = corner[1] + along[1] * u + back[1] * v;
             return [origin.lng + x / squeeze, origin.lat + y / METERS_PER_DEGREE];
           };
+          // A block that is one plot is a house the map has whole: it keeps its own outline, as it stands.
+          // A plot cut out of a row of houses is given a house of parts, if what stands on it fills its box.
+          const alone = across === 1 && rows === 1;
           const regular = builtArea / (houseWide * houseDeep) >= REGULAR_SHARE;
-          const laid = regular ? houseParts(houseWide, houseDeep, chance) : { parts: null, court: null };
+          const laid = regular && !alone ? houseParts(houseWide, houseDeep, chance) : { parts: null, court: null };
+          const ownHeight = 7.6 + 1.6 * chance(1);
           const index = houses.length + made.length;
           const idOf = (n) => Math.floor(unitFrom(`${building.id}:${row}:${cell}:part:${n}`) * 2 ** 40) + 1;
           const piece = (ring, height, part, n) => ({ id: idOf(n), height, base: 0, known: false, kind: undefined, use: 'residential', usual: undefined, polygons: [[ring]], colour: paint, house: index, part });
@@ -337,7 +343,7 @@ export function parcelHouses(buildings, network, { districtOf = () => ({ kind: '
                     const y = corner[1] + along[1] * u + back[1] * v;
                     return [origin.lng + x / squeeze, origin.lat + y / METERS_PER_DEGREE];
                   }),
-                  7.6 + 1.6 * chance(1),
+                  ownHeight,
                   'main',
                   0,
                 ),
@@ -378,6 +384,10 @@ export function parcelHouses(buildings, network, { districtOf = () => ({ kind: '
             wide: houseWide,
             deep: houseDeep,
             parts: laid.parts,
+            // (Of a house without parts: its own outline in its own measure, along its front and back from
+            // it, from its front left corner; and how tall it is.)
+            ring: laid.parts ? null : built.map(([u, v]) => (turned ? [at[0] - u, at[1] - v] : [u - at[0], v - at[1]])),
+            height: laid.parts ? undefined : ownHeight,
             court: laid.court,
             ends,
             plot,

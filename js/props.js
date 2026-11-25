@@ -202,7 +202,7 @@ export function housesNear(houses, centre, { reach = HOUSE_MODEL_REACH_METERS, m
   const squeeze = Math.max(Math.cos((centre[1] * Math.PI) / 180), 0.01) * 111320;
   const near = [];
   for (const house of houses) {
-    if (!house.parts) continue; // one left as the map has it: no box to fit a model to
+    if (!house.parts && !house.ring) continue; // neither laid out in parts nor with an outline of its own: nothing to dress
     const east = (house.at[0] - centre[0]) * squeeze + house.along[0] * (house.wide / 2) + house.back[0] * (house.deep / 2);
     const north = (house.at[1] - centre[1]) * 111320 + house.along[1] * (house.wide / 2) + house.back[1] * (house.deep / 2);
     const far = Math.hypot(east, north);

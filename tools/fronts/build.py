@@ -191,6 +191,9 @@ for front, scale, kept, tone in fronts:
 for name, piece in stuffs:
     x0, y0 = piece['at']
     kit['stuff'][name] = [x0 + 3, y0 + 3, x0 + 125, y0 + 125]
+    # (The colour of the roofs' floor: a house's own roof colour is laid over it, as its paint is over its front.)
+    if name == 'floor':
+        kit['floorTone'] = [round(float(v), 3) for v in np.asarray(piece['image']).reshape(-1, 3).mean(axis=0) / 255]
 
 atlas.save('../../models/fronts.jpg', quality=86)
 with open('../../js/kit.js', 'w') as out:

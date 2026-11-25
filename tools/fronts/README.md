@@ -27,13 +27,15 @@ nothing before it; measured into
 So a front is never stretched over a house. A wide house and a narrow one of
 the same front are two different houses. (A face is drawn out by an eighth
 at most, where that makes it cover the house's wall; beside a face that
-does not, the wall is given windows of its own.)
+does not, the wall is given windows of its own.) A house the map has whole
+keeps its own outline: the face goes on the wall of it that looks to the
+street, plain wall and windows along its other sides, whatever its shape.
 
 Each front names the **styles** of house it is made for (`plaster`, `stone`,
 `arched`, `modern`: see `HOUSE_STYLES` in `js/houses.js`, which gives each
 district of Riyadh its mixture). Three in four houses of a style are given
 a front made for it; of those, the nearer its colour to the house's paint
-the likelier. Along a row, neighbours are not given the same.
+the likelier. Along a street, neighbours are not given the same.
 
 ## The pictures
 
