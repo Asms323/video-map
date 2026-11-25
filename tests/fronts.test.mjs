@@ -430,11 +430,26 @@ test('what stands out of a house in its picture stands out of it here', () => {
   }
   assert.ok(sides >= 4, String(sides));
   // A front measured flat is laid flat: every corner of its face a hand's breadth before the wall, its panes two.
-  const [flat] = dressInFronts([houseOf(2, 14, 13)], origin, only('band'));
+  // (Every front in the kit has something that stands out now: the band front, its depths taken off, is flat.)
+  const band = KIT.fronts.find((front) => front.name === 'band');
+  const flatBand = { ...band, house: { ...band.house, rects: band.house.rects.map((rect) => rect.slice(0, 4)) } };
+  const [flat] = dressInFronts([houseOf(2, 14, 13)], origin, { ...KIT, fronts: [flatBand] });
   for (let i = 0; i < flat.corners; i += 1) {
     const [north, up] = [flat.positions[i * 3 + 1], flat.positions[i * 3 + 2]];
     if (north < -0.05 && north > -1.7 && up > 3.5) assert.ok(near(north, -0.06, 1e-4) || near(north, -0.12, 1e-4), String(north));
   }
+  // As measured, the framed box of its upper floor, with its band of wood and its windows, stands out of the
+  // stair tower beside it, and its windows with it.
+  const [framed] = dressInFronts([houseOf(3, 14, 13)], origin, only('band'));
+  const bandFace = faceMeasure(band);
+  const bandScale = Math.min((9.6 - band.wall.height) / bandFace.tall, 1.3, (14 * 0.98) / bandFace.wide);
+  const standing = new Set();
+  for (let i = 0; i < framed.corners; i += 1) {
+    const [north, up] = [framed.positions[i * 3 + 1], framed.positions[i * 3 + 2]];
+    if (north < -0.05 && north > -1.7 && up > 3.5) standing.add(Math.round(-north * 1000) / 1000);
+  }
+  const at = (out) => Math.round(out * 1000) / 1000;
+  assert.ok(standing.has(0.06) && standing.has(at(0.06 + 0.45 * bandScale)) && standing.has(at(0.12 + 0.45 * bandScale)), [...standing].join(' '));
 });
 
 test('what stands over a wall with its gate stands over it wherever the gate comes to lie', () => {
