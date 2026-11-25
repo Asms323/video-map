@@ -413,8 +413,8 @@ export async function cloudFieldAround(position) {
 // The sky over Riyadh and its airport: one fixed box, the same whoever asks and wherever in the city they
 // are, so that nothing about the asker goes with the question.
 const AIRCRAFT_URL = 'https://opensky-network.org/api/states/all';
-// The box the feed is asked for, round the place told: as far round the city as an aircraft is drawn from
-// in the 3D city (150 km), or as far as a radar shows (some 250 km). Either costs the feed's least, one
+// The box the feed is asked for, round the place told: some 150 km round, or as far as the radar shows
+// (some 250 km), which is what the map shows round the city too. Either costs the feed's least, one
 // question: a box of up to 25 square degrees does.
 const AIRCRAFT_CITY = { lat: 24.75, lng: 46.7 };
 const AIRCRAFT_REACH = { near: [1.35, 1.5], wide: [2.2, 2.6] }; // degrees north and south, east and west
@@ -531,8 +531,8 @@ export async function liveAircraft({ lat = AIRCRAFT_CITY.lat, lng = AIRCRAFT_CIT
   }
 }
 
-/** The aircraft round the city: see liveAircraft(). */
-export const aircraftOverRiyadh = () => liveAircraft();
+/** The aircraft round the city, as far round as the radar shows: see liveAircraft(). */
+export const aircraftOverRiyadh = () => liveAircraft({ wide: true });
 
 /**
  * How the feed of live aircraft stands: { source: which it is, heard: what it last answered ('aircraft',

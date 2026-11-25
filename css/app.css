@@ -370,7 +370,7 @@ button { cursor: pointer; }
   position: absolute;
   left: 0;
   bottom: 10px;
-  pointer-events: auto; /* (a tap on a name watches that flight) */
+  pointer-events: auto; /* (a tap on a name opens that flight's card) */
   cursor: pointer;
   transform: translateX(-50%);
   padding: 2px 6px 3px;

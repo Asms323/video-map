@@ -55,7 +55,7 @@ import { drawFootbridges, drawRoadside, drawSigns, medianPalms } from './roadsid
 import { RoofMesh, parapetShade, roofDecks, roofTone } from './roofs.js';
 import { SceneLayer } from './scene.js';
 import { AIRLINERS } from './airliner.js';
-import { aircraftOverRiyadh, buildingArchive, liveAircraft, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
+import { aircraftFeed, aircraftOverRiyadh, buildingArchive, liveAircraft, loadStyle, photoDate, photoProtocol, photoTile } from './services.js';
 import { footprintGrid, heightsFromShadows, passSuns, pavedGrid, photoGrid, roofColours, tilesFor, treesInPhoto } from './sight.js';
 import { CasterMesh, groundCasters, shadowCasters, shadowFall, shadowMapSize } from './shade.js';
 import { Flights } from './flights.js';
@@ -132,7 +132,11 @@ const SKY_EAST_METERS = Math.cos((24.7 * Math.PI) / 180) * 111320; // a degree e
 const SKY_CLOUD_PARTS = ['skyhigh', 'skymid', 'skylow'];
 const SKY_GRAIN_WRAP_METERS = 262144;
 const CLOUD_FIELD_KEPT_MS = 2 * 60 * 60 * 1000; // a field of cloud readings is used for so long after the moment it is for, and no longer
-const FLIGHTS_ASK_MS = 15000; // how often the feed of live aircraft is given the chance to be asked
+// How often the feed of live aircraft is given the chance to be asked (it keeps its own pace: see
+// liveAircraft()): while a flight is picked or watched, or the radar is open; and otherwise, from a feed that
+// allows only so many questions a day (the OpenSky Network's), less often, so that they last the longer.
+const FLIGHTS_ASK_MS = 5000;
+const FLIGHTS_CALM_ASK_MS = 30000;
 const PLANE_TAGS_MOST = 8; // the live aircraft named on screen: the nearest so many
 const PLANE_TAG_SEEN_FROM = 0.2; // and only one that shows through the cloud at least so much
 const PLANE_TAG_ROOM_PX = 100; // how far down the picture an aircraft must be for its name to go above it (clear of the bar at the top)
@@ -144,13 +148,12 @@ const FOLLOW_TURN = -28; // from behind it and a little to its left
 const FOLLOW_GLIDE_MS = 1500; // and the camera's way back down to the ground once it lets go
 const FOLLOW_TELL_MS = 500; // how often what it is doing is told (see handlers.onFollowFlight)
 const PLANE_TAP_REACH_PX = 34; // a tap this near an aircraft on the screen (or on it) picks it
-// The flight radar (see setRadar()): the live flights on a map seen from straight above, as far round as
-// the feed hears them.
+// The live flights on the map (see flightsStep()), on every map, each where it is this moment; and the flight
+// radar (see setRadar()), the map seen from straight above, as far round as the feed hears them.
+const FLIGHTS_STEP_MS = 400; // how often the flights on the map are moved on
+const FLIGHTS_TAP_PX = 24; // a tap this near one picks it
 const RADAR_ZOOM = 5.8; // some 250 km either side of the middle, on a phone: about as far round as the feed hears
 const RADAR_MIN_ZOOM = 4;
-const RADAR_STEP_MS = 400; // how often the aircraft are moved on there
-const RADAR_ASK_MS = 5000; // and how often the feed is given the chance to be asked (it keeps its own pace)
-const RADAR_TAP_PX = 22; // a tap this near an aircraft picks it
 // The colour an aircraft is drawn in by its height over the sea, in metres: orange low, through yellow and
 // green, to blue and violet in the cruise. (Its trail the same.) The one picked: red.
 const RADAR_BANDS = [
@@ -626,7 +629,14 @@ export class MapView {
     this.planeFollowed = null; // the one the camera is following: { id, turn, plane, told }
     this.followFrame = 0;
     this.glideToken = 0;
-    this.radar = null; // the flight radar, while it is shown: { before (the camera to go back to), picked, timer, askedAt }
+    this.radar = null; // the flight radar, while it is shown: { before (the camera to go back to) }
+    this.flightsOn = true; // the live flights shown on the map (see setFlightsShown())
+    this.flightPicked = null; // the flight picked (its id): its card is shown
+    this.flightIcons = []; // the live flights drawn on the map just now, each where it is drawn: { id, lng, lat }
+    this.flightIconsDrawn = false;
+    this.flightsTimer = 0;
+    this.flightsTold = null; // (what whoever wants to know was last told, so as not to tell the same nothing over and over)
+    this.credits = null; // the map's credits (see creditFlights())
     // For anyone looking at the scene from outside (the tests do): what it holds.
     this.scene.counts = () => ({ life: this.lifeCounts(), photo: this.photoCounts(), buildings: this.buildingCounts(), detail: this.detailCounts(), night: this.nightCounts(), busy: { ...this.busy } });
     // How often each piece of work has been done, for anyone wondering what keeps the map from coming to rest.
@@ -648,10 +658,11 @@ export class MapView {
       maxPitch: MOST_PITCH,
       // Photo tiles that have left the screen are kept for coming back to, but not many: sharp ones are small and there are a lot of them.
       maxTileCacheZoomLevels: 2,
-      // (The aircraft are the OpenSky Network's wherever its receivers have any to report; it asks to be named.)
-      attributionControl: { compact: true, customAttribution: 'Live aircraft, where any are known: The OpenSky Network' },
+      // (The map's credits are its own: see creditFlights().)
+      attributionControl: false,
     });
     const map = this.map;
+    this.creditFlights(aircraftFeed().source);
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
 
     this.planeTagLayer = document.createElement('div');
@@ -672,12 +683,6 @@ export class MapView {
     // The pane changes size when the bar is dragged, the layout changes or the phone turns.
     new ResizeObserver(() => map.resize()).observe(container);
 
-    // The map credits start open, as the data providers ask. After a few seconds they
-    // fold into their "i" button so they do not sit on top of the map for the whole drive.
-    setTimeout(() => {
-      container.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
-    }, CREDITS_SHOWN_MS);
-
     map.on('styleimagemissing', (event) => this.provideImage(event.id));
     map.on('style.load', () => {
       this.applyOverlays();
@@ -692,6 +697,7 @@ export class MapView {
       this.clearStreets(true);
       this.syncLife();
       this.followSun();
+      this.addFlightLayers();
     });
     map.on('move', () => {
       this.lifeView = null;
@@ -718,6 +724,7 @@ export class MapView {
     setInterval(() => this.followSun(), SUN_CHECK_MS);
     map.on('click', (event) => this.handleTap(event));
     this.watchLongPress();
+    this.flightsStep();
   }
 
   // ── Style ───────────────────────────────────────────────────────────────
@@ -2857,7 +2864,7 @@ export class MapView {
   }
 
   /**
-   * The aircraft: asked after now and then, where a feed of live ones can be had; flown by the clock
+   * The aircraft in the 3D city: live where a feed of them has any (see flightsStep()); flown by the clock
    * otherwise. Those near the eye are drawn whole, in their true depth, in whatever view: from under them
    * along the street, or looking down on them as they pass over the city. Those far off are drawn as
    * part of the sky, while the sky shows. Shown with the traffic.
@@ -2874,16 +2881,12 @@ export class MapView {
       }
       if (this.planeTags.size > 0 || this.planeTagsWanted.length > 0) this.clearPlaneTags();
       if (this.planeFollowed) this.followFlight(null);
+      this.planesShown = [];
+      this.planesNow = [];
       return;
     }
-    const now = Date.now();
-    const seconds = now / 1000;
-    if (!this.radar && Math.abs(now - this.flightsAskedAt) > FLIGHTS_ASK_MS && !document.hidden) {
-      this.flightsAskedAt = now;
-      aircraftOverRiyadh().then((found) => {
-        if (found) this.flights.report(found.planes, found.seconds, found.source, { now: Date.now() / 1000 });
-      });
-    }
+    // (The feed is asked in flightsStep(), for the map and the 3D city alike.)
+    const seconds = Date.now() / 1000;
     const flying = this.flights.at(seconds, { windFrom: this.weather?.windFrom });
     const eye = this.scene.eye;
     const squeeze = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01) * METERS_PER_DEGREE;
@@ -2933,48 +2936,53 @@ export class MapView {
     if (this.planeFollowed) this.keepFollowing(flying.planes);
   }
 
-  // ── The flight radar ────────────────────────────────────────────────────
+  // ── The live flights on the map, and the flight radar ─────────────────
 
   /**
-   * Show the flight radar (or put it away): the map seen from straight above, out to some 250 km, with
-   * every live aircraft the feed hears drawn where it is this moment, turned to its course and coloured by
-   * its height, its call sign beside it and the trail it has left behind it; moved on smoothly between
-   * reports. A tap picks one (see handlers.onRadar). Put away, the camera goes back where it was (unless
-   * told not to, as when a flight picked there is to be watched in 3D).
+   * The map's credits, with the feed the live aircraft come from named and linked to (adsb.fi asks to be,
+   * wherever its data is shown; the OpenSky Network too). They start open, as the data providers ask, and
+   * after a few seconds fold into their "i" button, so that they do not sit on the map for the whole drive.
    */
-  setRadar(on, { restore = true } = {}) {
-    const map = this.map;
-    if (Boolean(on) === Boolean(this.radar)) return;
-    if (on) {
-      this.followFlight(null, { glide: false });
-      this.radar = { before: { center: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }, picked: null, timer: 0, askedAt: 0 };
-      this.clearPlaneTags();
-      map.setMaxBounds(null);
-      map.setMinZoom(RADAR_MIN_ZOOM);
-      this.addRadarLayers();
-      map.easeTo({ zoom: Math.min(map.getZoom(), RADAR_ZOOM), pitch: 0, bearing: 0, duration: 900 });
-      this.radarStep();
-      return;
-    }
-    clearTimeout(this.radar.timer);
-    const before = this.radar.before;
-    this.radar = null;
-    for (const id of RADAR_LAYERS) {
-      if (map.getLayer(id)) map.removeLayer(id);
-      if (map.getSource(id)) map.removeSource(id);
-    }
-    map.setMinZoom(8);
-    if (restore) {
-      map.jumpTo(before);
-      map.setMaxBounds(this.cityBounds);
-    }
-    this.handlers.onRadar?.(null);
+  creditFlights(source) {
+    const feed = source === 'adsb.fi'
+      ? 'Live aircraft: <a href="https://adsb.fi" target="_blank" rel="noopener">adsb.fi</a>'
+      : 'Live aircraft, where any are known: <a href="https://opensky-network.org" target="_blank" rel="noopener">The OpenSky Network</a>';
+    if (this.credits && this.credits.feed === feed) return;
+    if (this.credits) this.map.removeControl(this.credits.control);
+    const control = new maplibregl.AttributionControl({ compact: true, customAttribution: feed });
+    this.map.addControl(control);
+    this.credits = { control, feed };
+    const container = this.map.getContainer();
+    setTimeout(() => {
+      if (this.credits?.control === control) container.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
+    }, CREDITS_SHOWN_MS);
   }
 
-  /** The radar's two layers, under the place names: the trails, and the aircraft with their call signs. */
-  addRadarLayers() {
+  /** Whether the live flights are on the map: shown, or the radar open (which shows them whatever). */
+  flightsShown() {
+    return this.flightsOn || Boolean(this.radar);
+  }
+
+  /** Show the live flights on the map, or not. (Hidden, none of them is picked any longer.) */
+  setFlightsShown(on) {
+    this.flightsOn = Boolean(on);
+    this.syncFlightLayers();
+    if (!this.flightsShown()) this.flightPicked = null;
+    this.flightsStep();
+  }
+
+  /** The flights' layers shown or hidden, as they are to be. */
+  syncFlightLayers() {
+    const visibility = this.flightsShown() ? 'visible' : 'none';
+    for (const id of RADAR_LAYERS) if (this.map.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', visibility);
+  }
+
+  /**
+   * The flights' two layers, over everything else on the map: the trails, and the aircraft with their call
+   * signs. (Laid again with every new style: see style.load.)
+   */
+  addFlightLayers() {
     const map = this.map;
-    if (map.getLayer('radar-planes')) return;
     for (const id of RADAR_LAYERS) {
       if (map.getLayer(id)) map.removeLayer(id);
       if (map.getSource(id)) map.removeSource(id);
@@ -2982,13 +2990,14 @@ export class MapView {
     for (const [index, [, colour]] of RADAR_BANDS.entries()) if (!map.hasImage(`radar-plane-${index}`)) map.addImage(`radar-plane-${index}`, planeIcon(colour), { pixelRatio: 2 });
     if (!map.hasImage('radar-plane-picked')) map.addImage('radar-plane-picked', planeIcon(RADAR_PICKED), { pixelRatio: 2 });
     const byHeight = ['step', ['get', 'high'], RADAR_BANDS[0][1], ...RADAR_BANDS.slice(1).flatMap(([from, colour]) => [from, colour])];
+    const visibility = this.flightsShown() ? 'visible' : 'none';
     map.addSource('radar-trails', { type: 'geojson', data: EMPTY });
     map.addSource('radar-planes', { type: 'geojson', data: EMPTY });
     map.addLayer({
       id: 'radar-trails',
       type: 'line',
       source: 'radar-trails',
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      layout: { 'line-cap': 'round', 'line-join': 'round', visibility },
       paint: { 'line-color': ['case', ['get', 'picked'], RADAR_PICKED, byHeight], 'line-width': ['case', ['get', 'picked'], 3, 1.6], 'line-opacity': ['case', ['get', 'picked'], 0.95, 0.6] },
     });
     map.addLayer({
@@ -3007,87 +3016,161 @@ export class MapView {
         'text-size': 11,
         'text-offset': [0, 1.4],
         'text-anchor': 'top',
-        'text-optional': true,
+        // (A flight's name always shows: the map's own names give way to it where they can, or lie under it.)
+        'text-allow-overlap': true,
+        visibility,
       },
       paint: { 'text-color': '#ffffff', 'text-halo-color': 'rgba(10, 14, 20, 0.9)', 'text-halo-width': 1.4 },
     });
+    this.flightIconsDrawn = true; // (so that the next step fills them)
   }
 
-  /** The radar moved on: the aircraft where they are this moment; the feed asked now and then; whoever wants to know told. */
-  radarStep() {
-    const radar = this.radar;
-    if (!radar) return;
+  /**
+   * Show the flight radar (or put it away): the map seen from straight above, out to some 250 km, with
+   * every live aircraft the feed hears (see flightsStep()). Put away, the camera goes back where it was
+   * (unless told not to, as when a flight picked there is to be watched in 3D).
+   */
+  setRadar(on, { restore = true } = {}) {
+    const map = this.map;
+    if (Boolean(on) === Boolean(this.radar)) return;
+    if (on) {
+      this.followFlight(null, { glide: false });
+      this.radar = { before: { center: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() } };
+      this.clearPlaneTags();
+      map.setMaxBounds(null);
+      map.setMinZoom(RADAR_MIN_ZOOM);
+      map.easeTo({ zoom: Math.min(map.getZoom(), RADAR_ZOOM), pitch: 0, bearing: 0, duration: 900 });
+    } else {
+      const before = this.radar.before;
+      this.radar = null;
+      map.setMinZoom(8);
+      if (restore) {
+        map.jumpTo(before);
+        map.setMaxBounds(this.cityBounds);
+      }
+    }
+    this.flightsAskedAt = 0; // (the feed asked afresh, about the radar's sky or the city's)
+    this.syncFlightLayers();
+    if (!this.flightsShown()) this.flightPicked = null;
+    this.flightsStep();
+  }
+
+  /**
+   * The live flights on the map moved on: each where it is this moment, turned to its course and coloured
+   * by its height, its call sign beside it and the trail it has flown behind it. In the 3D city, one drawn
+   * whole there and in sight is not drawn on the map under it as well. The feed given the chance to be
+   * asked: about the sky round the city (one box, the same whoever asks, so that nothing about the asker
+   * goes with the question), or, on the radar, round the middle of the map; every 30 s, or as often as it
+   * allows while a flight is picked or watched or the radar is open. And whoever wants to know told
+   * (see handlers.onFlights): whether the radar is open, how many flights are heard and from where, and
+   * the flight picked, if any. Over and over, while the map is there.
+   */
+  flightsStep() {
+    clearTimeout(this.flightsTimer);
+    this.flightsTimer = setTimeout(() => this.flightsStep(), FLIGHTS_STEP_MS);
+    if (document.hidden) return;
     const map = this.map;
     const now = Date.now();
-    // (A new style for the map takes the radar's layers with the old one: they are laid again.)
-    if (!map.getLayer('radar-planes') && map.isStyleLoaded()) this.addRadarLayers();
-    if (now - radar.askedAt > RADAR_ASK_MS && !document.hidden) {
-      radar.askedAt = now;
+    const shown = this.flightsShown();
+    const wanted = shown || (this.type === 'city' && this.lifeOn && map.getZoom() >= LIFE_MIN_ZOOM);
+    const busy = () => Boolean(this.radar || this.flightPicked || this.planeFollowed) || aircraftFeed().source === 'adsb.fi';
+    if (wanted && now - this.flightsAskedAt > FLIGHTS_ASK_MS && (busy() || now - this.flightsAskedAt > FLIGHTS_CALM_ASK_MS)) {
+      this.flightsAskedAt = now;
       const middle = map.getCenter();
-      liveAircraft({ lat: middle.lat, lng: middle.lng, wide: true }).then((found) => {
-        if (found && this.radar) this.flights.report(found.planes, found.seconds, found.source, { now: Date.now() / 1000 });
+      const asked = this.radar ? liveAircraft({ lat: middle.lat, lng: middle.lng, wide: true }) : aircraftOverRiyadh();
+      asked.then((found) => {
+        if (found) this.flights.report(found.planes, found.seconds, found.source, { now: Date.now() / 1000 });
       });
     }
-    const planes = this.flights.liveAt(now / 1000);
-    const high = (plane) => plane.aboveSea ?? plane.alt + AIRPORT_ELEVATION_METERS;
-    map.getSource('radar-planes')?.setData({
-      type: 'FeatureCollection',
-      features: planes.map((plane) => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [plane.lng, plane.lat] },
-        properties: { id: plane.id, label: plane.callsign || plane.registration || plane.id.toUpperCase(), track: plane.track, high: high(plane), wide: plane.wide, picked: plane.id === radar.picked },
-      })),
-    });
-    map.getSource('radar-trails')?.setData({
-      type: 'FeatureCollection',
-      features: planes
-        .map((plane) => {
-          const trail = (this.flights.trails.get(plane.id) ?? []).map(([lng, lat]) => [lng, lat]);
-          return { type: 'Feature', geometry: { type: 'LineString', coordinates: [...trail, [plane.lng, plane.lat]] }, properties: { high: high(plane), picked: plane.id === radar.picked } };
-        })
-        .filter((feature) => feature.geometry.coordinates.length > 1),
-    });
-    this.radarPlanes = planes;
-    const picked = radar.picked ? (planes.find((plane) => plane.id === radar.picked) ?? null) : null;
-    this.handlers.onRadar?.({ count: planes.length, source: this.flights.source, picked, lost: Boolean(radar.picked && !picked) });
-    radar.timer = setTimeout(() => this.radarStep(), RADAR_STEP_MS);
+    const live = this.flights.liveAt(now / 1000);
+    const inSight = this.planesInSight();
+    const onMap = shown ? live.filter((plane) => !inSight.has(plane.id)) : [];
+    if (onMap.length > 0 || this.flightIconsDrawn) {
+      const high = (plane) => plane.aboveSea ?? plane.alt + AIRPORT_ELEVATION_METERS;
+      const picked = (plane) => plane.id === this.flightPicked;
+      map.getSource('radar-planes')?.setData({
+        type: 'FeatureCollection',
+        features: onMap.map((plane) => ({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [plane.lng, plane.lat] },
+          properties: { id: plane.id, label: plane.callsign || plane.registration || plane.id.toUpperCase(), track: plane.track, high: high(plane), wide: plane.wide, picked: picked(plane) },
+        })),
+      });
+      map.getSource('radar-trails')?.setData({
+        type: 'FeatureCollection',
+        features: onMap
+          .map((plane) => {
+            const trail = (this.flights.trails.get(plane.id) ?? []).map(([lng, lat]) => [lng, lat]);
+            return { type: 'Feature', geometry: { type: 'LineString', coordinates: [...trail, [plane.lng, plane.lat]] }, properties: { high: high(plane), picked: picked(plane) } };
+          })
+          .filter((feature) => feature.geometry.coordinates.length > 1),
+      });
+      this.flightIconsDrawn = onMap.length > 0;
+    }
+    this.flightIcons = onMap.map(({ id, lng, lat }) => ({ id, lng, lat }));
+    // The flight picked: a live one, or one of the airport's usual ones drawn in the 3D city. (One no longer
+    // heard, or no longer drawn, is let go of.)
+    const picked = this.flightPicked ? (live.find((plane) => plane.id === this.flightPicked) ?? this.planesNow.find((plane) => plane.id === this.flightPicked && plane.kind !== 'live') ?? null) : null;
+    const lost = Boolean(this.flightPicked && !picked);
+    if (lost) this.flightPicked = null;
+    const quiet = !this.radar && !picked && !lost;
+    if (quiet && this.flightsTold === 'quiet') return;
+    this.flightsTold = quiet ? 'quiet' : 'told';
+    this.handlers.onFlights?.({ radar: Boolean(this.radar), shown, count: live.length, onMap: onMap.length, source: this.flights.source, picked, lost });
   }
 
-  /** The aircraft on the radar under a point of the screen, or within reach of a finger of it: its id, or null. */
-  radarPlaneAt(point) {
+  /** The live flight drawn on the map under a point of the screen, or within reach of a finger of it: its id, or null. */
+  flightIconAt(point) {
+    if (!this.flightsShown()) return null;
     let best = null;
-    for (const plane of this.radarPlanes ?? []) {
+    for (const plane of this.flightIcons) {
       const at = this.map.project([plane.lng, plane.lat]);
       const off = Math.hypot(at.x - point.x, at.y - point.y);
-      if (off < RADAR_TAP_PX && (!best || off < best.off)) best = { off, id: plane.id };
+      if (off < FLIGHTS_TAP_PX && (!best || off < best.off)) best = { off, id: plane.id };
     }
     return best?.id ?? null;
   }
 
-  /** Pick an aircraft on the radar (or none): it is drawn in red, its trail bold, and told of with every step. */
-  pickRadar(id) {
-    if (!this.radar) return;
-    this.radar.picked = id ?? null;
-    clearTimeout(this.radar.timer);
-    this.radarStep();
+  /** Pick a flight by its id (or none): its card is shown (see handlers.onFlights); on the map it is drawn in red, its trail bold. */
+  pickPlane(id) {
+    this.flightPicked = id ?? null;
+    this.flightsStep();
+  }
+
+  /** Where a point of the 3D city's scene (in its metres) is on the screen, in pixels: [x, y]; null behind the eye, or before the scene is first drawn. */
+  screenAt([x, y, z]) {
+    const m = this.scene.matrix;
+    if (!m) return null;
+    const canvas = this.map.getCanvas();
+    const [width, height] = [canvas.clientWidth, canvas.clientHeight];
+    const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+    if (!(w > 1e-6)) return null;
+    return [(((m[0] * x + m[4] * y + m[8] * z + m[12]) / w + 1) / 2) * width, ((1 - (m[1] * x + m[5] * y + m[9] * z + m[13]) / w) / 2) * height];
+  }
+
+  /** The live aircraft drawn in the 3D city just now that are in sight on the screen (not hidden by cloud): their ids. */
+  planesInSight() {
+    const inSight = new Set();
+    if (this.type !== 'city' || !this.planesMade) return inSight;
+    const canvas = this.map.getCanvas();
+    const [width, height] = [canvas.clientWidth, canvas.clientHeight];
+    for (const one of this.planesShown) {
+      if (one.kind !== 'live' || !(one.seen >= PLANE_TAG_SEEN_FROM)) continue;
+      const at = this.screenAt(one.at);
+      if (at && at[0] >= 0 && at[0] <= width && at[1] >= 0 && at[1] <= height) inSight.add(one.id);
+    }
+    return inSight;
   }
 
   /** The aircraft drawn under a point of the screen ({ x, y } in pixels), or within reach of a finger of it: its id, or null. */
   planeAt(point) {
-    const m = this.scene.matrix;
-    const canvas = this.map.getCanvas();
-    const [width, height] = [canvas.clientWidth, canvas.clientHeight];
-    const onScreen = ([x, y, z]) => {
-      const w = m[3] * x + m[7] * y + m[11] * z + m[15];
-      if (!(w > 1e-6)) return null;
-      return [(((m[0] * x + m[4] * y + m[8] * z + m[12]) / w + 1) / 2) * width, ((1 - (m[1] * x + m[5] * y + m[9] * z + m[13]) / w) / 2) * height];
-    };
+    if (this.type !== 'city' || !this.planesMade) return null;
     let best = null;
     for (const one of this.planesShown) {
       const plane = this.planesNow.find((each) => each.id === one.id);
       const size = AIRLINERS[plane?.wide ? 'wide' : 'narrow'];
-      const middle = onScreen([one.at[0], one.at[1], one.at[2] + size.centre]);
-      const end = onScreen([one.at[0] + size.length / 2, one.at[1], one.at[2] + size.centre]);
+      const middle = this.screenAt([one.at[0], one.at[1], one.at[2] + size.centre]);
+      const end = this.screenAt([one.at[0] + size.length / 2, one.at[1], one.at[2] + size.centre]);
       if (!middle) continue;
       // (Anywhere on it counts, as well as near it.)
       const reach = PLANE_TAP_REACH_PX + (end ? Math.hypot(end[0] - middle[0], end[1] - middle[1]) : 0);
@@ -3095,25 +3178,6 @@ export class MapView {
       if (off < reach && (!best || off < best.off)) best = { off, id: one.id };
     }
     return best?.id ?? null;
-  }
-
-  /**
-   * The flight best worth watching just now: a real one (from the live feed) within 60 km, the nearest;
-   * else the nearest one coming in to land that is still well up; else the nearest one climbing away;
-   * else the nearest of all that are in the air. Its id, or null.
-   */
-  pickFlight() {
-    const middle = this.map.getCenter();
-    const squeeze = Math.cos((middle.lat * Math.PI) / 180) * METERS_PER_DEGREE;
-    const away = (one) => Math.hypot((one.lng - middle.lng) * squeeze, (one.lat - middle.lat) * METERS_PER_DEGREE);
-    const flying = this.planesNow.filter((one) => one.alt > 30);
-    const nearest = (list) => list.reduce((best, one) => (!best || away(one) < away(best) ? one : best), null);
-    const pick =
-      nearest(flying.filter((one) => one.kind === 'live' && away(one) < 60000)) ??
-      nearest(flying.filter((one) => one.phase === 'landing' && one.alt > 250)) ??
-      nearest(flying.filter((one) => one.phase === 'takeoff')) ??
-      nearest(flying);
-    return pick?.id ?? null;
   }
 
   /**
@@ -3157,6 +3221,7 @@ export class MapView {
     }
     const plane = this.flights.at(Date.now() / 1000, { windFrom: this.weather?.windFrom }).planes.find((one) => one.id === id);
     if (!plane || this.type !== 'city') return false;
+    this.flightPicked = null; // (watched now: its card is put away)
     if (this.radar) this.setRadar(false, { restore: false });
     this.glideToken += 1;
     const size = AIRLINERS[plane.wide ? 'wide' : 'narrow'];
@@ -3452,17 +3517,14 @@ export class MapView {
   handleTap(event) {
     // Lifting the finger after a press-and-hold also counts as a tap; that one is not meant.
     if (Date.now() < this.ignoreTapsUntil) return;
-    // On the radar: the aircraft tapped is picked (or, tapped beside them all, none is).
-    if (this.radar) {
-      this.pickRadar(this.radarPlaneAt(event.point));
-      return;
-    }
-    // An aircraft tapped: its flight is to be watched.
-    const plane = this.planeAt(event.point);
+    // A flight tapped, on the map or drawn in the 3D city: its card. (Tapped beside it, the one picked is let go of.)
+    const plane = this.flightIconAt(event.point) ?? (this.radar ? null : this.planeAt(event.point));
     if (plane) {
       this.handlers.onPlaneTap?.(plane);
       return;
     }
+    if (this.flightPicked) this.pickPlane(null);
+    if (this.radar) return;
     const map = this.map;
     const layers = this.placeLayers.filter((id) => map.getLayer(id));
     let hits = [];

@@ -1,6 +1,7 @@
-# A relay for the flight radar
+# A relay for the app's live flights
 
-The flight radar of the app hears live aircraft from the OpenSky Network,
+The app hears the live flights it shows on the map, and on its flight
+radar, from the OpenSky Network,
 which a web page may ask directly. It has few receivers over Saudi Arabia,
 and allows a phone without an account about 400 questions a day.
 
@@ -12,7 +13,8 @@ meanwhile.
 
 **adsb.fi's terms:** its data is for personal, non-commercial use only, and
 is to be credited to adsb.fi with a link to its home page
-(https://adsb.fi). The app credits it on every flight it shows from it.
+(https://adsb.fi). The app credits it in the map's credits, on the
+radar and on every flight's card.
 Its public questions are limited to one a second; the relay asks it at most
 once every 5 seconds for any one place.
 
@@ -33,8 +35,8 @@ adsb.fi.)
    `https://flights.your-name.workers.dev/v3/lat/24.71/lon/46.68/dist/250`
    in a browser: a page of aircraft (JSON) means it works.
 5. In the app: **Settings**, then **Live flights relay**: paste the address
-   (without anything after `.dev`). The radar now hears its flights from
-   adsb.fi, every 5 seconds.
+   (without anything after `.dev`). The map and the radar now hear their
+   flights from adsb.fi, every 5 seconds.
 
 Cloudflare's free plan allows 100,000 requests a day: a phone asks the relay
-every 5 seconds while the radar is shown, so some 720 an hour.
+every 5 seconds while the map is open, so some 720 an hour.

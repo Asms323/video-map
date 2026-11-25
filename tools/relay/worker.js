@@ -1,4 +1,4 @@
-// A relay for the app's flight radar. It asks adsb.fi (https://adsb.fi) for the aircraft round a place,
+// A relay for the app's live flights. It asks adsb.fi (https://adsb.fi) for the aircraft round a place,
 // and hands the answer on to the app, which may not ask adsb.fi itself: a web page may read another site's
 // answers only where that site says so, and adsb.fi's do not. Each answer is kept for 5 seconds and given
 // to everyone who asks about that place meanwhile, so that adsb.fi is asked once for all of them.
