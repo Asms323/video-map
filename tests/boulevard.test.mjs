@@ -134,11 +134,14 @@ test('the parts of Boulevard World are landmarks of the map, built only for a vi
   // (The financial district is 4 km off: its buildings are all built from here, and its towers from anywhere: see kafd.test.mjs.
   // The famous buildings that are not towers are each built for a view within a few kilometres of them: see famous.test.mjs.)
   const district = KAFD_PARTS.filter((one) => one.model);
-  const famousFrom = ([lng, lat]) => FAMOUS.filter((one) => !one.within || Math.hypot((one.at[0] - lng) * METERS * Math.cos((lat * Math.PI) / 180), (one.at[1] - lat) * METERS) < one.within).length;
-  // (The towers of the city that are true models are built from anywhere.)
-  const city = LANDMARKS.filter((one) => one.model && !one.id.startsWith('blvd-world-') && !/^kafd-\d/.test(one.id) && !FAMOUS.includes(one)).length;
+  const builtFrom = (list, [lng, lat]) => list.filter((one) => !one.within || Math.hypot((one.at[0] - lng) * METERS * Math.cos((lat * Math.PI) / 180), (one.at[1] - lat) * METERS) < one.within).length;
+  const famousFrom = (place) => builtFrom(FAMOUS, place);
+  // (The towers of the city that are true models are built from anywhere; the metro station of the district only from near it.)
+  const others = LANDMARKS.filter((one) => one.model && !one.id.startsWith('blvd-world-') && !/^kafd-\d/.test(one.id) && !FAMOUS.includes(one));
+  const city = others.filter((one) => !one.within).length;
+  assert.deepEqual(others.filter((one) => one.within).map((one) => one.id), ['kafd-station']);
   const mesh = new ModelMesh();
-  assert.equal(landmarkModels(mesh, { lng: BOULEVARD_WORLD[0], lat: BOULEVARD_WORLD[1] }), city + WORLD_PARTS.length + district.length + famousFrom(BOULEVARD_WORLD));
+  assert.equal(landmarkModels(mesh, { lng: BOULEVARD_WORLD[0], lat: BOULEVARD_WORLD[1] }), builtFrom(others, BOULEVARD_WORLD) + WORLD_PARTS.length + district.length + famousFrom(BOULEVARD_WORLD));
   const here = mesh.count;
   // (Across town: fifteen kilometres to the east, where nothing low is near.)
   const far = [46.85, 24.6];

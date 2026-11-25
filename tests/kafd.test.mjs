@@ -81,8 +81,11 @@ test('every building of the district is a landmark of the map, standing on its o
   const mesh = new ModelMesh();
   // (With them, the towers of the city that are true models: those are built for a view from anywhere.)
   const city = LANDMARKS.filter((one) => one.model && !one.within && !/^kafd-\d/.test(one.id)).length;
-  assert.equal(landmarkModels(mesh, { lng: KAFD_AT[0], lat: KAFD_AT[1] }), city + 73);
-  assert.ok(mesh.count > 15000 && mesh.count < 60000, `${mesh.count} corners`);
+  // (And the district's metro station, which is low: it is built for a view near it, as its low buildings are.)
+  assert.equal(LANDMARKS.find((one) => one.id === 'kafd-station').within, 6000);
+  assert.equal(landmarkModels(mesh, { lng: KAFD_AT[0], lat: KAFD_AT[1] }), city + 73 + 1);
+  // (The metro station, with its two rows of lattice right round it, is some twenty-five thousand of them.)
+  assert.ok(mesh.count > 15000 && mesh.count < 90000, `${mesh.count} corners`);
   for (let i = 0; i < mesh.count * 3; i += 1) assert.ok(Number.isFinite(mesh.positions[i]));
 
   // The map's own block under each of them is left out: the one whose middle is the building's, and

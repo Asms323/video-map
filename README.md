@@ -490,6 +490,7 @@ Everything is free and needs no account or key.
 | The Riyadh Water Tower | Its rim and its roof: the satellite photo above (Esri World Imagery) and the buildings data's outline. Its outline from the side, its stripes and their colours: four photographs found through [Openverse](https://openverse.org) on Flickr (by EVITAS WEBFOTOS, CC BY-NC-SA 2.0; distar97, CC BY-ND 2.0; and oboudiold, public domain mark). Its height, its designer and the tower it was modelled on: Wikipedia's article on the tower and Saudipedia's, as found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The King Fahd National Library | Its plan, its roof and its court: the satellite photo above (Esri World Imagery), measured by hand, and the buildings data's outline. Its veil by day and by night: two photographs found through [Openverse](https://openverse.org) on Flickr (by 'guerrilla' strategy, CC BY-NC-SA 2.0, and Mâřš, CC BY-NC-ND 2.0). How the veil is made: what its architects, Gerber Architekten, and its engineers, Bollinger + Grohmann, have published of it | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The Grand Mosque of Riyadh | Its plan, the towers on its roof, its court, its minaret and the minaret's shadow: the satellite photo above (Esri World Imagery), measured by hand, and the buildings data's outlines. What it looks like from the ground: four street photographs out of OpenStreetView-5M (see above; by the Mapillary contributors janvanbekkum and mjoodealtamimi, CC BY-SA 4.0). What it holds, the ground it covers, its builders and dates, its stone, the bridges to the palace and the height of its minarets: Wikipedia's articles on the mosque and on Qasr Al-Hukm, Saudipedia's, and a report by Sabq, as found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
+| The KAFD metro station | Its outline: the buildings data below; its corners and the fields of glass on its roof: the satellite photo above (Esri World Imagery). Its shell, its rows of lattice, its lids, its foot and its arches: four photographs found through [Openverse](https://openverse.org) on Flickr (three by Ali Lajami, CC BY 2.0; one by Bader Otaby, CC BY-NC-SA 2.0). The ground it covers and the lines it serves: Wikipedia's article on the station. How its architects describe its shell: reports of it found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | Murabba Palace | Its outline: the buildings data below. Its court: the satellite photo above (Esri World Imagery), measured by hand. Its walls, windows, bands and battlements: two street photographs out of OpenStreetView-5M (see above; by the Mapillary contributor mustafakamil, CC BY-SA 4.0). Its dates, its floors and rooms, what it is built of and the ground it covers: Wikipedia's article on the palace and Saudipedia's, as found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | Masmak Fort | Its outline: the buildings data below. Its courts: the satellite photo above (Esri World Imagery). What it looks like, by day and floodlit by night: twelve photographs found through [Openverse](https://openverse.org) on Flickr (by airbus777, Bruno Girin, SammySix, Desert Agama and amanderson2, under Creative Commons licences), and Wikipedia's article on the fort, which gives the heights of its towers and the size of its gate | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | The models in `models/` (pagoda, hall, pylon, church, house) | Each made from one photograph out of those the app's owner sent, by [TRELLIS](https://github.com/microsoft/TRELLIS) (Microsoft Research, MIT licence), run on Hugging Face under the owner's account; then cleaned of what stood beside the thing in the photograph, thinned to at most thirty thousand triangles, and packed with `tools/models/pack.mjs` | In the app as those files. Their pictures are made out of the photographs. Who took each photograph is not recorded here: if it was not the owner, the photographer's rights in it remain, and that is to be settled before the app is published to others |
@@ -583,15 +584,32 @@ outlines do not say is made up to look right:
   ground.
 
 Landmarks. The towers the skyline is known by are modelled by hand
-(`js/landmarks.js`, `js/famous.js`). Thirteen are true models, built face by
-face: Kingdom Centre, Al Faisaliah Tower, the PIF Tower, Hamad Tower, the two
-Al Anoud Towers, the two Olaya Towers, the tower of the Ministry of Islamic
-Affairs, Al Majdoul Tower, Burj Rafal, the TV Tower and the water tower. One
-is still a stack of thin slabs that follow the building's shape: the KAFD
-metro station. Position, outline and height are the real ones; the shape was
-worked out from photos and from what is published about each building, and
-simplified: a model, not a survey. The other tall buildings of the city
-remain plain blocks, but for the financial district.
+(`js/landmarks.js`, `js/famous.js`). All fourteen are true models, built face
+by face: Kingdom Centre, Al Faisaliah Tower, the PIF Tower, Hamad Tower, the
+two Al Anoud Towers, the two Olaya Towers, the tower of the Ministry of
+Islamic Affairs, Al Majdoul Tower, Burj Rafal, the TV Tower, the water tower
+and the KAFD metro station. Only the low halls some of them stand on are
+still stacks of thin slabs. Position, outline and height are the real ones;
+the shape was worked out from photos and from what is published about each
+building, and simplified: a model, not a survey. The other tall buildings of
+the city remain plain blocks, but for the financial district.
+
+The KAFD metro station (`js/famous.js`). What is real: where it stands and its
+outline, 210.4 m by 39.6 m on the average (the buildings data's: some 8,250
+square metres, against the 8,150 published), with its corners rounded as the
+satellite photo shows them; the lines it serves; that its shell is of pierced
+white panels, drawn as waves that run against each other, as its architects
+describe it. What is read off one photograph from King Fahd Road: the two rows
+of eye-shaped fields of lattice, twenty to a row right round it, each some 24 m
+long; the white lids over them; the plain foot with its swooping lines and its
+arches of glass. What is judged: its height, some 25 m to the top of the lids
+and 28 m to its roof, against the PIF Tower behind it in that photograph; it
+may be out by five metres. What is a likeness: which four arches are the
+great doorways, the mouths where the trains run in at its ends, the two
+fields of glass on its roof (placed from the satellite photo, to some ten
+metres), and the side away from the road, which no photograph showed: it is
+built as the mirror of the other. Its lattice is drawn in openings that stand
+on their points, every one cut; the real openings are of many sizes.
 
 Al Majdoul Tower (`js/famous.js`). What is real: its 244 m and 54 floors, as
 published; and, read off the satellite photo, which shows two of its walls
@@ -1031,7 +1049,7 @@ js/kafd.js              the King Abdullah Financial District: every building on 
 js/famous.js            the famous buildings that are not towers, each with its details: the Ministry of Interior,
                         the King Fahd National Library, Masmak Fort, the Grand Mosque of Riyadh, Murabba
                         Palace; and towers built again with theirs:
-                        Al Majdoul Tower, Burj Rafal, the TV Tower, the water tower
+                        Al Majdoul Tower, Burj Rafal, the TV Tower, the water tower, the KAFD metro station
 js/kafd-data.js         those outlines, and the buildings' heights (written by tools/kafd)
 js/fronts.js            houses dressed as real houses look: a front out of the kit on each one's own plot
 js/kit.js               the kit: where in models/fronts.jpg each front lies, and its measures (written by tools/fronts)

@@ -8,8 +8,8 @@
 // part gives a taper, a twist or an arch. One by one they have been rebuilt
 // as true models instead: flat faces that lean and fold, which the light
 // falls on as it does on the real building (see models.js; the later ones are
-// built in famous.js). The financial district's metro station is slabs
-// still, and so are the low halls some of the towers stand on.
+// built in famous.js). Only the low halls some of the towers stand on are
+// slabs still.
 //
 // Where each one stands, which way it is turned and how large its footprint
 // is comes from the buildings data (Overture Maps, release 2026-11-18). Its
@@ -18,7 +18,7 @@
 // Nothing here touches the browser. Measurements are in metres.
 
 import { WORLD_PARTS, worldPlace } from './boulevard.js';
-import { FAMOUS, majdoulAnnex, majdoulTower, rafalTower, tvTower, waterTower } from './famous.js';
+import { FAMOUS, KAFD_STATION, kafdStation, majdoulAnnex, majdoulTower, rafalTower, stationShades, tvTower, waterTower } from './famous.js';
 import { KAFD_PARTS, kafdPlace } from './kafd.js';
 import { Model, ModelMesh } from './models.js';
 import { PROPS } from './props.js';
@@ -854,54 +854,6 @@ function pifTower(model) {
 }
 
 /**
- * The metro station of the King Abdullah Financial District, 210 m long: a
- * white shell whose sides ripple like wind-blown sand, a different ripple at
- * every level, under a roof that rolls in waves from one end to the other.
- * Glass at the ground, and pale gold where the shell is pierced.
- */
-function kafdStation() {
-  const slabs = [];
-  const halfLength = 105;
-  const halfWidth = 20.5;
-  const eaves = 25; // the viaducts run in through its ends on two levels, the upper one some 20 m up
-  // The shell between two places along its length, at a height: rounded at its two ends, rippling along its sides.
-  const shell = (from, to, z, inset = 0) => {
-    const near = [];
-    const far = [];
-    const steps = Math.max(Math.round((to - from) / 5), 2);
-    for (let i = 0; i <= steps; i += 1) {
-      const u = from + ((to - from) * i) / steps;
-      const taper = Math.sqrt(Math.max(1 - (Math.abs(u) / halfLength) ** 4, 0));
-      const half = Math.max(halfWidth * taper - inset, 0);
-      if (half < 0.3) {
-        near.push([u, 0]);
-        continue;
-      }
-      near.push([u, -half * (1 + 0.075 * Math.sin(u / 8 + z * 0.5))]);
-      far.push([u, half * (1 + 0.075 * Math.sin(u / 8 - z * 0.5 + 2))]);
-    }
-    return [...near, ...far.reverse()];
-  };
-  // Glass where people walk in, then the shell in bands of white and pale gold.
-  stack(slabs, 0, 4.5, 4.5, (z) => shell(-halfLength + 4, halfLength - 4, z, 1.5), ['#8fa7b8']);
-  stack(slabs, 4.5, eaves, 2.05, (z) => shell(-halfLength, halfLength, z), ['#f5f3ee', '#e6d9bb', '#f5f3ee', '#efe9dc', '#f5f3ee', '#e6d9bb', '#f5f3ee', '#efe9dc', '#f5f3ee', '#f5f3ee']);
-  // The roof: its height rolls along the building, so each level up covers less of it.
-  const roofAt = (u) => eaves + 5 + 4.2 * Math.sin(u / 15 + 0.6) - 3.5 * (Math.abs(u) / halfLength) ** 2;
-  for (let base = eaves; base < eaves + 10; base += 1.25) {
-    let from = null;
-    for (let u = -halfLength; u <= halfLength + 0.1; u += 3) {
-      const covered = u <= halfLength && roofAt(u) > base;
-      if (covered && from === null) from = u;
-      if (!covered && from !== null) {
-        if (u - 3 - from >= 6) slabs.push({ outline: shell(from, u - 3, base, (base - eaves) * 0.55), base, top: base + 1.25, paint: Math.round(base / 1.25) % 2 === 0 ? '#f5f3ee' : '#ebe5d6' });
-        from = null;
-      }
-    }
-  }
-  return slabs;
-}
-
-/**
  * The landmarks: where each stands ([lng, lat] of the middle of its
  * footprint), which way its long axis points (degrees clockwise from north),
  * and how to build it: build() gives its slabs, model(model) builds it as a
@@ -945,15 +897,19 @@ export const LANDMARKS = [
     shades: [{ radius: 5.5, height: 39 }, { radius: 15, base: 39, height: 46 }, { radius: 26, base: 46, height: 53.4 }, { radius: 17.5, base: 53.4, height: 56.4 }],
   },
   {
+    // (Built in famous.js. Its own north is the way its long axis runs: bearing.)
     id: 'kafd-station',
     name: 'KAFD Metro Station',
     at: [46.642994, 24.767531],
     bearing: 155.8,
-    height: 34,
+    height: KAFD_STATION.ridge[0] + KAFD_STATION.ridge[1],
     clear: 70,
-    build: kafdStation,
-    // Lit from within, in the district's violet: light through the glass at its foot and through the bands where the shell is pierced.
-    nights: { '#8fa7b8': '#efe0ff', '#f5f3ee': '#8a8798', '#e6d9bb': '#b24dff', '#efe9dc': '#9a93ad', '#ebe5d6': '#66627a' },
+    reach: 110,
+    model: kafdStation,
+    within: 6000,
+    // (The buildings data has it as a block of 12 m: that goes altogether, and the model throws its own shadow.)
+    ghosts: [[0.1, -5.9]],
+    shades: stationShades(),
   },
   // Boulevard World: its lagoon and what stands round it, each thing a landmark of its own (see boulevard.js).
   // (They are many and low: built only for a view within a few kilometres of them.)

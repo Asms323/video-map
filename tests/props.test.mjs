@@ -197,7 +197,7 @@ test('the models that carry a picture are shown near them only; each has its cle
   const box = (east, north, half) => [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([x, y]) => [prop.at[0] + (east + x * half) / squeeze, prop.at[1] + (north + y * half) / METERS]);
   assert.deepEqual([...replacedByLandmarks([{ id: 1, ring: box(3, -2, 8) }, { id: 2, ring: box(200, 300, 8) }])], [1]);
   // Its shadow: a footprint 13 m across, 25 m tall, where it stands.
-  assert.equal(landmarkShades().length, 7 + 9 + KAFD_PARTS.filter((one) => one.shade).length + FAMOUS.reduce((sum, one) => sum + (one.shade ? 1 : 0) + (one.shades?.length ?? 0), 0) + PROPS.length);
+  assert.equal(landmarkShades().length, 9 + 9 + KAFD_PARTS.filter((one) => one.shade).length + FAMOUS.reduce((sum, one) => sum + (one.shade ? 1 : 0) + (one.shades?.length ?? 0), 0) + PROPS.length);
   const shade = landmarkShades().find((one) => one.height === 25 && one.polygons[0][0].every(([lng, lat]) => Math.hypot((lng - prop.at[0]) * squeeze, (lat - prop.at[1]) * METERS) < 6.6));
   assert.ok(shade);
 });

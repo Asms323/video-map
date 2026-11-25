@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { FAMOUS, LIBRARY, MAJDOUL, MASMAK, MINISTRY, MURABBA, RAFAL, TURKI_MOSQUE, TV_TOWER, WATER_TOWER, inset, majdoulAnnex, majdoulSquare, majdoulTower, murabbaShades, rafalHalf, rafalRim, rafalTower, stepped, turkiShades, tvTower, waterTower } from '../js/famous.js';
+import { FAMOUS, KAFD_STATION, LIBRARY, MAJDOUL, MASMAK, MINISTRY, MURABBA, RAFAL, TURKI_MOSQUE, TV_TOWER, WATER_TOWER, inset, kafdStation, majdoulAnnex, majdoulSquare, majdoulTower, murabbaShades, rafalHalf, rafalRim, rafalTower, stationOutline, stationRing, stationShades, stepped, turkiShades, tvTower, waterTower } from '../js/famous.js';
 import { LANDMARKS, ghostsOfLandmarks, landmarkBeacons, landmarkModels, landmarkShades, replacedByLandmarks } from '../js/landmarks.js';
 import { Model, ModelMesh } from '../js/models.js';
 import { facesOf } from './model-faces.mjs';
@@ -809,4 +809,100 @@ test('Murabba Palace: two storeys of clay round a court, windows in white surrou
   const turn = (palace.bearing * Math.PI) / 180;
   const corners = [[-halfWide, halfLong], [halfWide, halfLong], [halfWide, -halfLong], [-halfWide, -halfLong]].map(([east, north]) => [east * Math.cos(turn) + north * Math.sin(turn), north * Math.cos(turn) - east * Math.sin(turn)]);
   [[-20.35, 21.2], [14.95, 25.5], [20.35, -21.2], [-14.95, -25.5]].forEach((corner, index) => assert.ok(Math.hypot(corner[0] - corners[index][0], corner[1] - corners[index][1]) < 0.5, `corner ${index}`));
+});
+
+test('the KAFD metro station: a white shell in two rows of eyes filled with lattice, lids over them, arches at its foot, a rolling roof', () => {
+  const S = KAFD_STATION;
+  const station = LANDMARKS.find((one) => one.id === 'kafd-station');
+  assert.ok(station.model === kafdStation && station.bearing === 155.8 && station.within === 6000);
+  const [halfWide, halfLong] = S.half;
+  // Its outline: 210.4 m long and 39.6 m wide, its corners rounded: some 8,250 m2, as the buildings data has it (8,150 are published).
+  assert.ok(near(halfLong * 2, 210.4, 1e-9) && near(halfWide * 2, 39.6, 1e-9));
+  const ring = stationRing();
+  assert.equal(ring.length, 60);
+  assert.ok(Math.abs(squareMeters(ring) - 8250) < 60 && squareMeters(ring) > 0, String(squareMeters(ring)));
+  const { round } = stationOutline(0);
+  assert.ok(near(round, 4 * (halfWide - S.corner) + 4 * (halfLong - S.corner) + 2 * Math.PI * S.corner, 1e-9));
+  // (It is measured from the middle of its north end, round by the west: its own west is the side on King Fahd Road.)
+  const start = stationOutline(0);
+  assert.ok(near(start.at[0], 0, 1e-9) && near(start.at[1], halfLong, 1e-9) && near(start.out[1], 1, 1e-9));
+  const west = stationOutline(halfWide - S.corner + (Math.PI / 2) * S.corner + halfLong - S.corner);
+  assert.ok(near(west.at[0], -halfWide, 1e-9) && near(west.at[1], 0, 1e-9) && near(west.out[0], -1, 1e-9));
+  const outside = ([east, north]) => Math.hypot(Math.max(Math.abs(east) - (halfWide - S.corner), 0), Math.max(Math.abs(north) - (halfLong - S.corner), 0)) - S.corner;
+  for (let k = 0; k < 97; k += 1) {
+    const { at, out } = stationOutline((k / 97) * round);
+    assert.ok(Math.abs(outside(at)) < 1e-6 || (Math.abs(at[0]) < halfWide - S.corner + 1e-9 && near(Math.abs(at[1]), halfLong, 1e-9)) || (Math.abs(at[1]) < halfLong - S.corner + 1e-9 && near(Math.abs(at[0]), halfWide, 1e-9)));
+    assert.ok(near(Math.hypot(...out), 1, 1e-9) && out[0] * at[0] + out[1] * at[1] > 0, 'it looks outwards');
+  }
+
+  const mesh = new ModelMesh();
+  const made = kafdStation(new Model(mesh));
+  const faces = facesOf(mesh);
+  assert.deepEqual(made, {});
+  // It stands on the ground; the roof rolls along its middle up to 28.4 m; the glass on it lies on top.
+  assert.equal(Math.min(...heights(faces)), 0);
+  const top = Math.max(...heights(faces));
+  assert.ok(top > S.ridge[0] + S.ridge[1] - 0.05 && top <= S.ridge[0] + S.ridge[1] + 0.08 && station.height === S.ridge[0] + S.ridge[1], String(top));
+  // Nothing stands out of its outline but the lids over the eyes, by less than a metre.
+  const proud = Math.max(...faces.flatMap((face) => face.corners.map(outside)));
+  assert.ok(proud > S.hood - 0.05 && proud <= S.hood + 1e-4, String(proud));
+  // Two rows of eyes, filled with lattice, set back in the shell and lit from within by night: the lower between 9 and 16.6 m, the upper between 18.3 and 24.1 m.
+  const lattice = faces.filter((face) => face.kind === 'pierced');
+  // (Its openings stand on their points, and every one of them is cut.)
+  assert.ok(lattice.length > 600 && lattice.every((face) => face.open && face.lit > 0.85 && face.floors === 0 && near(face.fins, 0.84, 0.01)));
+  const [[lowerAt, lowerHalf], [upperAt, upperHalf]] = S.rows;
+  const lower = lattice.filter((face) => face.corners.every((corner) => corner[2] < 17));
+  const upper = lattice.filter((face) => face.corners.every((corner) => corner[2] > 18));
+  assert.equal(lower.length + upper.length, lattice.length);
+  assert.ok(lower.every((face) => face.corners.every((corner) => corner[2] >= lowerAt - lowerHalf - 1e-6 && corner[2] <= lowerAt + lowerHalf + 1e-6)));
+  assert.ok(upper.every((face) => face.corners.every((corner) => corner[2] >= upperAt - upperHalf - 1e-6 && corner[2] <= upperAt + upperHalf + 1e-6)));
+  // (Set back in the shell: never standing out of its outline, and most of it 0.7 m in; less towards the points of an eye.)
+  assert.ok(lattice.every((face) => face.corners.every((corner) => outside(corner) <= 1e-4)), 'set back in the shell');
+  assert.ok(lattice.filter((face) => face.corners.every((corner) => outside(corner) < -0.3)).length > lattice.length * 0.7);
+  // Twenty eyes in each row, right round it: each 24 m long; the upper ones over the middles of the ends and over the gaps of the lower.
+  const eye = round / S.eyes;
+  assert.ok(near(eye, 24.14, 0.01));
+  const tallest = (row, at) => {
+    // (How tall the lattice of a row is near a place round the building.)
+    const there = row.filter((face) => face.along.every((along) => Math.abs(along - at) < 2.1));
+    return there.length ? Math.max(...heights(there)) - Math.min(...heights(there)) : 0;
+  };
+  for (let k = 1; k < S.eyes; k += 1) {
+    assert.ok(tallest(upper, k * eye) > upperHalf * 1.8 && tallest(upper, (k + 0.5) * eye) < upperHalf * 0.8, `upper eye ${k}`);
+    assert.ok(tallest(lower, (k + 0.5) * eye) > lowerHalf * 1.8 && tallest(lower, k * eye) < lowerHalf * 0.8, `lower eye ${k}`);
+  }
+  // At either end the trains run in through a dark mouth in the shell, a floor up.
+  const mouths = faces.filter((face) => face.colour === '#20262b');
+  assert.ok(mouths.length > 10 && mouths.every((face) => face.corners.every((corner) => Math.abs(corner[0]) < 7 && Math.abs(corner[1]) > halfLong - 3 && corner[2] >= S.mouth[1] - 1e-6 && corner[2] <= S.mouth[2] + 1e-6)));
+  assert.ok(mouths.some((face) => face.corners.some((corner) => corner[1] > 0)) && mouths.some((face) => face.corners.some((corner) => corner[1] < 0)), 'at both ends');
+  // At its foot, under every lower eye, an arch of glass: twenty of them, four of those great doorways 7.6 m high; the rest 5.5 m.
+  const glass = faces.filter((face) => face.kind === 'glass');
+  assert.ok(glass.every((face) => face.lit === 1 && face.corners.every((corner) => corner[2] <= S.door[1] + 1e-6)));
+  const arches = new Map();
+  for (const face of glass) {
+    const which = Math.floor(face.along.reduce((sum, along) => sum + along, 0) / 3 / eye);
+    arches.set(which, Math.max(arches.get(which) ?? 0, ...heights([face])));
+  }
+  assert.equal(arches.size, 20);
+  assert.deepEqual([...arches].filter(([, top]) => top > 6).map(([which]) => which).sort((a, b) => a - b), S.doors);
+  assert.ok([...arches].every(([which, top]) => near(top, S.doors.includes(which) ? S.door[1] : S.arch[1], 0.3)));
+  // The shell is white concrete, washed in the district's violet by night; the roof is white too, and takes no shadow of the block that throws the station's own.
+  const white = faces.filter((face) => face.colour === '#f3f2ed' && face.kind === 'plain');
+  assert.ok(white.length > 2000 && white.every((face) => face.light === '#cdb8ff' && face.glow > 0.25));
+  const roof = faces.filter((face) => face.colour === '#f1f0ea');
+  assert.ok(roof.length > 1000 && roof.every((face) => face.open && face.normal[2] > 0));
+  // Two fields of glass along the middle of the roof, set with panes that stand on their points.
+  const panes = faces.filter((face) => face.colour === '#3b464e');
+  assert.ok(panes.length > 200 && panes.every((face) => face.kind === 'lamp' && face.corners.every((corner) => Math.abs(corner[0]) <= 6.5 && corner[2] > S.ridge[0] - S.ridge[1])));
+  for (const [from, to] of S.skylights) assert.ok(panes.some((face) => face.corners.every((corner) => corner[1] > from && corner[1] < to)));
+
+  // Its shadow: its outline up to 23.5 m, and the middle of its roof up to 27 m.
+  assert.deepEqual(stationShades().map((shade) => [shade.height, shade.ring.length]), [[23.5, 60], [27, 4]]);
+  assert.deepEqual(station.shades, stationShades());
+  // The buildings data has it as a block of 12 m, which goes altogether.
+  const squeeze = METERS * Math.cos((station.at[1] * Math.PI) / 180);
+  const turn = (station.bearing * Math.PI) / 180;
+  const placed = (points) => [...points, points[0]].map(([east, north]) => [station.at[0] + (east * Math.cos(turn) + north * Math.sin(turn)) / squeeze, station.at[1] + (north * Math.cos(turn) - east * Math.sin(turn)) / METERS]);
+  const data = placed([[17.1, -105.1], [-20.5, -104.2], [-19, 18.2], [-20.6, 103.3], [-15.5, 105.2], [19.8, 103], [19.7, 27.5], [20.6, 5.8], [18.8, -105.2]]);
+  assert.deepEqual([...ghostsOfLandmarks([{ id: 1, ring: data }, { id: 2, ring: placed([[60, 0], [80, 0], [80, 20], [60, 20]]) }])], [1]);
 });

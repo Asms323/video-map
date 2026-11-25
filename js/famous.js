@@ -1317,6 +1317,254 @@ export function turkiMosque(model) {
   return {};
 }
 
+// ── The KAFD metro station ────────────────────────────────────────────────
+
+// The station's measures, in metres. It is measured across (east) and along (north): its own north is the
+// way its long axis runs, which is to the south-south-east; the side on King Fahd Road is its own west.
+export const KAFD_STATION = {
+  half: [19.8, 105.2], // half its width and half its length
+  corner: 10, // how round its four corners are
+  eyes: 20, // the eye-shaped fields of lattice in each of its two rows, counted right round it
+  columns: 12, // the upright strips each eye is built of
+  rows: [[12.8, 3.8], [21.2, 2.9]], // the two rows: how high the middle of an eye is, and half its height
+  crest: 25.2, // the top of the shell over the middle of an upper eye…
+  dip: 21.5, // …and between two of them
+  ridge: [27.4, 1, 60], // the roof along its middle: how high, and how much it rolls, over what length
+  recess: 0.7, // how far the lattice stands back in the shell
+  hood: 0.9, // how far the lid over an eye stands out
+  arch: [3, 5.5], // a glazed arch at the foot of the shell, under every lower eye: half its width in strips, and its height
+  door: [5, 7.6], // the great doorways: the same
+  doors: [2, 7, 12, 17], // which arches they are: under which of the lower eyes, counted from the north end by the west
+  mouth: [3, 9.5, 17], // where the trains run in at either end: half its width in strips, its sill and its top
+  skylights: [[-49, -1, 6.5], [1, 61, 5.5]], // the fields of glass along the roof: from, to, and half the width
+};
+
+/** How full an eye is at a place along it (0 at its two points, 1 in its middle). */
+const eyelid = (along) => Math.sin(Math.PI * Math.min(Math.max(along, 0), 1)) ** 0.8;
+
+/**
+ * The station's outline at so far round it, in metres from the middle of its north end, anticlockwise:
+ * { at: [east, north], out: [east, north] the way the wall looks there }. round: its whole length.
+ */
+export function stationOutline(along) {
+  const S = KAFD_STATION;
+  const [halfWide, halfLong] = S.half;
+  const r = S.corner;
+  const arc = (Math.PI / 2) * r;
+  const parts = [halfWide - r, arc, 2 * (halfLong - r), arc, 2 * (halfWide - r), arc, 2 * (halfLong - r), arc, halfWide - r];
+  const round = parts.reduce((sum, part) => sum + part, 0);
+  let s = ((along % round) + round) % round;
+  const corner = (east, north, from) => {
+    const angle = from + s / r;
+    return { at: [east + Math.cos(angle) * r, north + Math.sin(angle) * r], out: [Math.cos(angle), Math.sin(angle)] };
+  };
+  const [x, y] = [halfWide - r, halfLong - r];
+  const steps = [
+    () => ({ at: [-s, halfLong], out: [0, 1] }),
+    () => corner(-x, y, Math.PI / 2),
+    () => ({ at: [-halfWide, y - s], out: [-1, 0] }),
+    () => corner(-x, -y, Math.PI),
+    () => ({ at: [-x + s, -halfLong], out: [0, -1] }),
+    () => corner(x, -y, Math.PI * 1.5),
+    () => ({ at: [halfWide, -y + s], out: [1, 0] }),
+    () => corner(x, y, 0),
+    () => ({ at: [x - s, halfLong], out: [0, 1] }),
+  ];
+  for (let i = 0; i < parts.length; i += 1) {
+    if (s <= parts[i] || i === parts.length - 1) return { ...steps[i](), round };
+    s -= parts[i];
+  }
+  return { ...steps[0](), round };
+}
+
+/**
+ * What throws the station's shadows, in its own east and north: its whole outline up to some way short of
+ * the top of its shell, and the middle of its roof up to the roof.
+ */
+export function stationShades() {
+  const S = KAFD_STATION;
+  const spine = S.half[1] - S.half[0];
+  return [
+    { ring: stationRing(), height: 23.5 },
+    { ring: [[-12, -spine], [12, -spine], [12, spine], [-12, spine]], height: S.ridge[0] - 0.4 },
+  ];
+}
+
+/** The station's outline as a ring, for its shadow: [[east, north], …]. */
+export function stationRing(corners = 60) {
+  const { round } = stationOutline(0);
+  return Array.from({ length: corners }, (_, i) => stationOutline(((i + 0.5) / corners) * round).at);
+}
+
+/**
+ * The metro station of the King Abdullah Financial District (Zaha Hadid Architects; opened in December
+ * 2024), where the blue, the yellow and the purple line meet: six tracks under one white shell, 210 m
+ * long, on a footprint of 8,150 square metres.
+ *
+ * The shell is of white concrete panels, and it is drawn as a net of waves that run against each other,
+ * the way wind lays sand. Where two waves part they leave an eye, and every eye is filled with a lattice
+ * of openings that stand on their points, with the glass dark behind it and, by night, the halls' lamps:
+ * two rows of such eyes run right round the building, the upper row over the gaps of the lower. Over
+ * every eye the shell swells into a smooth white lid that shades it, and the lids of the upper row make
+ * the building's rolling skyline. Under the lower row the shell comes down plain, in long lines that
+ * swoop with the waves, to a row of glazed arches at the ground; two on each long side are great
+ * doorways. At either end the trains run in through a mouth in the shell, a floor up. The roof is the
+ * same white, rolling a little along its length, with two long fields of glass over the platforms.
+ *
+ * (What it serves and its footprint are as published. Its outline is the buildings data's: 210.4 m long
+ * and 39.6 m wide on the average, which comes to some 8,250 square metres against the 8,150 published;
+ * its corners are rounded as the satellite photo shows them. Its builders describe the shell as waves
+ * that run against each other, and its panels as pierced. How that looks is read off one photograph
+ * taken from King Fahd Road: the two rows of eyes, each eye some 24 m long, the lids, the plain foot with
+ * its swooping lines and arches. Its height is judged in that photograph against the PIF Tower behind
+ * it, whose 385 m are known: some 25 m to the top of the lids, which depends on where the photographer
+ * stood and may be out by five metres. The fields of glass on the roof are placed from the satellite
+ * photo, to some ten metres. Which arches are the doorways, the mouths at the ends, and the side away
+ * from the road, which no photograph showed, are a likeness: that side is built as the mirror of the
+ * other.)
+ */
+export function kafdStation(model) {
+  const S = KAFD_STATION;
+  const [halfWide, halfLong] = S.half;
+  const { round } = stationOutline(0);
+  const strips = S.eyes * S.columns; // right round
+  const step = round / strips;
+  const eye = round / S.eyes;
+  const [[lowerAt, lowerHalf], [upperAt, upperHalf]] = S.rows;
+  // White concrete: by night a wash of the district's violet light lies on it.
+  const white = { kind: 'plain', colour: '#f3f2ed', light: '#cdb8ff', glow: 0.3 };
+  // (What stands back in the shell lies inside the block that throws its shadow, and takes none.)
+  const inner = { kind: 'plain', colour: '#dedcd4', light: '#cdb8ff', glow: 0.45, open: true };
+  // The lattice: every opening cut, larger and smaller; behind it the lamps of the halls.
+  const lattice = { kind: 'pierced', colour: '#f3f2ed', storey: 1.5, bay: 1.9, diamonds: true, holes: 0.84, lit: 0.9, light: '#cdb8ff', glow: 0.3, open: true };
+  const glass = { kind: 'glass', colour: '#3c4d59', storey: 5.5, bay: 2.03, lit: 1, floors: 0, mirror: 0.25, open: true };
+  const dark = { kind: 'plain', colour: '#20262b', open: true };
+
+  /** Which arch a strip's edge belongs to, if any: how high the arch is there. */
+  const archAt = (index) => {
+    // (An arch under the middle of every lower eye: those lie half an eye from the ends' middles.)
+    const from = ((index - S.columns / 2) % S.columns + S.columns) % S.columns;
+    const off = Math.min(from, S.columns - from); // strips from the nearest arch's middle
+    const which = Math.round((index - S.columns / 2) / S.columns);
+    const [half, tall] = S.doors.includes(((which % S.eyes) + S.eyes) % S.eyes) ? S.door : S.arch;
+    return off >= half ? 0 : tall * Math.sqrt(1 - (off / half) ** 2);
+  };
+  /** How far a strip's edge is from the middle of the nearer end, in strips. */
+  const fromEnd = (index) => {
+    const turn = ((index % strips) + strips) % strips;
+    return Math.min(turn, strips - turn, Math.abs(turn - strips / 2));
+  };
+
+  /**
+   * The shell at the edge of a strip, from the ground up: the places its outline runs through, each
+   * [how far out of the wall, how high], and between them: glass, the arch's head, the plain foot in
+   * three lifts, a sill, the lower eye, its lid from below, the lid, the band between, a sill, the upper
+   * eye, its lid from below, the lid up to the top of the shell.
+   */
+  const outlineAt = (index) => {
+    const along = index * step;
+    const { at, out } = stationOutline(along);
+    const upper = eyelid((((along / eye + 0.5) % 1) + 1) % 1);
+    // (By the mouths at the ends the lower eyes open later.)
+    const squeeze = Math.min(Math.max((fromEnd(index) - S.mouth[0]) / S.mouth[0], 0), 1);
+    const lower = eyelid((((along / eye) % 1) + 1) % 1) * squeeze * squeeze * (3 - 2 * squeeze);
+    const mouth = fromEnd(index) < S.mouth[0] ? (S.mouth[2] - S.mouth[1]) * Math.sqrt(1 - (fromEnd(index) / S.mouth[0]) ** 2) : 0;
+    const arch = archAt(index);
+    const [low, high] = fromEnd(index) <= S.mouth[0] ? [S.mouth[1], S.mouth[1] + mouth] : [lowerAt - lowerHalf * lower, lowerAt + lowerHalf * lower];
+    const back = fromEnd(index) <= S.mouth[0] ? (mouth > 0 ? 2.2 : 0) : S.recess * Math.min(lower * 4, 1);
+    const lid = fromEnd(index) <= S.mouth[0] ? 0 : S.hood * lower;
+    const [upperLow, upperHigh] = [upperAt - upperHalf * upper, upperAt + upperHalf * upper];
+    // (The top of the shell follows the lids of the upper row: highest over the middle of each, lowest between two.)
+    const top = upperHigh + (S.dip - upperAt) + (S.crest - upperAt - upperHalf - (S.dip - upperAt)) * upper;
+    const upperBack = S.recess * Math.min(upper * 4, 1);
+    const rise = Math.min(1.4, (upperLow - high) / 2);
+    const line = [
+      [arch > 0 ? -0.3 : 0, 0],
+      [arch > 0 ? -0.3 : 0, arch],
+      [0, arch],
+      [0, arch + (low - arch) / 3],
+      [0, arch + ((low - arch) * 2) / 3],
+      [0, low],
+      [-back, low],
+      [-back, high],
+      [lid, high],
+      [0, high + rise],
+      [0, upperLow],
+      [-upperBack, upperLow],
+      [-upperBack, upperHigh],
+      [S.hood * upper, upperHigh],
+      [0, top],
+    ];
+    return { at, out, line, top, mouth: fromEnd(index) <= S.mouth[0] };
+  };
+
+  const edges = Array.from({ length: strips + 1 }, (_, index) => outlineAt(index));
+  const spot = (edge, [proud, up]) => [edge.at[0] + edge.out[0] * proud, edge.at[1] + edge.out[1] * proud, up];
+  for (let index = 0; index < strips; index += 1) {
+    const [a, b] = [edges[index], edges[index + 1]];
+    const mouth = a.mouth && b.mouth;
+    const stuffs = [glass, inner, white, white, white, inner, mouth ? dark : lattice, inner, white, white, inner, lattice, inner, white];
+    // (The swooping lines of the foot: along the top of each of its lifts.)
+    const lined = [false, false, true, true, false, false, false, false, false, false, false, false, false, false];
+    for (let piece = 0; piece < stuffs.length; piece += 1) {
+      const [a0, a1, b0, b1] = [a.line[piece], a.line[piece + 1], b.line[piece], b.line[piece + 1]];
+      if (Math.hypot(a1[0] - a0[0], a1[1] - a0[1]) < 1e-6 && Math.hypot(b1[0] - b0[0], b1[1] - b0[1]) < 1e-6) continue;
+      // Which way this piece of the shell looks: outwards, and as far up or down as it leans.
+      const looks = (edge, [from, to]) => {
+        const [run, rise] = [to[0] - from[0], to[1] - from[1]];
+        const size = Math.hypot(run, rise) || 1;
+        return [(edge.out[0] * rise) / size, (edge.out[1] * rise) / size, -run / size];
+      };
+      const [wayA, wayB] = [looks(a, Math.hypot(a1[0] - a0[0], a1[1] - a0[1]) < 1e-6 ? [b0, b1] : [a0, a1]), looks(b, Math.hypot(b1[0] - b0[0], b1[1] - b0[1]) < 1e-6 ? [a0, a1] : [b0, b1])];
+      const out = [wayA[0] + wayB[0], wayA[1] + wayB[1], wayA[2] + wayB[2]];
+      const pierced = stuffs[piece].kind === 'pierced' || stuffs[piece].kind === 'glass';
+      model.quad(spot(a, a0), spot(b, b0), spot(b, b1), spot(a, a1), stuffs[piece], {
+        out,
+        lines: [false, false, lined[piece], false],
+        // (A lattice counts its openings right round the building, from the north end.)
+        ...(pierced ? { along: [b.at[0] - a.at[0], b.at[1] - a.at[1]], from: [a.at[0] - ((b.at[0] - a.at[0]) / step) * index * step, a.at[1] - ((b.at[1] - a.at[1]) / step) * index * step] } : { normals: [wayA, wayB, wayB, wayA] }),
+      });
+    }
+  }
+
+  // The roof: from the top of the shell it rises, steeply at first, to a level strip along the middle that rolls along the building.
+  const [ridgeAt, roll, wave] = S.ridge;
+  const spine = halfLong - halfWide;
+  const ridge = (north) => ridgeAt + roll * Math.cos((Math.PI * 2 * north) / wave);
+  const rings = [0, 0.2, 0.42, 0.65, 1];
+  const roofAt = (edge, share) => {
+    const foot = [0, Math.min(Math.max(edge.at[1], -spine), spine)];
+    const level = ridge(foot[1]);
+    const lift = share >= 0.65 ? 1 : 1 - (1 - share / 0.65) ** 2;
+    return [edge.at[0] + (foot[0] - edge.at[0]) * share, edge.at[1] + (foot[1] - edge.at[1]) * share, edge.top + (Math.max(level, edge.top) - edge.top) * lift];
+  };
+  // (It lies within the block that throws the station's shadow: it takes none.)
+  const roofing = { kind: 'plain', colour: '#f1f0ea', open: true };
+  for (let index = 0; index < strips; index += 1) {
+    const [a, b] = [edges[index], edges[index + 1]];
+    for (let ring = 0; ring < rings.length - 1; ring += 1) {
+      const [a0, b0, b1, a1] = [roofAt(a, rings[ring]), roofAt(b, rings[ring]), roofAt(b, rings[ring + 1]), roofAt(a, rings[ring + 1])];
+      // (A seam along the roof where its slope ends: it winds with the waves of the shell.)
+      model.quad(a0, b0, b1, a1, roofing, { out: [0, 0, 1], lines: [false, false, ring === 1, false] });
+    }
+  }
+  // The fields of glass along the roof: each an eye too, set with panes that stand on their points.
+  const pane = { kind: 'lamp', colour: '#3b464e', light: '#fff0d6', glow: 0.5, open: true };
+  for (const [from, to, half] of S.skylights) {
+    const rows = Math.round((to - from) / 1.3);
+    for (let row = 1; row < rows; row += 1) {
+      const north = from + ((to - from) * row) / rows;
+      const wide = half * eyelid((north - from) / (to - from)) - 0.9;
+      for (let east = (row % 2) * 0.85 - Math.floor(wide / 1.7) * 1.7; east <= wide; east += 1.7) {
+        if (Math.abs(east) > wide) continue;
+        const up = (y) => ridge(y) + 0.07;
+        model.quad([east - 0.62, north, up(north)], [east, north - 0.95, up(north - 0.95)], [east + 0.62, north, up(north)], [east, north + 0.95, up(north + 0.95)], pane, { out: [0, 0, 1], lines: [false, false, false, false] });
+      }
+    }
+  }
+  return {};
+}
+
 // ── Murabba Palace ────────────────────────────────────────────────────────
 
 // The palace's measures, in metres. Places are [east, north] in its own frame, which is turned with its walls.
