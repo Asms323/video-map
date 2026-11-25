@@ -1,17 +1,14 @@
 {
-  "about": "Fronts of houses, each measured in a picture of it taken straight on: see README.md. All places are in the picture's own spots, across then down.",
+  "about": "Fronts of houses, each measured in a picture of it taken straight on: see README.md. All places are in the picture's own spots, across then down. styles: the styles of house it is made for (see HOUSE_STYLES in js/houses.js); rare: how much rarer such a house is than the others, from 0 (as common) up to 1 (never).",
   "fronts": [
     {
       "name": "band",
       "picture": "reference.jpg",
       "from": "a picture of a new Riyadh villa that the app's owner made with an AI image generator as a reference for the look wanted (IMG_9733); not kept here: see README.md",
-      "scale": 0.6,
-      "crop": [
-        66,
-        477,
-        1726,
-        1478
+      "styles": [
+        "modern"
       ],
+      "scale": 0.6,
       "edits": [
         {
           "copy": [
@@ -153,13 +150,10 @@
       "name": "wood",
       "picture": "wood.webp",
       "from": "FLUX.1 Krea dev (Black Forest Labs and Krea), run on Hugging Face (mcp-tools/FLUX.1-Krea-dev) on the owner's account, seed 7",
-      "scale": 1,
-      "crop": [
-        0,
-        57,
-        925,
-        718
+      "styles": [
+        "modern"
       ],
+      "scale": 1,
       "edits": [
         {
           "copy": [
@@ -291,13 +285,10 @@
       "name": "white",
       "picture": "white.webp",
       "from": "FLUX.1 Krea dev (Black Forest Labs and Krea), run on Hugging Face (mcp-tools/FLUX.1-Krea-dev) on the owner's account, seed 12",
-      "scale": 1,
-      "crop": [
-        0,
-        112,
-        1006,
-        650
+      "styles": [
+        "modern"
       ],
+      "scale": 1,
       "edits": [
         {
           "copy": [
@@ -458,13 +449,11 @@
       "name": "limestone",
       "picture": "limestone.webp",
       "from": "FLUX.1 Krea dev (Black Forest Labs and Krea), run on Hugging Face (mcp-tools/FLUX.1-Krea-dev) on the owner's account, seed 11",
-      "scale": 1,
-      "crop": [
-        0,
-        165,
-        862,
-        718
+      "styles": [
+        "stone",
+        "arched"
       ],
+      "scale": 1,
       "edits": [
         {
           "stretch": [
@@ -537,8 +526,32 @@
           ],
           [
             165,
-            165,
-            855,
+            166,
+            852,
+            178
+          ],
+          [
+            171,
+            178,
+            846,
+            190
+          ],
+          [
+            178,
+            190,
+            840,
+            202
+          ],
+          [
+            186,
+            202,
+            830,
+            214
+          ],
+          [
+            191,
+            214,
+            825,
             225
           ]
         ],
@@ -592,6 +605,1033 @@
             500,
             392,
             550
+          ]
+        ]
+      }
+    },
+    {
+      "name": "older",
+      "picture": "older.jpg",
+      "from": "Gamma's image generator (gamma.app), on the owner's account, 25 November 2026; kept here at half its size",
+      "styles": [
+        "plaster",
+        "arched"
+      ],
+      "scale": 1,
+      "wall": {
+        "rows": [
+          540,
+          760
+        ],
+        "height": 3.0,
+        "pieces": [
+          [
+            0,
+            596,
+            "plain"
+          ],
+          [
+            596,
+            812,
+            "fixed"
+          ],
+          [
+            812,
+            1018,
+            "plain"
+          ],
+          [
+            1018,
+            1114,
+            "optional"
+          ],
+          [
+            1114,
+            1376,
+            "plain"
+          ]
+        ],
+        "lamps": []
+      },
+      "house": {
+        "perMetre": 74,
+        "rects": [
+          [
+            199,
+            92,
+            1171,
+            103
+          ],
+          [
+            215,
+            103,
+            1159,
+            215
+          ],
+          [
+            514,
+            81,
+            860,
+            92
+          ],
+          [
+            222,
+            215,
+            1150,
+            227
+          ],
+          [
+            241,
+            227,
+            1132,
+            464
+          ],
+          [
+            248,
+            464,
+            1135,
+            538
+          ]
+        ],
+        "plain": [
+          20,
+          560,
+          580,
+          750
+        ],
+        "plainScale": 1,
+        "panes": [
+          [
+            372,
+            289,
+            444,
+            355
+          ],
+          [
+            651,
+            280,
+            724,
+            350
+          ],
+          [
+            929,
+            289,
+            1000,
+            356
+          ]
+        ],
+        "lamps": [
+          [
+            580,
+            508,
+            594,
+            530
+          ],
+          [
+            785,
+            508,
+            799,
+            530
+          ]
+        ]
+      }
+    },
+    {
+      "name": "stone",
+      "picture": "stone.jpg",
+      "from": "Gamma's image generator (gamma.app), on the owner's account, 25 November 2026; kept here at half its size",
+      "styles": [
+        "stone"
+      ],
+      "scale": 1,
+      "wall": {
+        "rows": [
+          584,
+          758
+        ],
+        "height": 3.0,
+        "pieces": [
+          [
+            330,
+            598,
+            "plain"
+          ],
+          [
+            598,
+            790,
+            "fixed"
+          ],
+          [
+            790,
+            980,
+            "plain"
+          ],
+          [
+            980,
+            1302,
+            "optional"
+          ],
+          [
+            1302,
+            1338,
+            "plain"
+          ]
+        ],
+        "lamps": []
+      },
+      "house": {
+        "perMetre": 75,
+        "rects": [
+          [
+            299,
+            150,
+            746,
+            168
+          ],
+          [
+            737,
+            141,
+            1055,
+            160
+          ],
+          [
+            746,
+            160,
+            1049,
+            168
+          ],
+          [
+            311,
+            168,
+            1049,
+            584
+          ]
+        ],
+        "plain": [
+          770,
+          170,
+          1040,
+          268
+        ],
+        "plainScale": 3,
+        "panes": [
+          [
+            421,
+            290,
+            496,
+            404
+          ],
+          [
+            637,
+            292,
+            705,
+            404
+          ],
+          [
+            859,
+            284,
+            937,
+            402
+          ],
+          [
+            383,
+            529,
+            532,
+            580
+          ],
+          [
+            822,
+            526,
+            958,
+            580
+          ]
+        ],
+        "lamps": [
+          [
+            588,
+            548,
+            602,
+            580
+          ],
+          [
+            760,
+            548,
+            776,
+            580
+          ]
+        ]
+      }
+    },
+    {
+      "name": "najdi",
+      "picture": "najdi.jpg",
+      "from": "Gamma's image generator (gamma.app), on the owner's account, 25 November 2026; kept here at half its size",
+      "styles": [
+        "plaster",
+        "stone"
+      ],
+      "rare": 0.8,
+      "scale": 1,
+      "wall": {
+        "rows": [
+          544,
+          757
+        ],
+        "height": 3.0,
+        "pieces": [
+          [
+            205,
+            480,
+            "optional"
+          ],
+          [
+            515,
+            570,
+            "plain"
+          ],
+          [
+            570,
+            845,
+            "fixed"
+          ],
+          [
+            845,
+            1055,
+            "plain"
+          ]
+        ],
+        "lamps": [
+          [
+            578,
+            562,
+            602,
+            590
+          ],
+          [
+            772,
+            562,
+            796,
+            590
+          ],
+          [
+            918,
+            588,
+            944,
+            614
+          ]
+        ]
+      },
+      "house": {
+        "perMetre": 72,
+        "rects": [
+          [
+            241,
+            150,
+            570,
+            508
+          ],
+          [
+            570,
+            130,
+            805,
+            542
+          ],
+          [
+            244,
+            133,
+            277,
+            150
+          ],
+          [
+            244,
+            126,
+            267,
+            133
+          ],
+          [
+            292,
+            133,
+            323,
+            150
+          ],
+          [
+            302,
+            126,
+            313,
+            133
+          ],
+          [
+            337,
+            133,
+            368,
+            150
+          ],
+          [
+            347,
+            126,
+            358,
+            133
+          ],
+          [
+            382,
+            133,
+            413,
+            150
+          ],
+          [
+            392,
+            126,
+            404,
+            133
+          ],
+          [
+            427,
+            133,
+            458,
+            150
+          ],
+          [
+            437,
+            126,
+            449,
+            133
+          ],
+          [
+            473,
+            133,
+            502,
+            150
+          ],
+          [
+            482,
+            126,
+            494,
+            133
+          ],
+          [
+            517,
+            132,
+            549,
+            150
+          ],
+          [
+            527,
+            125,
+            539,
+            132
+          ],
+          [
+            562,
+            139,
+            570,
+            150
+          ],
+          [
+            566,
+            132,
+            570,
+            139
+          ],
+          [
+            571,
+            114,
+            591,
+            130
+          ],
+          [
+            571,
+            107,
+            582,
+            114
+          ],
+          [
+            605,
+            114,
+            635,
+            130
+          ],
+          [
+            614,
+            107,
+            626,
+            114
+          ],
+          [
+            649,
+            114,
+            679,
+            130
+          ],
+          [
+            658,
+            107,
+            670,
+            114
+          ],
+          [
+            693,
+            114,
+            723,
+            130
+          ],
+          [
+            702,
+            107,
+            714,
+            114
+          ],
+          [
+            737,
+            114,
+            768,
+            130
+          ],
+          [
+            746,
+            107,
+            758,
+            114
+          ],
+          [
+            781,
+            114,
+            801,
+            130
+          ],
+          [
+            790,
+            107,
+            801,
+            114
+          ]
+        ],
+        "plain": [
+          250,
+          415,
+          565,
+          505
+        ],
+        "plainScale": 2,
+        "panes": [],
+        "dark": [
+          [
+            368,
+            302,
+            442,
+            404
+          ],
+          [
+            648,
+            288,
+            726,
+            394
+          ]
+        ],
+        "crest": {
+          "row": 150,
+          "merlon": [
+            [
+              292,
+              133,
+              323,
+              150
+            ],
+            [
+              302,
+              126,
+              313,
+              133
+            ]
+          ],
+          "every": 45
+        }
+      }
+    },
+    {
+      "name": "grey",
+      "picture": "grey.jpg",
+      "from": "Gamma's image generator (gamma.app), on the owner's account, 25 November 2026; kept here at half its size",
+      "styles": [
+        "modern"
+      ],
+      "scale": 1,
+      "wall": {
+        "rows": [
+          489,
+          654
+        ],
+        "height": 3.0,
+        "pieces": [
+          [
+            0,
+            250,
+            "plain"
+          ],
+          [
+            250,
+            590,
+            "optional"
+          ],
+          [
+            590,
+            740,
+            "fixed"
+          ],
+          [
+            740,
+            850,
+            "plain"
+          ]
+        ],
+        "lamps": []
+      },
+      "house": {
+        "perMetre": 55,
+        "rects": [
+          [
+            730,
+            117,
+            991,
+            150
+          ],
+          [
+            738,
+            150,
+            985,
+            489
+          ],
+          [
+            519,
+            181,
+            738,
+            206
+          ],
+          [
+            526,
+            206,
+            738,
+            236
+          ],
+          [
+            596,
+            223,
+            757,
+            236
+          ],
+          [
+            387,
+            236,
+            601,
+            248
+          ],
+          [
+            396,
+            248,
+            738,
+            468
+          ],
+          [
+            405,
+            468,
+            738,
+            489
+          ]
+        ],
+        "plain": [
+          800,
+          160,
+          975,
+          390
+        ],
+        "plainScale": 2,
+        "panes": [
+          [
+            455,
+            332,
+            524,
+            444
+          ],
+          [
+            633,
+            315,
+            708,
+            434
+          ],
+          [
+            772,
+            177,
+            795,
+            438
+          ]
+        ]
+      }
+    },
+    {
+      "name": "plain",
+      "picture": "plain.jpg",
+      "from": "Gamma's image generator (gamma.app), on the owner's account, 25 November 2026; kept here at half its size",
+      "styles": [
+        "plaster",
+        "arched"
+      ],
+      "scale": 1,
+      "wall": {
+        "rows": [
+          570,
+          766
+        ],
+        "height": 3.0,
+        "pieces": [
+          [
+            0,
+            238,
+            "plain"
+          ],
+          [
+            238,
+            548,
+            "optional"
+          ],
+          [
+            548,
+            792,
+            "plain"
+          ],
+          [
+            792,
+            935,
+            "fixed"
+          ],
+          [
+            935,
+            1376,
+            "plain"
+          ]
+        ],
+        "lamps": []
+      },
+      "house": {
+        "perMetre": 66,
+        "rects": [
+          [
+            296,
+            157,
+            570,
+            195
+          ],
+          [
+            317,
+            195,
+            578,
+            570
+          ],
+          [
+            556,
+            134,
+            1106,
+            173
+          ],
+          [
+            578,
+            173,
+            1082,
+            570
+          ]
+        ],
+        "plain": [
+          800,
+          180,
+          1075,
+          300
+        ],
+        "plainScale": 2,
+        "panes": [
+          [
+            423,
+            332,
+            499,
+            411
+          ],
+          [
+            722,
+            315,
+            772,
+            372
+          ],
+          [
+            906,
+            315,
+            984,
+            398
+          ]
+        ]
+      }
+    },
+    {
+      "name": "slats",
+      "picture": "slats.jpg",
+      "from": "Gamma's image generator (gamma.app), on the owner's account, 25 November 2026; kept here at half its size",
+      "styles": [
+        "modern"
+      ],
+      "scale": 1,
+      "wall": {
+        "rows": [
+          539,
+          766
+        ],
+        "height": 3.0,
+        "pieces": [
+          [
+            340,
+            570,
+            "plain"
+          ],
+          [
+            570,
+            632,
+            "optional"
+          ],
+          [
+            632,
+            820,
+            "plain"
+          ],
+          [
+            820,
+            968,
+            "fixed"
+          ],
+          [
+            968,
+            1340,
+            "optional"
+          ]
+        ],
+        "lamps": [
+          [
+            594,
+            590,
+            608,
+            612
+          ]
+        ]
+      },
+      "house": {
+        "perMetre": 77,
+        "rects": [
+          [
+            203,
+            141,
+            575,
+            153
+          ],
+          [
+            208,
+            153,
+            575,
+            539
+          ],
+          [
+            513,
+            111,
+            790,
+            141
+          ],
+          [
+            791,
+            96,
+            1068,
+            126
+          ],
+          [
+            574,
+            126,
+            1150,
+            149
+          ],
+          [
+            580,
+            149,
+            1143,
+            199
+          ],
+          [
+            563,
+            199,
+            1200,
+            233
+          ],
+          [
+            572,
+            233,
+            1143,
+            462
+          ],
+          [
+            563,
+            462,
+            1200,
+            498
+          ],
+          [
+            575,
+            498,
+            1143,
+            539
+          ]
+        ],
+        "plain": [
+          215,
+          160,
+          470,
+          275
+        ],
+        "plainScale": 2,
+        "panes": [
+          [
+            297,
+            298,
+            329,
+            464
+          ],
+          [
+            486,
+            297,
+            522,
+            466
+          ],
+          [
+            1026,
+            297,
+            1052,
+            460
+          ]
+        ]
+      }
+    },
+    {
+      "name": "duplex",
+      "picture": "duplex.jpg",
+      "from": "Gamma's image generator (gamma.app), on the owner's account, 25 November 2026; kept here at half its size",
+      "styles": [
+        "modern",
+        "stone"
+      ],
+      "scale": 1,
+      "wall": {
+        "rows": [
+          567,
+          767
+        ],
+        "height": 3.0,
+        "pieces": [
+          [
+            132,
+            290,
+            "plain"
+          ],
+          [
+            290,
+            605,
+            "optional"
+          ],
+          [
+            605,
+            768,
+            "plain"
+          ],
+          [
+            768,
+            925,
+            "fixed"
+          ],
+          [
+            925,
+            1140,
+            "plain"
+          ]
+        ],
+        "lamps": [
+          [
+            306,
+            617,
+            322,
+            630
+          ],
+          [
+            578,
+            617,
+            594,
+            630
+          ],
+          [
+            783,
+            617,
+            799,
+            630
+          ],
+          [
+            903,
+            617,
+            919,
+            630
+          ]
+        ]
+      },
+      "house": {
+        "perMetre": 67,
+        "rects": [
+          [
+            639,
+            101,
+            860,
+            154
+          ],
+          [
+            374,
+            154,
+            1123,
+            181
+          ],
+          [
+            390,
+            181,
+            1107,
+            567
+          ]
+        ],
+        "plain": [
+          960,
+          585,
+          1125,
+          760
+        ],
+        "plainScale": 1,
+        "panes": [
+          [
+            432,
+            295,
+            492,
+            460
+          ],
+          [
+            598,
+            295,
+            657,
+            460
+          ],
+          [
+            735,
+            310,
+            818,
+            462
+          ],
+          [
+            970,
+            295,
+            1030,
+            460
           ]
         ]
       }

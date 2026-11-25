@@ -4,7 +4,8 @@
 Each is asked of FLUX.1 Krea dev (Black Forest Labs and Krea) as Hugging Face runs it at mcp-tools/FLUX.1-Krea-dev,
 on the free allowance of the account whose token is used: some dozen pictures a day, shared with whatever else that
 account asks of Hugging Face's ZeroGPU machines. It stops at the first refusal, which is the allowance used up: ask
-again the next day. Do not work round it. A picture already made is not asked for again.
+again the next day. Do not work round it. A picture already made is not asked for again; nor is one that
+prompts.json says another generator made ("by").
 
 Needs: pip install gradio_client. The token is not read here: in a Claude cloud session it is a network secret of
 the environment for the host mcp-tools-flux-1-krea-dev.hf.space; elsewhere, set HF_TOKEN and pass it to Client(…).
@@ -22,6 +23,9 @@ out = sys.argv[2] if len(sys.argv) > 2 else 'pictures'
 os.makedirs(out, exist_ok=True)
 client = Client('https://mcp-tools-flux-1-krea-dev.hf.space', verbose=False)
 for job in jobs:
+    # (prompts.json also keeps what was asked of other generators, by hand: see README.md.)
+    if job.get('by', 'flux') != 'flux':
+        continue
     target = os.path.join(out, job['name'] + '.webp')
     if os.path.exists(target):
         print('have', job['name'])

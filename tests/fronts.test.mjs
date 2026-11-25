@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { FRONTS_PICTURE, chanceOf, dressInFronts, faceMeasure, frontFor, layStrip } from '../js/fronts.js';
+import { FRONTS_PICTURE, chanceOf, dressInFronts, faceMeasure, frontFor, frontOfHouse, layStrip, tintOf } from '../js/fronts.js';
 import { KIT } from '../js/kit.js';
 
 const near = (a, b, by = 1e-6) => Math.abs(a - b) <= by;
@@ -61,10 +61,12 @@ test('a wall is laid as long as the house needs: its gate keeps its size, plain 
 });
 
 test('the kit: fronts measured in pictures taken straight on, all in one picture', () => {
-  assert.deepEqual(KIT.size, [2048, 2048]);
-  assert.ok(KIT.fronts.length >= 4);
+  // (Both sides of the picture are powers of two: only such a picture can be smoothed for the distance.)
+  assert.deepEqual(KIT.size, [4096, 2048]);
+  assert.ok(KIT.fronts.length >= 10);
   assert.equal(new Set(KIT.fronts.map((front) => front.name)).size, KIT.fronts.length);
   const inside = (box) => box[0] >= 0 && box[1] >= 0 && box[2] <= KIT.size[0] && box[3] <= KIT.size[1] && box[2] > box[0] && box[3] > box[1];
+  const styles = ['plaster', 'stone', 'arched', 'modern'];
   for (const front of KIT.fronts) {
     // Its wall: between two and three and a half metres tall, with a gate that keeps its size and plain wall to lay.
     assert.ok(front.wall.height >= 2 && front.wall.height <= 3.5 && front.wall.perMetre > 20, front.name);
@@ -72,36 +74,59 @@ test('the kit: fronts measured in pictures taken straight on, all in one picture
     const kinds = front.wall.pieces.map((piece) => piece[2]);
     assert.ok(kinds.includes('fixed') && kinds.includes('plain') && kinds.every((kind) => ['fixed', 'plain', 'optional'].includes(kind)), front.name);
     for (const [from, until] of front.wall.pieces) assert.ok(until > from && inside([from, front.wall.v[0], until, front.wall.v[1]]), front.name);
-    for (const lamp of front.wall.lamps) assert.ok(inside(lamp), front.name);
+    for (const lamp of front.wall.lamps) assert.ok(inside(lamp) && lamp[1] >= front.wall.v[0] && lamp[3] <= front.wall.v[1], front.name);
     // The face of its house: between five and eight metres of it show over the wall, seven to fourteen wide.
     const face = faceMeasure(front);
     assert.ok(face.tall > 4.5 && face.tall < 8.5 && face.wide > 7 && face.wide < 14.5, `${front.name}: ${face.wide.toFixed(1)} by ${face.tall.toFixed(1)}`);
     for (const rect of front.house.rects) assert.ok(inside(rect), front.name);
-    for (const pane of front.house.panes) assert.ok(inside(pane) && pane[0] >= face.box[0] - 1 && pane[2] <= face.box[2] + 1, front.name);
-    assert.ok(front.house.panes.length >= 3 && inside(front.house.plain) && front.house.plainPerMetre > 5, front.name);
+    // Its windows (those that can be lit, and those whose shutters are closed) and its lamps lie on that face.
+    for (const pane of [...front.house.panes, ...front.house.dark, ...front.house.lamps]) assert.ok(inside(pane) && pane[0] >= face.box[0] - 1 && pane[2] <= face.box[2] + 1 && pane[1] >= face.box[1] - 1 && pane[3] <= face.box[3] + 1, front.name);
+    assert.ok(front.house.panes.length + front.house.dark.length >= 2 && inside(front.house.plain) && front.house.plainPerMetre > 5, front.name);
     assert.ok(front.tone.length === 3 && front.tone.every((part) => part > 0.3 && part < 1), front.name);
+    // The styles of house it is made for, and how rare such a house is.
+    assert.ok(front.styles.length >= 1 && front.styles.every((style) => styles.includes(style)) && front.rare >= 0 && front.rare < 1, front.name);
   }
+  // Every style of house has at least three fronts made for it.
+  for (const style of styles) assert.ok(KIT.fronts.filter((front) => front.styles.includes(style)).length >= 3, style);
   for (const name of ['floor', 'paving', 'white', 'unit', 'dark']) assert.ok(inside(KIT.stuff[name]), name);
   const picture = new Uint8Array(readFileSync(new URL(`../models/${FRONTS_PICTURE}.jpg`, import.meta.url)));
-  assert.ok(picture[0] === 0xff && picture[1] === 0xd8 && picture.length < 700000);
+  assert.ok(picture[0] === 0xff && picture[1] === 0xd8 && picture.length < 1300000);
 });
 
-test('each house is given a front that fits it, near its own paint', () => {
+test('each house is given a front that fits it: mostly one of its own style, leaning to its own paint', () => {
   const chance = chanceOf(5);
-  const named = (plotWide, faceWide, paint, id = 5) => KIT.fronts[frontFor(plotWide, faceWide, 9.6, paint, chanceOf(id))].name;
-  const street = (plotWide, faceWide, paint) => {
+  const street = (plotWide, faceWide, paint, style) => {
     const count = {};
-    for (let id = 1; id <= 200; id += 1) count[named(plotWide, faceWide, paint, id)] = (count[named(plotWide, faceWide, paint, id)] ?? 0) + 1;
+    for (let id = 1; id <= 400; id += 1) {
+      const name = KIT.fronts[frontFor(plotWide, faceWide, 9.6, paint, chanceOf(id), KIT.fronts, style)].name;
+      count[name] = (count[name] ?? 0) + 1;
+    }
     return count;
   };
-  // Along a street of houses in one paint, every front comes up: no street is all one house.
+  const share = (count, names) => names.reduce((sum, name) => sum + (count[name] ?? 0), 0) / 400;
+  const made = (style) => KIT.fronts.filter((front) => front.styles.includes(style)).map((front) => front.name);
+  // Along a street of wide houses in one paint, nearly every front comes up, and none on more than a third
+  // of them: no street is all one house.
   const beige = street(15, 12, '#d6c3a2');
-  assert.ok(Object.keys(beige).length >= 4 && Object.values(beige).every((count) => count >= 12 && count <= 120), JSON.stringify(beige));
-  // The paint leans the choice: of white houses, most are given the white front.
+  assert.ok(Object.keys(beige).length >= 9 && Object.values(beige).every((count) => count <= 133), JSON.stringify(beige));
+  // The paint leans the choice: of white houses, more than half are given one of the light fronts.
+  const light = KIT.fronts.filter((front) => (front.tone[0] + front.tone[1] + front.tone[2]) / 3 > 0.84).map((front) => front.name);
   const white = street(16, 14, '#f2f1ee');
-  assert.ok(white.white > 90 && Object.keys(white).length >= 2, JSON.stringify(white));
+  assert.ok(light.length >= 3 && share(white, light) > 0.5 && Object.keys(white).length >= 6, JSON.stringify(white));
+  // The style decides most: three in four houses of a style are given a front made for it, yet not all, and
+  // more than one such front comes up.
+  for (const [style, paint] of [['plaster', '#cfae84'], ['stone', '#e3d6b8'], ['arched', '#e9e0c8'], ['modern', '#d9d4c8']]) {
+    const count = street(19, 13, paint, style);
+    const own = share(count, made(style));
+    assert.ok(own > 0.7 && own < 0.97 && made(style).filter((name) => count[name] > 20).length >= 2, `${style}: ${JSON.stringify(count)}`);
+  }
+  // A house of the old Najdi look is rare, whatever the style.
+  for (const style of ['plaster', 'stone']) assert.ok(share(street(19, 13, '#cfae84', style), ['najdi']) < 0.15, style);
   // A narrow house: never the grand front that would have to be made half its size.
   assert.equal(street(9.5, 7, '#dccdb2').limestone, undefined);
+  assert.ok(Object.keys(street(9.5, 7, '#dccdb2')).length >= 3);
+  // One that no front fits (lower than any front's own wall and face): still given one, the nearest fit.
+  assert.ok(frontFor(3, 2, 4, '#dccdb2', chance) >= 0);
   // And the same house is always given the same.
   assert.equal(frontFor(15, 12, 9.6, '#d6c3a2', chance), frontFor(15, 12, 9.6, '#d6c3a2', chance));
 });
@@ -164,4 +189,102 @@ test('houses dressed from the kit: each on its own plot, in its own measure, no 
   assert.ok(near(gateOf(houses[0]), gateOf(wider), 1e-6));
   // A house with no parts of its own (one the map has whole) is left as it is.
   assert.deepEqual(dressInFronts([{ ...houses[0], parts: null }], origin), []);
+});
+
+test('a house keeps its own chance, whatever it is called by', () => {
+  // By a number, by that number written out, or by a name: always a number from 0 up to 1, the same every time.
+  assert.equal(chanceOf(5)(20), chanceOf('5')(20));
+  for (const id of [5, 86166713698699, 'w1234', 'tile/12/7:3']) {
+    const value = chanceOf(id)(20);
+    assert.ok(value >= 0 && value < 1 && value === chanceOf(id)(20) && value !== chanceOf(id)(21), String(id));
+  }
+  assert.notEqual(chanceOf('w1234')(20), chanceOf('w1235')(20));
+});
+
+test('a house\'s own paint is laid over its front without turning its colour', () => {
+  // No paint, or the front's own colour as paint: the picture as it is.
+  assert.deepEqual(tintOf(undefined, [0.8, 0.7, 0.6]), [128, 128, 128]);
+  assert.deepEqual(tintOf('#cccccc', [0.8, 0.8, 0.8]), [128, 128, 128]);
+  // A tan paint over a nearly white front: darker, the blue of it most and the red of it least (a tan), and
+  // each part by the same share of what the paint asked for: held back alike, not each on its own (which made
+  // it pink). No part is made darker than 0.78 of itself.
+  const tone = [0.957, 0.923, 0.886];
+  const [red, green, blue] = tintOf('#cfae84', tone);
+  assert.ok(red > green && green > blue && blue >= Math.round(0.39 * 255) && red < 128, [red, green, blue].join(' '));
+  const asked = [0xcf, 0xae, 0x84].map((part, n) => part / 255 / tone[n] - 1);
+  const given = [red, green, blue].map((part) => (part / 255) * 2 - 1);
+  assert.ok(near(given[0] / asked[0], given[2] / asked[2], 0.03) && near(given[1] / asked[1], given[2] / asked[2], 0.03) && near(given[2], -0.22, 0.005));
+  // A lighter paint over a darker front: lighter, by no more than 1.3.
+  assert.ok(tintOf('#ffffff', [0.5, 0.5, 0.5]).every((part) => part === Math.round(0.65 * 255)));
+});
+
+test('along a row of houses, neighbours are not given the same front', () => {
+  // Forty houses of one style in a row of one block, all of a size: with the draws of neighbours set as far
+  // apart as can be, no front made for that style comes twice running.
+  for (const style of ['modern', 'stone', 'plaster']) {
+    const row = Array.from({ length: 40 }, (_, cell) => houseOf(500 + cell, 14, 13, { block: 77, row: 0, cell, style, paint: '#d9d4c8' }));
+    const names = row.map((house) => KIT.fronts[frontOfHouse(house)].name);
+    let twins = 0;
+    for (let n = 1; n < names.length; n += 1) if (names[n] === names[n - 1]) twins += 1;
+    assert.ok(twins <= 2 && new Set(names).size >= 3, `${style}: ${names.join(' ')}`);
+  }
+  // (Without a place in a row, a house is given its front by its own chance alone.)
+  const lone = houseOf(9, 14, 13);
+  assert.equal(frontOfHouse(lone), frontFor(14 + 1 + 2.4, 14, 8.2 + 1.4, lone.paint, chanceOf(9)));
+});
+
+test('what a front has besides its windows: lamps, closed shutters, battlements, a face drawn out a little', () => {
+  const only = (name) => ({ ...KIT, fronts: KIT.fronts.filter((front) => front.name === name) });
+  const night = (mesh) => {
+    const count = { lamps: 0, lit: 0 };
+    for (let i = 3; i < mesh.tints.length; i += 4) {
+      if (mesh.tints[i] === 255) count.lamps += 1;
+      else if (mesh.tints[i] >= 128) count.lit += 1;
+    }
+    return count;
+  };
+  // The Najdi front: its windows are closed shutters, never lit, though they are set in the other walls too;
+  // its wall's lamps are lit, the one on a plain piece of wall every time that piece is laid; and its
+  // battlements stand over the top of every wall of the house, all the way round.
+  const najdi = KIT.fronts.find((front) => front.name === 'najdi');
+  assert.ok(najdi.house.panes.length === 0 && najdi.house.dark.length >= 2 && najdi.house.crest && najdi.house.crest.rects.length >= 1);
+  const [castle] = dressInFronts([houseOf(1, 26, 13)], origin, only('najdi'));
+  assert.ok(night(castle).lit === 0 && night(castle).lamps >= 4 * 4, JSON.stringify(night(castle)));
+  let [front, back, left, right] = [0, 0, 0, 0];
+  for (let i = 0; i < castle.corners; i += 1) {
+    const [east, north, up] = [castle.positions[i * 3], castle.positions[i * 3 + 1], castle.positions[i * 3 + 2]];
+    if (up <= 9.6 + 0.05 || up > 10.4) continue;
+    if (Math.abs(north) < 0.1) front += 1;
+    if (near(north, 13, 0.01)) back += 1;
+    if (near(east, 0, 0.01)) left += 1;
+    if (near(east, 26, 0.01)) right += 1;
+  }
+  assert.ok(front > 8 && back > 40 && left > 20 && right > 20, [front, back, left, right].join(' '));
+  // A front without battlements: nothing of the house's walls stands over their top.
+  const [flat] = dressInFronts([houseOf(1, 26, 13)], origin, only('older'));
+  for (let i = 0; i < flat.corners; i += 1) {
+    const [east, north, up] = [flat.positions[i * 3], flat.positions[i * 3 + 1], flat.positions[i * 3 + 2]];
+    if (Math.abs(north) < 0.1 || near(north, 13, 0.01) || near(east, 0, 0.01) || near(east, 26, 0.01)) assert.ok(up <= 9.6 + 1e-6, `${east} ${north} ${up}`);
+  }
+  // The limestone-and-white front has two lamps on its face and none on its wall: lit on every house.
+  const stone = KIT.fronts.find((each) => each.name === 'stone');
+  assert.ok(stone.wall.lamps.length === 0 && stone.house.lamps.length === 2);
+  assert.equal(night(dressInFronts([houseOf(1, 14, 13)], origin, only('stone'))[0]).lamps, 2 * 4);
+  // A house a little wider than a face: the face is drawn out to cover its wall. One much wider: the face
+  // keeps its size, and what is left beside it is given windows.
+  const spanOf = (wide) => {
+    const [mesh] = dressInFronts([houseOf(1, wide, 13)], origin, only('stone'));
+    let [from, until, beside] = [Infinity, -Infinity, 0];
+    for (let i = 0; i < mesh.corners; i += 1) {
+      const [east, north, up] = [mesh.positions[i * 3], mesh.positions[i * 3 + 1], mesh.positions[i * 3 + 2]];
+      if (!near(north, -0.06, 1e-4) || up < 3.5) continue;
+      from = Math.min(from, east);
+      until = Math.max(until, east);
+    }
+    return until - from;
+  };
+  const face = faceMeasure(stone);
+  const own = face.wide * ((9.6 - stone.wall.height) / face.tall);
+  assert.ok(near(spanOf(own * 1.08), own * 1.08 * 0.98, 0.02), `${spanOf(own * 1.08)} of ${own * 1.08}`);
+  assert.ok(spanOf(own * 1.6) > own * 1.2 && spanOf(own * 1.6) < own * 1.6, `${spanOf(own * 1.6)} beside ${own}`);
 });

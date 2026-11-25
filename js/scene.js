@@ -1091,7 +1091,8 @@ export class SceneLayer {
     this.walls = { mesh: null, buffers: null, stale: true }; // the walls, worked out point by point
     this.models = { mesh: null, buffers: null, stale: true }; // the models of the famous buildings
     this.props = []; // the models that carry a picture, each where it stands: { mesh, picture, at, turn, tall, lit }
-    this.propStore = new Map(); // what each of their meshes keeps in the graphics memory: mesh -> { buffers, texture }
+    this.propStore = new Map(); // what each of their meshes keeps in the graphics memory: mesh -> { buffers }
+    this.pictureStore = new Map(); // and each of their pictures, once however many meshes it lies on: picture -> texture
     this.modelOpacity = 1; // they show from further off than the rest of the scene does
     this.haze = 0; // how much haze hangs in the distance: 0 in a view from above, 1 in one that reaches the horizon
     this.hazeBuffer = null;
@@ -1181,6 +1182,7 @@ export class SceneLayer {
     this.models.buffers = null;
     this.models.stale = true;
     this.propStore.clear();
+    this.pictureStore.clear();
     this.shadow.target = null;
     this.shadow.buffer = null;
     this.shadow.ready = false;
@@ -1209,6 +1211,8 @@ export class SceneLayer {
     this.models.buffers = null;
     for (const kept of this.propStore.values()) this.dropProp(gl, kept);
     this.propStore.clear();
+    for (const texture of this.pictureStore.values()) gl.deleteTexture(texture);
+    this.pictureStore.clear();
     for (const kept of [this.shadow, this.heights]) {
       const target = kept.target;
       if (target) {
@@ -1329,25 +1333,30 @@ export class SceneLayer {
    * clockwise, tall: its height in metres, lit: 0 to 1, gain and plain: for
    * a picture taken by night, how much brighter it is drawn by day and how
    * much of the lamps' colour is taken out of it }]. One mesh may stand in
-   * several places. A mesh no longer on the list is let go.
+   * several places, and one picture may lie on several meshes: it is kept
+   * once. A mesh or a picture no longer on the list is let go.
    */
   setProps(list) {
     this.props = list.map((one) => ({ mesh: one.mesh, picture: one.picture, at: one.at, turn: one.turn ?? 0, tall: one.tall ?? 1, lit: one.lit ?? 0, gain: one.gain ?? 1, plain: one.plain ?? 0.25 }));
+    const gl = this.map?.painter?.context?.gl;
     const used = new Set(this.props.map((one) => one.mesh));
     for (const [mesh, kept] of this.propStore) {
       if (used.has(mesh)) continue;
-      const gl = this.map?.painter?.context?.gl;
       if (gl) this.dropProp(gl, kept);
       this.propStore.delete(mesh);
+    }
+    const shown = new Set(this.props.map((one) => one.picture));
+    for (const [picture, texture] of this.pictureStore) {
+      if (shown.has(picture)) continue;
+      if (gl) gl.deleteTexture(texture);
+      this.pictureStore.delete(picture);
     }
   }
 
   /** Let go of what one such model keeps in the graphics memory. */
   dropProp(gl, kept) {
     if (kept.buffers) for (const buffer of Object.values(kept.buffers)) gl.deleteBuffer(buffer);
-    if (kept.texture) gl.deleteTexture(kept.texture);
     kept.buffers = null;
-    kept.texture = null;
   }
 
   /**
@@ -1929,7 +1938,7 @@ export class SceneLayer {
         let kept = this.propStore.get(prop.mesh);
         const fresh = !kept;
         if (fresh) {
-          kept = { buffers: { positions: gl.createBuffer(), normals: gl.createBuffer(), uvs: gl.createBuffer(), indices: gl.createBuffer(), ...(prop.mesh.tints ? { tints: gl.createBuffer() } : {}) }, texture: gl.createTexture() };
+          kept = { buffers: { positions: gl.createBuffer(), normals: gl.createBuffer(), uvs: gl.createBuffer(), indices: gl.createBuffer(), ...(prop.mesh.tints ? { tints: gl.createBuffer() } : {}) } };
           this.propStore.set(prop.mesh, kept);
         }
         // Its tints: a mesh of many houses has one at every corner; a model that stands alone has none, and is left as it is.
@@ -1952,14 +1961,33 @@ export class SceneLayer {
         send(kept.buffers.uvs, at.uv, prop.mesh.uvs, 2);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, kept.buffers.indices);
         if (fresh) gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, prop.mesh.indices, gl.STATIC_DRAW);
-        gl.bindTexture(gl.TEXTURE_2D, kept.texture);
-        if (fresh) {
-          // Its picture: smoothed for the distance, and never repeated past its edge.
+        let texture = this.pictureStore.get(prop.picture);
+        const unseen = !texture;
+        if (unseen) {
+          texture = gl.createTexture();
+          this.pictureStore.set(prop.picture, texture);
+        }
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        if (unseen) {
+          // Its picture: smoothed for the distance, and never repeated past its edge. (One larger than this
+          // device can hold is halved until it can: a place on it is a share of its width and height, so
+          // nothing that is drawn from it moves.)
+          let picture = prop.picture;
+          const most = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048;
+          if (Math.max(picture.width, picture.height) > most && typeof document !== 'undefined') {
+            let [wide, high] = [picture.width, picture.height];
+            while (Math.max(wide, high) > most) [wide, high] = [Math.max(wide >> 1, 1), Math.max(high >> 1, 1)];
+            const smaller = document.createElement('canvas');
+            smaller.width = wide;
+            smaller.height = high;
+            smaller.getContext('2d').drawImage(picture, 0, 0, wide, high);
+            picture = smaller;
+          }
           gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
           gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, prop.picture);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, picture);
           const square = (size) => size > 0 && (size & (size - 1)) === 0;
-          const whole = square(prop.picture.width) && square(prop.picture.height);
+          const whole = square(picture.width) && square(picture.height);
           if (whole) gl.generateMipmap(gl.TEXTURE_2D);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, whole ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);

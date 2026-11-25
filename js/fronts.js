@@ -35,14 +35,25 @@ const PARAPET_METERS = 1.1; // a parapet stands so far over the roof's floor
 const ROOF_OVER_METERS = 1.4; // and its top so far over what the house is on record as tall
 const PROUD = 0.06; // a picture laid on a wall lies this far before it, a window's pane as far again
 const SMALLEST_SCALE = 0.66; // a front made smaller than this to fit a house is not that front any more
+const WIDER_AT_MOST = 1.125; // a face may be drawn out this much across a house a little wider than it
+const BESIDE_FACE_METERS = 2.6; // plain wall this long beside a face is given a window of its own
 const MOST_CORNERS = 65535;
 /** Of a house's windows that can be lit, so many are on any night. */
 const WINDOWS_LIT = 0.5;
 
-/** A number from 0 up to 1 that is a house's own: a different one for each n, the same every time. */
+/**
+ * A number from 0 up to 1 that is a house's own: a different one for each n,
+ * the same every time. id: a number, or any name (a name is turned into a
+ * number of its own first).
+ */
 export function chanceOf(id) {
+  let seed = Number(id);
+  if (!Number.isFinite(seed)) {
+    seed = 7;
+    for (const letter of String(id)) seed = (seed * 31 + letter.codePointAt(0)) % 1000003;
+  }
   return (n) => {
-    const value = Math.sin(Number(id) * 12.9898 + n * 78.233 + 0.37) * 43758.5453;
+    const value = Math.sin(seed * 12.9898 + n * 78.233 + 0.37) * 43758.5453;
     return value - Math.floor(value);
   };
 }
@@ -103,11 +114,18 @@ export function layStrip(pieces, perMetre, width, flip = false) {
   return runs;
 }
 
-/** How far a front's face of a house reaches across and up, in metres at its own size; and its box in the picture. */
+/**
+ * How far a front's face of a house reaches across and up, in metres at its
+ * own size; its box in the picture; and top: where in the picture the top
+ * of the house's wall is (the top of the box; under a crest of battlements,
+ * the row they stand on: they rise over the wall's top, and are not counted
+ * in how tall the face is).
+ */
 export function faceMeasure(front) {
   const rects = front.house.rects;
   const box = [Math.min(...rects.map((r) => r[0])), Math.min(...rects.map((r) => r[1])), Math.max(...rects.map((r) => r[2])), Math.max(...rects.map((r) => r[3]))];
-  return { box, wide: (box[2] - box[0]) / front.house.perMetre, tall: (box[3] - box[1]) / front.house.perMetre };
+  const top = front.house.crest ? front.house.crest.v : box[1];
+  return { box, top, wide: (box[2] - box[0]) / front.house.perMetre, tall: (box[3] - top) / front.house.perMetre };
 }
 
 /** How wide the pieces of a front's wall are that keep their size, in metres. */
@@ -118,32 +136,77 @@ function fixedWide(front) {
 /**
  * Which front a house is dressed in: one that fits it (its gate into the
  * plot's width, its face on to the house's own without being made much
- * smaller), and of those the one nearest the house's own paint, with a
- * little chance in it, so that a street is neither all one front nor a
- * patchwork.
+ * smaller), and of those mostly one made for the house's own style and
+ * near its own paint, with chance in it, so that a street is neither all
+ * one front nor a patchwork, and a district of new houses does not look
+ * like one of old ones.
  *
  * plotWide, faceWide, faceTall: the plot along the street, and the wall of
  * the house the face goes on, in metres. paint: '#rrggbb'. chance: the
- * house's own (see chanceOf). Returns its place in fronts.
+ * house's own (see chanceOf). style: the house's (see HOUSE_STYLES in
+ * houses.js), if it has one. Returns its place in fronts.
  */
-export function frontFor(plotWide, faceWide, faceTall, paint, chance, fronts = KIT.fronts) {
+export function frontFor(plotWide, faceWide, faceTall, paint, chance, fronts = KIT.fronts, style = undefined) {
   const colour = typeof paint === 'string' && /^#[0-9a-f]{6}$/i.test(paint) ? [1, 3, 5].map((at) => Number.parseInt(paint.slice(at, at + 2), 16) / 255) : null;
-  let best = 0;
-  let least = Infinity;
-  fronts.forEach((front, n) => {
+  // How well each fits: how small its face must be made for the house, and whether its gate goes into the plot.
+  const fits = fronts.map((front) => {
     const face = faceMeasure(front);
-    const fits = Math.min((faceWide * 0.98) / face.wide, Math.max(faceTall - front.wall.height, 1) / face.tall);
-    // (One that must be made much smaller, or whose gate is wider than the plot, is the last to be taken.)
-    const misfit = (fits < SMALLEST_SCALE ? 2 + (SMALLEST_SCALE - fits) : 0) + (fixedWide(front) > plotWide ? 2 : 0);
-    const far = colour ? Math.hypot(colour[0] - front.tone[0], colour[1] - front.tone[1], colour[2] - front.tone[2]) : 0;
-    // (Its own paint is laid over whichever it is given, so the colour only leans the choice: chance has the most say.)
-    const score = misfit + 0.6 * far + 0.5 * chance(20 + n);
-    if (score < least) {
-      least = score;
-      best = n;
-    }
+    return Math.min((faceWide * 0.98) / face.wide, Math.max(faceTall - front.wall.height, 1) / face.tall) - (fixedWide(front) > plotWide ? 1 : 0);
   });
-  return best;
+  // Of those that fit, each has its share of the houses: a full one if it is made for the house's style, a
+  // small one if not; the larger the nearer its own colour is to the house's paint (the paint is laid over
+  // whichever front is taken, so this only leans the choice); the smaller the rarer such a house is.
+  const shares = fronts.map((front, n) => {
+    if (fits[n] < SMALLEST_SCALE) return 0;
+    const far = colour ? Math.hypot(colour[0] - front.tone[0], colour[1] - front.tone[1], colour[2] - front.tone[2]) : 0;
+    const own = !style || !(front.styles?.length > 0) || front.styles.includes(style) ? 1 : 0.08;
+    return own * Math.exp(-far / 0.45) * (1 - (front.rare ?? 0));
+  });
+  const all = shares.reduce((sum, share) => sum + share, 0);
+  // (None fits: the one that fits best.)
+  if (!(all > 0)) return fits.indexOf(Math.max(...fits));
+  let left = chance(20) * all;
+  let last = 0;
+  for (let n = 0; n < shares.length; n += 1) {
+    if (shares[n] <= 0) continue;
+    last = n;
+    left -= shares[n];
+    if (left < 0) return n;
+  }
+  return last;
+}
+
+/**
+ * Which front one house is dressed in: its place in the kit's fronts. By the
+ * house's own chance; but along a row of houses, by its place in the row,
+ * each draw as far from the one before as can be (by the golden section),
+ * so that two neighbours are seldom given the same front.
+ */
+export function frontOfHouse(house, kit = KIT) {
+  const chance = chanceOf(house.id);
+  const plot = house.plot ?? { front: 0, left: 0, right: 0, behind: 0 };
+  const main = house.parts.find((part) => part.part === 'main') ?? house.parts[0];
+  const drawn = house.block !== undefined && house.cell !== undefined ? (chanceOf(house.block)(20 + (house.row ?? 0)) + house.cell * 0.6180339887) % 1 : chance(20);
+  return frontFor(house.wide + plot.left + plot.right, main.a1 - main.a0, main.height + ROOF_OVER_METERS, house.paint, (n) => (n === 20 ? drawn : chance(n)), kit.fronts, house.style);
+}
+
+/**
+ * What a front's picture is coloured by to bring it towards a house's own
+ * paint: three numbers, each half of what the picture's colour is multiplied
+ * by, as a byte (128: left as it is).
+ *
+ * The paint is laid over the front, but never so far from the front's own
+ * colour that its picture is washed out or burnt: no part is made darker
+ * than 0.78 of itself or lighter than 1.3. Where the paint asks for more,
+ * all three parts are held back alike, so that the colour still leans the
+ * way of the paint (held back each on its own, a tan paint over a white
+ * front came out pink).
+ */
+export function tintOf(paint, tone) {
+  if (!(typeof paint === 'string' && /^#[0-9a-f]{6}$/i.test(paint))) return [128, 128, 128];
+  const asked = [1, 3, 5].map((k, n) => Number.parseInt(paint.slice(k, k + 2), 16) / 255 / Math.max(tone[n], 0.05) - 1);
+  const held = Math.min(1, ...asked.map((by) => (by < -0.22 ? -0.22 / by : by > 0.3 ? 0.3 / by : 1)));
+  return asked.map((by) => Math.round(((1 + by * held) / 2) * 255));
 }
 
 /** Meshes being filled: corners in the scene's metres, each with its place on the picture, its tint and how it shows by night. */
@@ -213,13 +276,11 @@ function dressOne(meshes, house, at, kit, sizeU, sizeV) {
   // The part the front's face goes on: the main part's wall towards the street.
   const main = house.parts.find((part) => part.part === 'main') ?? house.parts[0];
   const mainTop = main.height + ROOF_OVER_METERS;
-  const front = kit.fronts[frontFor(A1 - A0, main.a1 - main.a0, mainTop, house.paint, chance, kit.fronts)];
+  const front = kit.fronts[frontOfHouse(house, kit)];
   const flip = chance(7) < 0.5;
   const walled = plot.front >= 0.8;
   const wallTall = front.wall.height;
-  // Its own paint over the front's: but never so far from the front's own that its picture is washed out.
-  const paint = typeof house.paint === 'string' && /^#[0-9a-f]{6}$/i.test(house.paint) ? [1, 3, 5].map((k) => Number.parseInt(house.paint.slice(k, k + 2), 16) / 255) : front.tone;
-  const tint = paint.map((part, k) => Math.round(Math.min(Math.max(Math.min(Math.max(part / Math.max(front.tone[k], 0.05), 0.78), 1.3) / 2, 0), 1) * 255));
+  const tint = tintOf(house.paint, front.tone);
   const plainTint = [128, 128, 128];
 
   /** A flat face of four corners (along, back, up), told which way it looks; where each lies on the picture; its tint; how it shows by night (0: by the lamps' light). */
@@ -320,15 +381,17 @@ function dressOne(meshes, house, at, kit, sizeU, sizeV) {
     const runs = layStrip(front.wall.pieces, front.wall.perMetre, a1 - a0, flip);
     const [v0, v1] = front.wall.v;
     for (const run of runs) upright(a0 + run.a0, b, a0 + run.a1, b, z0, z0 + wallTall, S, [run.u0, v0, run.u1, v1]);
-    // Its lamps: where the piece each is on came to lie.
+    // Its lamps: wherever the piece each is on came to lie (a lamp on a plain piece, every time that piece is
+    // laid with the lamp whole on it).
+    const high = (v) => z0 + ((v1 - v) / (v1 - v0)) * wallTall;
     for (const lamp of front.wall.lamps) {
-      const middle = (lamp[0] + lamp[2]) / 2;
-      const run = runs.find((one) => one.kind !== 'plain' && middle >= Math.min(one.u0, one.u1) && middle <= Math.max(one.u0, one.u1));
-      if (!run) continue;
-      const where = (u) => a0 + run.a0 + ((u - run.u0) / (run.u1 - run.u0)) * (run.a1 - run.a0);
-      const high = (v) => z0 + ((v1 - v) / (v1 - v0)) * wallTall;
-      const [l0, l1] = [where(lamp[0]), where(lamp[2])].sort((p, q) => p - q);
-      upright(l0, b - PROUD, l1, b - PROUD, high(lamp[3]), high(lamp[1]), S, flip ? [lamp[2], lamp[1], lamp[0], lamp[3]] : lamp, plainTint, 255);
+      for (const run of runs) {
+        if (lamp[0] < Math.min(run.u0, run.u1) || lamp[2] > Math.max(run.u0, run.u1)) continue;
+        const where = (u) => a0 + run.a0 + ((u - run.u0) / (run.u1 - run.u0)) * (run.a1 - run.a0);
+        const [l0, l1] = [where(lamp[0]), where(lamp[2])].sort((p, q) => p - q);
+        // (On a piece laid in mirror image, the lamp in mirror image too.)
+        upright(l0, b - PROUD, l1, b - PROUD, high(lamp[3]), high(lamp[1]), S, run.u1 < run.u0 ? [lamp[2], lamp[1], lamp[0], lamp[3]] : lamp, plainTint, 255);
+      }
     }
   };
 
@@ -356,6 +419,35 @@ function dressOne(meshes, house, at, kit, sizeU, sizeV) {
     level(A0, B1 - T, A1, B1, sideTall, coping);
   }
   if (plot.front + plot.left + plot.right + plot.behind > 0.5) level(A0, B0, A1, B1, 0.05, kit.stuff.paving, plainTint);
+
+  // The face of the house, on the main part's wall towards the street: the front's own, at the size that
+  // brings its foot to the top of the street wall and its top to the house's own, or smaller if the house is
+  // narrower than it. (It is laid further down, when the walls stand.)
+  const measure = faceMeasure(front);
+  const faceWide = main.a1 - main.a0;
+  const scale = Math.min(Math.max((mainTop - wallTall) / measure.tall, SMALLEST_SCALE), 1.3, (faceWide * 0.98) / measure.wide);
+  // (A house only a little wider than the face: the face is drawn out across it, by no more than an eighth.)
+  const drawnOut = (faceWide * 0.98) / (measure.wide * scale);
+  const across = drawnOut <= WIDER_AT_MOST ? Math.max(drawnOut, 1) : 1;
+  const faceSpan = measure.wide * scale * across;
+  const left = main.a0 + (faceWide - faceSpan) * (0.25 + 0.5 * chance(8));
+  const perMetre = front.house.perMetre / scale;
+  // A crest of battlements, on a front that has one: its merlons one after another along the top of a wall, as
+  // large as the face's own (which stand where the face is).
+  const crest = front.house.crest;
+  const merlons = (a0, b0, a1, b1, z, looks) => {
+    const length = Math.hypot(a1 - a0, b1 - b0);
+    const every = crest.every / perMetre;
+    const count = Math.floor(length / every);
+    const [first] = crest.rects;
+    const lead = (length - count * every) / 2 + (every - (first[2] - first[0]) / perMetre) / 2;
+    for (let n = 0; n < count; n += 1) {
+      for (const rect of crest.rects) {
+        const [s0, s1] = [(lead + n * every + (rect[0] - first[0]) / perMetre) / length, (lead + n * every + (rect[2] - first[0]) / perMetre) / length];
+        upright(a0 + (a1 - a0) * s0, b0 + (b1 - b0) * s0, a0 + (a1 - a0) * s1, b0 + (b1 - b0) * s1, z + (crest.v - rect[3]) / perMetre, z + (crest.v - rect[1]) / perMetre, looks, rect);
+      }
+    }
+  };
 
   // The parts of the house: walls of the front's plain stuff, a parapet with the roof's floor behind it.
   const room = house.parts.find((part) => part.part === 'room');
@@ -391,23 +483,27 @@ function dressOne(meshes, house, at, kit, sizeU, sizeV) {
     upright(a0 + T, b0 + T, a0 + T, b1 - T, floor, top, E, coping);
     upright(a1 - T, b1 - T, a1 - T, b0 + T, floor, top, W, coping);
     level(a0 + T, b0 + T, a1 - T, b1 - T, floor, kit.stuff.floor, plainTint);
+    if (crest) {
+      // (On the main part's wall to the street, only beside the face: the face brings its own.)
+      if (!against('front') && part !== main) merlons(a0, b0, a1, b0, top, S);
+      if (part === main) {
+        if (left - a0 > 0.5) merlons(a0, b0, left, b0, top, S);
+        if (a1 - (left + faceSpan) > 0.5) merlons(left + faceSpan, b0, a1, b0, top, S);
+      }
+      if (!against('back')) merlons(a1, b1, a0, b1, top, N);
+      if (!against('left')) merlons(a0, b1, a0, b0, top, W);
+      if (!against('right')) merlons(a1, b0, a1, b1, top, E);
+    }
   }
 
-  // The face of the house, on the main part's wall towards the street: the front's own, at the size that
-  // brings its foot to the top of the street wall and its top to the house's own, or smaller if the house is
-  // narrower than it; where there is no street wall, the wall's strip with its gate is the foot of the house.
-  const measure = faceMeasure(front);
-  const faceWide = main.a1 - main.a0;
+  // The face is laid now. Where there is no street wall, the wall's strip with its gate is the foot of the house.
   if (!walled) wallStrip(main.a0, main.a1, main.b0 - PROUD, 0);
-  const scale = Math.min(Math.max((mainTop - wallTall) / measure.tall, SMALLEST_SCALE), 1.3, (faceWide * 0.98) / measure.wide);
-  const left = main.a0 + (faceWide - measure.wide * scale) * (0.25 + 0.5 * chance(8));
-  const perMetre = front.house.perMetre / scale;
   // (flip: the face in mirror image about its own middle.)
   const along = (u) => {
-    const a = left + (u - measure.box[0]) / perMetre;
-    return flip ? 2 * left + measure.wide * scale - a : a;
+    const a = left + ((u - measure.box[0]) / perMetre) * across;
+    return flip ? 2 * left + faceSpan - a : a;
   };
-  const high = (v) => mainTop - (v - measure.box[1]) / perMetre;
+  const high = (v) => mainTop - (v - measure.top) / perMetre;
   const laid = (box, proud, tinted, lamp) => {
     const [l, r] = flip ? [along(box[2]), along(box[0])] : [along(box[0]), along(box[2])];
     const z0 = Math.max(high(box[3]), 0);
@@ -417,20 +513,22 @@ function dressOne(meshes, house, at, kit, sizeU, sizeV) {
     upright(l, main.b0 - proud, r, main.b0 - proud, z0, high(box[1]), S, flip ? [box[2], box[1], box[0], foot] : [box[0], box[1], box[2], foot], tinted, lamp);
   };
   for (const rect of front.house.rects) laid(rect, PROUD, tint, 0);
-  // Its windows: each a pane of its own before the face, lit on some houses by night and dark on others.
+  // Its windows: each a pane of its own before the face, lit on some houses by night and dark on others. And
+  // the lamps on its face, lit on all.
   front.house.panes.forEach((pane, n) => laid(pane, PROUD * 2, tint, chance(40 + n) < WINDOWS_LIT ? 230 : 0));
+  for (const lamp of front.house.lamps ?? []) laid(lamp, PROUD * 2, plainTint, 255);
 
   // Windows in the other walls of the house: one of the front's own windows, at its own size, every few metres
   // along the upper floor of every wall that stands free (and along the wing's one floor), some of them left
-  // out; lit on some houses by night.
-  const windows = front.house.panes;
+  // out; lit on some houses by night (but never one whose shutters are closed in the picture).
+  const windows = [...front.house.panes.map((pane) => [pane, true]), ...(front.house.dark ?? []).map((pane) => [pane, false])];
   if (windows.length > 0) {
-    const sticker = (a0, b0, a1, b1, looks, low, tall, key) => {
+    const sticker = (a0, b0, a1, b1, looks, low, tall, key, atLeast = 0) => {
       const length = Math.hypot(a1 - a0, b1 - b0);
-      const count = Math.floor(length / 3.6);
+      const count = Math.max(Math.floor(length / 3.6), atLeast);
       for (let n = 0; n < count; n += 1) {
         if (chance(60 + key * 9 + n) < 0.22) continue;
-        const pane = windows[Math.floor(chance(70 + key * 9 + n) * windows.length)];
+        const [pane, lights] = windows[Math.floor(chance(70 + key * 9 + n) * windows.length)];
         // (With a margin of the wall round it, as the picture has it: its frame, its sill, its arch.)
         const box = [pane[0] - 5, pane[1] - 5, pane[2] + 5, pane[3] + 5];
         const wide = (box[2] - box[0]) / front.house.perMetre;
@@ -439,7 +537,7 @@ function dressOne(meshes, house, at, kit, sizeU, sizeV) {
         const [s0, s1] = [(middle - wide / 2) / length, (middle + wide / 2) / length];
         const out = [looks[0] * PROUD, looks[1] * PROUD];
         const z0 = low + (tall - high) * 0.5;
-        upright(a0 + (a1 - a0) * s0 + out[0], b0 + (b1 - b0) * s0 + out[1], a0 + (a1 - a0) * s1 + out[0], b0 + (b1 - b0) * s1 + out[1], z0, z0 + high, looks, box, tint, chance(80 + key * 9 + n) < WINDOWS_LIT * 0.7 ? 230 : 0);
+        upright(a0 + (a1 - a0) * s0 + out[0], b0 + (b1 - b0) * s0 + out[1], a0 + (a1 - a0) * s1 + out[0], b0 + (b1 - b0) * s1 + out[1], z0, z0 + high, looks, box, tint, lights && chance(80 + key * 9 + n) < WINDOWS_LIT * 0.7 ? 230 : 0);
       }
     };
     house.parts.forEach((part, k) => {
@@ -451,8 +549,13 @@ function dressOne(meshes, house, at, kit, sizeU, sizeV) {
       if (free('back')) sticker(a1, b1, a0, b1, N, low, tall, k * 4);
       if (free('left')) sticker(a0, b1, a0, b0, W, low, tall, k * 4 + 1);
       if (free('right')) sticker(a1, b0, a1, b1, E, low, tall, k * 4 + 2);
-      // (The street side of a part that does not carry the front's own face.)
+      // (The street side of a part that does not carry the front's own face; and of the one that does, what
+      // is left of its wall on either side of the face, if that is more than a strip.)
       if (part !== main && free('front')) sticker(a0, b0, a1, b0, S, low, tall, k * 4 + 3);
+      if (part === main) {
+        if (left - a0 >= BESIDE_FACE_METERS) sticker(a0, b0, left, b0, S, low, tall, k * 4 + 3, 1);
+        if (a1 - (left + faceSpan) >= BESIDE_FACE_METERS) sticker(left + faceSpan, b0, a1, b0, S, low, tall, k * 4 + 12, 1);
+      }
     });
   }
 

@@ -212,7 +212,8 @@ export function houseParts(wide, deep, chance) {
  * it as [east, north], wide, deep, parts, court, ends: whether its left and
  * right sides are the block's own ends, plot: how far its plot reaches out
  * from it in front, to the left, to the right and behind, and how far its
- * front is from the edge of its street, row }; and the ids of the blocks
+ * front is from the edge of its street, row, rows and cell: which row of how
+ * many it stands in and where along it }; and the ids of the blocks
  * that were divided.
  */
 export function parcelHouses(buildings, network, { districtOf = () => ({ kind: 'villa', fenced: 0.9 }), whole = () => true, skip = null } = {}) {
@@ -382,6 +383,7 @@ export function parcelHouses(buildings, network, { districtOf = () => ({ kind: '
             plot,
             row,
             rows,
+            cell,
             pieces: parts,
           });
         }
