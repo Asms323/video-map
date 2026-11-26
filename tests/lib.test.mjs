@@ -1340,8 +1340,10 @@ test('cityModelStyle by night: a dark over the ground, the lamps along the roads
   // (Strongest from across the city, where it is all there is to see of the lamps; fainter from close by, where they stand in it one by one.)
   const strengths = (paint) => paint['line-opacity'].filter((part, i) => i > 2 && i % 2 === 0);
   assert.deepEqual(glow.paint['line-opacity'].slice(0, 3), ['interpolate', ['linear'], ['zoom']]);
-  assert.ok(strengths(glow.paint)[0] > 0.7 && strengths(glow.paint)[0] > strengths(glow.paint)[1] && strengths(glow.paint)[1] > strengths(glow.paint)[2] && strengths(glow.paint)[2] > 0.2, String(strengths(glow.paint)));
-  assert.deepEqual(strengths(of(day, 'city-glow').paint), [0, 0, 0]);
+  // (And from closest of all, where each lamp's own pool lies on the road, only a little: the asphalt is dark between the pools.)
+  const [far, middle, near, closest] = strengths(glow.paint);
+  assert.ok(far > 0.7 && far > middle && middle > near && near > 0.2 && closest < near && closest > 0.05 && closest < 0.15, String(strengths(glow.paint)));
+  assert.deepEqual(strengths(of(day, 'city-glow').paint), [0, 0, 0, 0]);
   assert.deepEqual(glow.paint['line-color'], ['match', ['get', 'class'], ['motorway', 'trunk'], LAMP_LIGHT.big, ['primary', 'secondary'], LAMP_LIGHT.main, LAMP_LIGHT.side]);
   assert.ok(JSON.stringify(glow.filter).includes('["!",["==",["get","brunnel"],"tunnel"]]'));
   // From close by: as wide as the road and 4.5 m to either side. From across the city: a thread, thicker for the great roads.

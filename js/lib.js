@@ -1569,8 +1569,9 @@ export const LAMP_LIGHT = { big: '#eef1fb', main: '#fff0dc', side: '#ffb163', le
 // The roads that have lamps along them.
 const LAMP_CLASSES = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'busway'];
 const GLOW_SPILL_METERS = 4.5; // how far the lamps' light reaches past the edge of the road
-const GLOW_MOST = 0.3; // how strong it is from close by, where the lamps stand in it one by one
-const GLOW_FAR = 0.85; // and from across the city, where it is all there is to see of them
+const GLOW_FAR = 0.85; // how strong it is from across the city, where it is all there is to see of the lamps
+const GLOW_MOST = 0.3; // from nearer, where the lamps begin to stand in it one by one
+const GLOW_NEAR = 0.1; // and from close by, where each lamp's own pool lights the road: only what they spill between them
 
 // The sky by day, at the height of dusk and by night: overhead, and where it meets the ground.
 const SKY = { day: ['#86addb', '#e4eaef'], dusk: ['#4c5c92', '#f4bd8e'], night: ['#060a17', '#3d2d2a'] };
@@ -2070,7 +2071,9 @@ export function cityModelStyle(base, { buildings = null, night = 0, sunlight = 1
           // is as wide as the road and what the lamps reach beyond it. Soft from the middle outwards.)
           'line-width': glowWidth(1),
           'line-blur': glowWidth(0.5),
-          'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, GLOW_FAR * thrown, 14, 0.55 * thrown, 16, GLOW_MOST * thrown],
+          // (Close by, an even wash over the whole road would make it white as snow: there the asphalt is dark
+          // between the pools of the lamps, as it is in Riyadh.)
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, GLOW_FAR * thrown, 14, 0.55 * thrown, 15.5, GLOW_MOST * thrown, 17, GLOW_NEAR * thrown],
         },
         { minzoom: 9, layout: round },
       ),
