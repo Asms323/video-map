@@ -1506,8 +1506,10 @@ export const KAFD_STATION = {
   crest: 25.2, // the top of the shell over the middle of an upper eye…
   dip: 21.5, // …and between two of them
   ridge: [27.4, 1, 60], // the roof along its middle: how high, and how much it rolls, over what length
-  recess: 0.7, // how far the lattice stands back in the shell
-  hood: 0.9, // how far the lid over an eye stands out
+  recess: 1.2, // how far the lattice stands back in the shell
+  hood: 1.5, // how far the lid over an eye stands out
+  lean: 0.8, // how far the foot of the shell swells out by the time it reaches the lower eyes
+  lifts: 6, // the plain foot of the shell is in so many lifts of panels, their joints swooping with the eyes over them
   arch: [3, 5.5], // a glazed arch at the foot of the shell, under every lower eye: half its width in strips, and its height
   door: [5, 7.6], // the great doorways: the same
   doors: [2, 7, 12, 17], // which arches they are: under which of the lower eyes, counted from the north end by the west
@@ -1607,12 +1609,13 @@ export function kafdStation(model) {
   const step = round / strips;
   const eye = round / S.eyes;
   const [[lowerAt, lowerHalf], [upperAt, upperHalf]] = S.rows;
-  // White concrete: by night a wash of the district's violet light lies on it.
-  const white = { kind: 'plain', colour: '#f3f2ed', light: '#cdb8ff', glow: 0.3 };
+  // White concrete: by night warm white light lies on it.
+  const warmth = '#ffe3be';
+  const white = { kind: 'plain', colour: '#f3f2ed', light: warmth, glow: 0.3 };
   // (What stands back in the shell lies inside the block that throws its shadow, and takes none.)
-  const inner = { kind: 'plain', colour: '#dedcd4', light: '#cdb8ff', glow: 0.45, open: true };
-  // The lattice: every opening cut, larger and smaller; behind it the lamps of the halls.
-  const lattice = { kind: 'pierced', colour: '#f3f2ed', storey: 1.5, bay: 1.9, diamonds: true, holes: 0.84, lit: 0.9, light: '#cdb8ff', glow: 0.3, open: true };
+  const inner = { kind: 'plain', colour: '#dedcd4', light: warmth, glow: 0.45, open: true };
+  // The lattice: deep cells, every one cut, whose walls catch the light by day and glow warm by night.
+  const lattice = { kind: 'pierced', colour: '#f3f2ed', storey: 2, bay: 2.8, diamonds: true, cells: true, holes: 0.84, lit: 0.9, light: warmth, glow: 0.3, open: true };
   const glass = { kind: 'glass', colour: '#3c4d59', storey: 5.5, bay: 2.03, lit: 1, floors: 0, mirror: 0.25, open: true };
   const dark = { kind: 'plain', colour: '#20262b', open: true };
 
@@ -1634,7 +1637,7 @@ export function kafdStation(model) {
   /**
    * The shell at the edge of a strip, from the ground up: the places its outline runs through, each
    * [how far out of the wall, how high], and between them: glass, the arch's head, the plain foot in
-   * three lifts, a sill, the lower eye, its lid from below, the lid, the band between, a sill, the upper
+   * its lifts, a sill, the lower eye, its lid from below, the lid, the band between, a sill, the upper
    * eye, its lid from below, the lid up to the top of the shell.
    */
   const outlineAt = (index) => {
@@ -1658,9 +1661,9 @@ export function kafdStation(model) {
       [arch > 0 ? -0.3 : 0, 0],
       [arch > 0 ? -0.3 : 0, arch],
       [0, arch],
-      [0, arch + (low - arch) / 3],
-      [0, arch + ((low - arch) * 2) / 3],
-      [0, low],
+      // (The foot swells out as it rises, ever faster, the way the shell sweeps out into the waves above.)
+      ...Array.from({ length: S.lifts - 1 }, (_, k) => [S.lean * lower * ((k + 1) / S.lifts) ** 2, arch + ((low - arch) * (k + 1)) / S.lifts]),
+      [S.lean * lower, low],
       [-back, low],
       [-back, high],
       [lid, high],
@@ -1679,9 +1682,9 @@ export function kafdStation(model) {
   for (let index = 0; index < strips; index += 1) {
     const [a, b] = [edges[index], edges[index + 1]];
     const mouth = a.mouth && b.mouth;
-    const stuffs = [glass, inner, white, white, white, inner, mouth ? dark : lattice, inner, white, white, inner, lattice, inner, white];
+    const stuffs = [glass, inner, ...Array(S.lifts).fill(white), inner, mouth ? dark : lattice, inner, white, white, inner, lattice, inner, white];
     // (The swooping lines of the foot: along the top of each of its lifts.)
-    const lined = [false, false, true, true, false, false, false, false, false, false, false, false, false, false];
+    const lined = [false, false, ...Array(S.lifts - 1).fill(true), ...Array(stuffs.length - S.lifts - 1).fill(false)];
     for (let piece = 0; piece < stuffs.length; piece += 1) {
       const [a0, a1, b0, b1] = [a.line[piece], a.line[piece + 1], b.line[piece], b.line[piece + 1]];
       if (Math.hypot(a1[0] - a0[0], a1[1] - a0[1]) < 1e-6 && Math.hypot(b1[0] - b0[0], b1[1] - b0[1]) < 1e-6) continue;

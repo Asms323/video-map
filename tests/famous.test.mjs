@@ -881,20 +881,21 @@ test('the KAFD metro station: a white shell in two rows of eyes filled with latt
   assert.equal(Math.min(...heights(faces)), 0);
   const top = Math.max(...heights(faces));
   assert.ok(top > S.ridge[0] + S.ridge[1] - 0.05 && top <= S.ridge[0] + S.ridge[1] + 0.08 && station.height === S.ridge[0] + S.ridge[1], String(top));
-  // Nothing stands out of its outline but the lids over the eyes, by less than a metre.
+  // Nothing stands out of its outline but the lids over the eyes, by a metre and a half at most (and the foot,
+  // which swells out under the lower eyes, by less).
   const proud = Math.max(...faces.flatMap((face) => face.corners.map(outside)));
   assert.ok(proud > S.hood - 0.05 && proud <= S.hood + 1e-4, String(proud));
   // Two rows of eyes, filled with lattice, set back in the shell and lit from within by night: the lower between 9 and 16.6 m, the upper between 18.3 and 24.1 m.
   const lattice = faces.filter((face) => face.kind === 'pierced');
-  // (Its openings stand on their points, and every one of them is cut.)
-  assert.ok(lattice.length > 600 && lattice.every((face) => face.open && face.lit > 0.85 && face.floors === 0 && near(face.fins, 0.84, 0.01)));
+  // (Its openings stand on their points, and every one of them is cut: deep cells, whose walls show inside each.)
+  assert.ok(lattice.length > 600 && lattice.every((face) => face.open && face.lit > 0.85 && face.floors === 0 && near(face.fins, 0.84, 0.01) && face.louvres && face.light === '#ffe3be'));
   const [[lowerAt, lowerHalf], [upperAt, upperHalf]] = S.rows;
   const lower = lattice.filter((face) => face.corners.every((corner) => corner[2] < 17));
   const upper = lattice.filter((face) => face.corners.every((corner) => corner[2] > 18));
   assert.equal(lower.length + upper.length, lattice.length);
   assert.ok(lower.every((face) => face.corners.every((corner) => corner[2] >= lowerAt - lowerHalf - 1e-6 && corner[2] <= lowerAt + lowerHalf + 1e-6)));
   assert.ok(upper.every((face) => face.corners.every((corner) => corner[2] >= upperAt - upperHalf - 1e-6 && corner[2] <= upperAt + upperHalf + 1e-6)));
-  // (Set back in the shell: never standing out of its outline, and most of it 0.7 m in; less towards the points of an eye.)
+  // (Set back in the shell: never standing out of its outline, and most of it 1.2 m in; less towards the points of an eye.)
   assert.ok(lattice.every((face) => face.corners.every((corner) => outside(corner) <= 1e-4)), 'set back in the shell');
   assert.ok(lattice.filter((face) => face.corners.every((corner) => outside(corner) < -0.3)).length > lattice.length * 0.7);
   // Twenty eyes in each row, right round it: each 24 m long; the upper ones over the middles of the ends and over the gaps of the lower.
@@ -924,9 +925,11 @@ test('the KAFD metro station: a white shell in two rows of eyes filled with latt
   assert.equal(arches.size, 20);
   assert.deepEqual([...arches].filter(([, top]) => top > 6).map(([which]) => which).sort((a, b) => a - b), S.doors);
   assert.ok([...arches].every(([which, top]) => near(top, S.doors.includes(which) ? S.door[1] : S.arch[1], 0.3)));
-  // The shell is white concrete, washed in the district's violet by night; the roof is white too, and takes no shadow of the block that throws the station's own.
+  // The shell is white concrete, washed in warm white light by night; the roof is white too, and takes no shadow of the block that throws the station's own.
   const white = faces.filter((face) => face.colour === '#f3f2ed' && face.kind === 'plain');
-  assert.ok(white.length > 2000 && white.every((face) => face.light === '#cdb8ff' && face.glow > 0.25));
+  assert.ok(white.length > 2000 && white.every((face) => face.light === '#ffe3be' && face.glow > 0.25));
+  // (Its foot is in six lifts of panels, their joints swooping with the eyes over them.)
+  assert.equal(S.lifts, 6);
   const roof = faces.filter((face) => face.colour === '#f1f0ea');
   assert.ok(roof.length > 1000 && roof.every((face) => face.open && face.normal[2] > 0));
   // Two fields of glass along the middle of the roof, set with panes that stand on their points.

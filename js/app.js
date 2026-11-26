@@ -26,7 +26,7 @@ import { aircraftFeed, cloudFieldAround, drivingRoute, placeAt, placeDetails, ri
 import { airlineOf, typeName } from './aviation.js';
 import { compassPoint } from './sky.js';
 
-const VERSION = '1.18.0';
+const VERSION = '1.19.0';
 const STORE_PREFIX = 'video-map:';
 
 const $ = (id) => document.getElementById(id);

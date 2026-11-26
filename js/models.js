@@ -174,6 +174,9 @@ export class Model {
    *     storey, bay: how tall and how wide one window with the skin round it is,
    *     diamonds: true for windows that stand on their points, in a net that slants (each as wide as a
    *       bay and as tall as a storey); without it they stand upright, in rows,
+   *     cells: true for diamonds that are deep cells (every one cut, all of a size): inside each its walls
+   *       show, the lower ones lit from above and the upper ones in shade, and at its back the dark of the
+   *       hall; by night their walls are lit warm, every cell alike,
    *     holes: how much of the skin is cut away (0 to 1). Of diamonds: few and small, of many sizes, up to
    *       every one of them and wide open, which leaves a mesh. Of upright windows: from narrow ones up
    *       to bands of glass that run right round between bands of skin (from 0.64).
@@ -253,7 +256,8 @@ export class Model {
           mesh.edges[n * 4 + 3] = pierced ? (made.diamonds ? 0 : 1) : Math.min(Math.max(made.floors ?? 1, 0), 1);
           mesh.tints.set([colour[0], colour[1], colour[2], kind * OWN_NUMBERS + number], n * 4);
           mesh.lights.set([light[0], light[1], light[2], glow], n * 4);
-          const marks = Object.entries(MARKS).reduce((sum, [name, bit]) => sum + (made[name] ? bit : 0), 0);
+          // (A pierced skin of deep cells carries the louvres' mark, which otherwise only glass uses.)
+          const marks = Object.entries(MARKS).reduce((sum, [name, bit]) => sum + (made[name] || (name === 'louvres' && pierced && made.cells) ? bit : 0), 0);
           mesh.more.set([byte(made.lit ?? 0), byte(pierced ? made.holes ?? 0.4 : made.fins ?? 0), byte(made.ridge ?? 0), marks * 4], n * 4);
           mesh.count += 1;
         }

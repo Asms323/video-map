@@ -848,14 +848,16 @@ void main() {
     vec2 cell = floor(grid);
     vec2 within = abs(grid - cell - 0.5);
     float pick = chance(cell * vec2(1.7, 2.3) + own);
+    // (Deep cells: every diamond cut, all of a size. See below.)
+    float deep = louvred * (1.0 - upright);
     // Which of the diamonds are cut, and how large each is. They come in drifts: large in the middle of
     // a drift, small at its edge, none between two drifts. The more is cut away, the more alike they are.
     float drift = 0.5 + 0.5 * sin(cell.x * 0.43 + own * 1.3) * sin(cell.y * 0.35 + cell.x * 0.09 + own * 2.1);
     float share = clamp(0.25 + 0.9 * holes, 0.0, 1.0);
     float rank = mix(drift, pick, 0.3) - (1.0 - share);
-    float cut = mix(step(0.0, rank), 1.0, upright);
+    float cut = max(mix(step(0.0, rank), 1.0, upright), deep);
     float most = 0.5 * (0.45 + 0.5 * holes);
-    float half_ = most * mix(0.45 + 0.55 * clamp(rank / max(share, 0.01), 0.0, 1.0), 1.0, holes * holes);
+    float half_ = mix(most * mix(0.45 + 0.55 * clamp(rank / max(share, 0.01), 0.0, 1.0), 1.0, holes * holes), 0.36, deep);
     vec2 reach = mix(vec2(half_), vec2(min(0.18 + 0.5 * holes, 0.52), 0.22 + 0.1 * holes), upright);
     float size = min(storey, bay);
     float soft = clamp(pixel / size, 0.002, 0.5);
@@ -871,7 +873,18 @@ void main() {
     vec3 below = mix(u_skyLow * 0.62, streets * 0.85, smoothstep(0.0, -0.2, thrown.z));
     vec3 seen = mix(below, above, smoothstep(-0.04, 0.04, thrown.z)) + sunsetIn(thrown);
     vec3 pane = vec3(0.13, 0.17, 0.20) * light + seen * 0.30;
-    colour = mix(skin, pane, window);
+    // A deep cell: its four walls show inside it, the two lower ones looking up and lit from above, the
+    // two upper ones looking down and in shade; and at its back, the dark of the hall behind. (The net
+    // slants both ways, so up the cell is along the one less the other.)
+    vec2 signed_ = grid - cell - 0.5;
+    float upness = (signed_.x - signed_.y) * 0.5;
+    float backReach = reach.x * 0.5;
+    float back = (1.0 - smoothstep(backReach - soft, backReach + soft, within.x)) * (1.0 - smoothstep(backReach - soft, backReach + soft, within.y));
+    float litWall = 1.0 - smoothstep(-0.05, 0.05, upness);
+    vec3 inCell = mix(skin * mix(0.56, 1.06, litWall), vec3(0.15, 0.16, 0.17) * light, back);
+    // (From afar, the even mixture of walls and dark.)
+    inCell = mix(skin * 0.66, inCell, smoothstep(1.2, 3.0, size / pixel));
+    colour = mix(skin, mix(pane, inCell, deep), window);
     // By night: lamps trained on the skin; and behind the windows of a lit floor, its rooms with their
     // lamps on (on a dark floor, a room here and there).
     float row = mix(floor((cell.x - cell.y) * 0.5 + 0.5), cell.y, upright);
@@ -879,7 +892,11 @@ void main() {
     float room = chance(cell * vec2(2.9, 1.3) + own * 1.7);
     float on = mix(step(0.94, room), step(0.12, room), floorOn);
     vec3 lampOfRoom = mix(vec3(1.0, 0.90, 0.74), vec3(0.86, 0.92, 1.0), step(0.6, fract(room * 5.7)));
-    glow = lampOfRoom * 0.8 * mix(v_more.x, on, smoothstep(1.2, 3.0, size / pixel)) * window + v_tint.rgb * ownLight * (1.0 - changing) * (1.0 - window);
+    // (Deep cells are lit warm by night, every one alike: their walls brightest where the lamps below reach them.)
+    vec3 cellLight = vec3(1.0, 0.85, 0.64) * mix(mix(0.5, 0.92, litWall), 0.3, back) * v_more.x;
+    cellLight = mix(vec3(1.0, 0.85, 0.64) * 0.6 * v_more.x, cellLight, smoothstep(1.2, 3.0, size / pixel));
+    vec3 rooms = mix(lampOfRoom * 0.8 * mix(v_more.x, on, smoothstep(1.2, 3.0, size / pixel)), cellLight, deep);
+    glow = rooms * window + v_tint.rgb * ownLight * (1.0 - changing) * (1.0 - window);
     show = v_tint.rgb * ownLight * changing * (1.0 - window);
   } else if (kind > 1.5) {
     // A lamp: by night all of it gives its light. (One whose colour changes is part of the building's
