@@ -560,89 +560,217 @@ function masmakFort(model) {
 export const MAJDOUL = {
   half: 18.8, // half the side of its square
   floors: 54,
-  deck: 214, // its roof, where the helipad is
-  top: 244, // the highest corner of the screen that stands round the roof…
-  low: 217.5, // …and its lowest, across the roof from that
-  turn: 90, // how far it turns between the ground and its roof, in degrees: clockwise, seen from above, as it rises
-  fin: 0.8, // how far the white fin at every floor stands out of the glass
-  helipad: 12, // the radius of the helipad
+  deck: 214, // its roof
+  turn: 135, // how far it turns between the ground and its roof, in degrees (2.5 a floor): clockwise, seen from above, as it rises
+  fin: 1.3, // how far the white fin at every floor stands out of the glass
+  edge: 1.15, // and how deep its face is: white, with a line of light along its foot by night
+  spine: [0.35, 1.5], // the spine up each corner: how far along each wall it reaches from the corner, and how far it stands out of the glass
+  plant: [2, 3, 25, 26, 52, 53], // the floors of plant, behind louvres (counted from 0, the lowest)
+  warm: [39, 40], // two floors whose lamps are warm: a band of gold by night
+  spots: 3.7, // how far apart the lamps in the ceilings stand along the glass, which show as rows of points by night
+  drum: [9.5, 7.3], // the drum of glass on the roof: its radius, and how high it stands
+  helipad: 12.5, // the radius of the helipad on the drum, which overhangs it
+  rail: 1.25, // how high the railing round the roof stands
+  mast: [2.8, 5.4], // the masts on two corners of the roof: how far in from the corner they stand, and how high
   canopy: [24.5, 38, 11, 8], // the glass canopy at its foot: how far out it reaches at its two ends and in its middle, how high it is at the tower and at its edge
 };
 
-/** The tower's square at a height: its four corners [east, north], anticlockwise, turned as far as the tower has turned by then. */
+/**
+ * The tower's square at a height: its four corners [east, north], anticlockwise, turned as far as the tower
+ * has turned by then. At its roof the square's sides run east and north (in the model's own frame, which
+ * the map turns); lower down it stands turned anticlockwise, 2.5 degrees a floor, 135 at the ground.
+ */
 export function majdoulSquare(height, half = MAJDOUL.half) {
-  const angle = -((MAJDOUL.turn * Math.PI) / 180) * (Math.min(Math.max(height, 0), MAJDOUL.deck) / MAJDOUL.deck);
+  const angle = ((MAJDOUL.turn * Math.PI) / 180) * (1 - Math.min(Math.max(height, 0), MAJDOUL.deck) / MAJDOUL.deck);
   const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
   return [[half, half], [-half, half], [-half, -half], [half, -half]].map(([east, north]) => [east * cos - north * sin, east * sin + north * cos]);
 }
 
 /**
  * Al Majdoul Tower (Zeidler Partnership; built 2012 to 2019), on King Fahd Road north of Kingdom Centre:
- * the twisted tower. 244 m and 54 floors; its name means the braided one.
+ * the twisted tower: 54 floors, its roof 214 m up and its helipad 222 m; its name means the braided one.
  *
- * It is a square of some 38 m that does not narrow, and turns a quarter of a turn between the ground and
- * its roof, clockwise as it rises when seen from above: so each of its four walls is a twisted sheet of
- * glass, and round the whole of it, at every floor, runs a white fin that stands out of the glass and
- * turns with it. That is what the tower looks like from anywhere: a white screw.
+ * It is a square of some 38 m that does not narrow, and each floor stands turned 2.5 degrees from the one
+ * below it: 135 degrees between the ground and the roof, clockwise as it rises when seen from above. So
+ * each of its four walls is a twisted sheet of glass, and from any side the tower seems to narrow half way
+ * up and widen again. At every floor a white fin stands out of the glass, and by night its edge is a line
+ * of cool white light. The fins stop at the spines that run up the four corners and wind round the tower
+ * from the ground to the roof: silver by day; by night dark lines across its lit floors. Three bands of
+ * two floors are plant, behind louvres: over the lobby, half way up, and at the top; and by night two
+ * floors high up are lit with warm lamps.
  *
- * On its roof is a round helipad; and round the roof stands a screen of glass whose top is cut off
- * aslant, lowest at one corner and thirty metres higher at the corner across from it, where a rod
- * stands. At its foot, on the side towards the road, a canopy of glass on white ribs curves round it,
- * shaped like a leaf; and on the other side stands a low wing (see majdoulAnnex).
+ * Its roof is flat, with a railing round it. On it stands a drum of glass, lit by night, under the round
+ * helipad, which overhangs it and whose rim is a ring of light by night; and on two corners the masts of
+ * the cradle that cleans the glass. At its foot, on the side towards the road, a canopy of glass on white
+ * ribs curves round it, shaped like a leaf; and on the other side stands a low wing (see majdoulAnnex).
  *
- * (Its height, its floors and its architects are as published. Its square, that it does not narrow, the
- * quarter turn and which way it goes, the fins, the helipad and the screen with its high corner are read
- * off the satellite photo the app shows, which is taken at a slant from the south and shows two of its
- * walls from top to bottom; the outline the buildings data has of it agrees. No photograph of it from the
- * ground could be had for this: the colour of its glass, the height of the roof under the screen, 214 m,
- * and the height of the canopy, which the satellite photo shows only from above, are judgements. The
- * canopy's outline, and the wing's, are the buildings data's, which has them and the tower's foot as one.)
+ * (Its floors, its architects and how far it turns, 2.5 degrees a floor, are as published. Its square,
+ * that it does not narrow, which way it turns and how its roof stands are read off the satellite photo
+ * the app shows; the outline the buildings data has of it agrees. The fins and the spines, the bands of
+ * plant, the warm floors, the drum, the masts and the railing, and the light by night are as photographs
+ * of it from the street and from afar show them; how far the fins and spines stand out, the height of the
+ * drum, and which floors the bands are, are judged from them. So is the height of its roof: two
+ * photographs, one by night from 400 m and one by day from afar, each measured against the width of its
+ * square, give 205 to 215 m, and the spacing of its floors 4 m. The heights published for it, 232 m and
+ * 244 m, are higher than either shows, and do not agree with each other. The canopy's outline, and the
+ * wing's, are the buildings data's, which has them and the tower's foot as one.)
  */
 export function majdoulTower(model) {
   const T = MAJDOUL;
   const storey = T.deck / T.floors;
-  const glass = { kind: 'glass', colour: '#5d7d94', storey, bay: 1.5, lit: 0.35, floors: 0, mirror: 0.5 };
+  const side = 2 * T.half;
+  // (By night the lights along the fins wash the glass under each of them in cool blue, brightest just
+  // under the fin; and behind it, some of the offices have their lamps on.)
+  const [cool, wash] = ['#a8cff5', '#7fb2e6'];
+  const glass = { kind: 'glass', colour: '#5288c0', storey, bay: 1.5, lit: 0.25, floors: 0, mirror: 0.5, light: wash, glow: 0.35 };
   const lobby = { kind: 'glass', colour: '#7c98a8', storey, bay: 1.5, lit: 1, floors: 0, mirror: 0.3 };
-  const white = { kind: 'plain', colour: '#f1f2f1', light: '#dce8ff', glow: 0.3 };
+  // (Plant behind louvres: bronze in the sun, and by night only the wash of the fins; and the two floors
+  // whose lamps are warm.)
+  const plant = { kind: 'glass', colour: '#5a554c', storey, bay: 1.5, lit: 0.04, louvres: true, floors: 0, mirror: 0.2, light: '#9ccbff', glow: 0.35 };
+  const warm = { ...glass, lit: 1, light: '#ffc277', glow: 0.9 };
+  // (By night a line of cool white light runs along the foot of every fin's face, and washes the rest of
+  // it and the fin above and below.)
+  const white = { kind: 'plain', colour: '#f1f2f1', light: wash, glow: 0.5 };
+  const under = { kind: 'plain', colour: '#d9d2c4', light: cool, glow: 0.7 };
+  const face = { kind: 'plain', colour: '#f4f6f6', light: wash, glow: 0.45 };
+  const edge = { kind: 'plain', colour: '#f4f6f6', light: cool, glow: 1 };
+  // (The lamps in the ceilings, just inside the glass: by night, rows of bright points under the fins.)
+  const ceiling = { kind: 'lamp', colour: '#5f8fc2', light: '#f2f7ff', glow: 1 };
+  // (Silver aluminium, with no lamp on it: by night it is dark.)
+  const spine = { kind: 'plain', colour: '#c4c7c7' };
 
-  // The four twisted walls, a floor at a time; and at the top of every floor the fin: its upper side, its underside and its edge.
+  /** Along wall k of a square (from its corner k to the next): the way it runs, and the way it looks out. */
+  const wallOf = (square, k) => {
+    const [a, b] = [square[k], square[(k + 1) % 4]];
+    const way = [(b[0] - a[0]) / side, (b[1] - a[1]) / side];
+    return { a, way, out: [way[1], -way[0]] };
+  };
+  /** A place by wall k of a square: so far along it from corner k, so far out of the glass, so high. */
+  const onWall = (square, k, along, out, up) => {
+    const { a, way, out: looks } = wallOf(square, k);
+    return [a[0] + way[0] * along + looks[0] * out, a[1] + way[1] * along + looks[1] * out, up];
+  };
+  const [reach, proud] = T.spine;
+  /** Spine k (up corner k) between two heights, as three faces: its side on the wall before the corner, its front, which looks out across the corner, and its side on the wall after it. */
+  const spineUp = (low, high, squares) => {
+    for (let k = 0; k < 4; k += 1) {
+      const before = (k + 3) % 4;
+      const profile = (square, up) => [onWall(square, before, side - reach, 0, up), onWall(square, before, side - reach, proud, up), onWall(square, k, reach, proud, up), onWall(square, k, reach, 0, up)];
+      const [p, q] = [profile(squares[0], low), profile(squares[1], high)];
+      const { way: wayBefore, out: outBefore } = wallOf(squares[1], before);
+      const { way, out } = wallOf(squares[1], k);
+      const looks = [[-wayBefore[0], -wayBefore[1], 0], [outBefore[0] + out[0], outBefore[1] + out[1], 0], [way[0], way[1], 0]];
+      for (let i = 0; i < 3; i += 1) model.quad(p[i], p[i + 1], q[i + 1], q[i], spine, { out: looks[i], lines: [false, false, false, false] });
+    }
+  };
+
+  // The four twisted walls, a floor at a time. (The light falls on each as on the twisted sheet it is part
+  // of: at its foot as on the wall the floor below stands in, at its top as on the next.) At the top of
+  // every floor, the fin along each wall, from spine to spine: its upper side, its underside and its edge;
+  // and the spines up the corners.
+  const none = { lines: [false, false, false, false] };
   for (let floor = 0; floor < T.floors; floor += 1) {
     const [low, high] = [floor * storey, (floor + 1) * storey];
-    between(model, raised(majdoulSquare(low), low), raised(majdoulSquare(high), high), floor < 2 ? lobby : glass);
-    const [inner, outer] = [majdoulSquare(high), majdoulSquare(high, T.half + T.fin)];
-    model.flat(raised(outer, high + 0.12), white, { holes: [raised(inner, high + 0.12)] });
-    model.flat(raised(outer, high - 0.12), white, { out: [0, 0, -1], holes: [raised(inner, high - 0.12)] });
-    between(model, raised(outer, high - 0.12), raised(outer, high + 0.12), white);
+    const [below, above] = [majdoulSquare(low), majdoulSquare(high)];
+    const skin = floor < 2 ? lobby : T.plant.includes(floor) ? plant : T.warm.includes(floor) ? warm : glass;
+    for (let k = 0; k < 4; k += 1) {
+      const j = (k + 1) % 4;
+      const [foot, top] = [[...wallOf(below, k).out, 0], [...wallOf(above, k).out, 0]];
+      const along = [below[j][0] - below[k][0], below[j][1] - below[k][1]];
+      model.quad([...below[k], low], [...below[j], low], [...above[j], high], [...above[k], high], skin, { ...none, out: foot, along, from: below[k], normals: [foot, foot, top, top] });
+    }
+    for (let k = 0; k < 4; k += 1) {
+      const at = (along, out, up) => onWall(above, k, along, out, up);
+      const [from, to] = [reach, side - reach];
+      const [over, beneath] = [high + 0.25, high + 0.25 - T.edge];
+      const [looks, lamp] = [[...wallOf(above, k).out, 0], beneath + 0.3];
+      model.quad(at(from, 0, over), at(to, 0, over), at(to, T.fin, over), at(from, T.fin, over), white, { ...none, out: [0, 0, 1] });
+      model.quad(at(from, 0, beneath), at(to, 0, beneath), at(to, T.fin, beneath), at(from, T.fin, beneath), under, { ...none, out: [0, 0, -1] });
+      model.quad(at(from, T.fin, beneath), at(to, T.fin, beneath), at(to, T.fin, lamp), at(from, T.fin, lamp), edge, { ...none, out: looks });
+      model.quad(at(from, T.fin, lamp), at(to, T.fin, lamp), at(to, T.fin, over), at(from, T.fin, over), face, { ...none, out: looks });
+    }
+    spineUp(low, high, [below, above]);
+    // The lamps in its ceilings, on most office floors: a row of points along each wall, just under the fin.
+    if (skin === glass && (floor * 7) % 10 < 7) {
+      const up = high + 0.25 - T.edge - 0.55;
+      const f = (up - low) / storey;
+      /** A place on the glass of wall k, so far along it, so high up the floor (as a share of it), a little out of it. */
+      const onGlass = (k, along, rise, lift) => {
+        const lower = onWall(below, k, along, 0.06, low);
+        const upper = onWall(above, k, along, 0.06, high);
+        return [lower[0] + (upper[0] - lower[0]) * rise, lower[1] + (upper[1] - lower[1]) * rise, up + lift];
+      };
+      for (let k = 0; k < 4; k += 1) {
+        const count = Math.floor((side - 2 * reach) / T.spots);
+        for (let i = 0; i < count; i += 1) {
+          if ((floor * 3 + k * 5 + i * 7) % 9 === 0) continue;
+          const along = reach + (side - 2 * reach) * (i + 0.5) / count;
+          const out = [...wallOf(above, k).out, 0];
+          model.quad(onGlass(k, along - 0.4, f, -0.4), onGlass(k, along + 0.4, f, -0.4), onGlass(k, along + 0.4, f, 0.4), onGlass(k, along - 0.4, f, 0.4), ceiling, { ...none, out });
+        }
+      }
+    }
   }
 
-  // The screen round the roof: glass, its top one slanting plane, highest at the north-western corner.
+  // The roof, and the railing round it on the last fin, from spine to spine; the spines rise to its top.
   const square = majdoulSquare(T.deck);
-  const topAt = ([east, north]) => T.low + (T.top - T.low) * ((north - east) / (2 * T.half) + 1) / 2;
-  const rim = square.map((corner) => [corner[0], corner[1], topAt(corner)]);
-  const screen = { kind: 'glass', colour: '#7d9bb0', storey, bay: 1.5, lit: 0, floors: 0.6, mirror: 0.55, ridge: 1, light: '#dfeaff', glow: 0.5 };
-  between(model, raised(square, T.deck), rim, screen, { lines: [false, false, true, false] });
-  // (Seen from the roof it is dark glass; and it takes no shadow from the block the map has for the tower.)
-  between(model, raised(square, T.deck), rim, { kind: 'glass', colour: '#2f3d49', storey, bay: 1.5, lit: 0, floors: 0.4, mirror: 0.2, open: true }, { way: -1 });
-  // The roof, and the helipad on it: blue, in a white ring.
-  model.flat(raised(square, T.deck + 0.15), { kind: 'plain', colour: '#ecebe6', open: true });
+  const roofAt = T.deck + 0.25;
+  model.flat(raised(square, roofAt), { kind: 'plain', colour: '#cfd0cc', open: true });
+  spineUp(T.deck, roofAt + T.rail, [square, square]);
+  for (let k = 0; k < 4; k += 1) {
+    const cap = [onWall(square, (k + 3) % 4, side - reach, 0, roofAt + T.rail), onWall(square, (k + 3) % 4, side - reach, proud, roofAt + T.rail), onWall(square, k, reach, proud, roofAt + T.rail), onWall(square, k, reach, 0, roofAt + T.rail)];
+    model.flat(cap, { ...spine, open: true });
+  }
+  const steel = { kind: 'plain', colour: '#8f9599', open: true };
+  for (let k = 0; k < 4; k += 1) {
+    const [from, to] = [reach + 0.1, side - reach - 0.1];
+    for (const up of [roofAt + T.rail * 0.55, roofAt + T.rail]) beam(model, onWall(square, k, from, 0.9, up), onWall(square, k, to, 0.9, up), 0.08, steel);
+    const posts = Math.round((to - from) / 2.4);
+    for (let i = 0; i <= posts; i += 1) {
+      const along = from + ((to - from) * i) / posts;
+      beam(model, onWall(square, k, along, 0.9, roofAt), onWall(square, k, along, 0.9, roofAt + T.rail), 0.07, steel);
+    }
+  }
+
+  // The drum of glass on the roof, and the helipad on it: blue, in a white ring, and its rim a ring of light by night.
+  const [drumRadius, drumHigh] = T.drum;
+  const padAt = roofAt + drumHigh;
+  lathe(model, frame([0, 0], 0), [0, 0], [[drumRadius, roofAt], [drumRadius, padAt]], { kind: 'glass', colour: '#6f8f8c', storey: drumHigh / 2, bay: 2.4, lit: 0.8, floors: 0.5, mirror: 0.45, open: true }, { cuts: 24 });
   const round = (radius, height) => Array.from({ length: 28 }, (_, k) => [Math.cos((k / 28) * TAU) * radius, Math.sin((k / 28) * TAU) * radius, height]);
-  model.flat(round(T.helipad + 0.9, T.deck + 0.3), { kind: 'plain', colour: '#fbfbf8', open: true });
-  model.flat(round(T.helipad, T.deck + 0.4), { kind: 'plain', colour: '#2f7fd2', open: true });
-  // The rod on the high corner.
-  const peak = rim.reduce((best, corner) => (corner[2] > best[2] ? corner : best));
-  beam(model, [peak[0] * 0.97, peak[1] * 0.97, peak[2] - 0.5], [peak[0] * 0.97, peak[1] * 0.97, peak[2] + 3], 0.3, white, { ends: true });
+  model.flat(round(T.helipad, padAt), { kind: 'plain', colour: '#c9ccca', light: '#bfeaff', glow: 0.4 }, { out: [0, 0, -1] });
+  between(model, round(T.helipad, padAt), round(T.helipad, padAt + 0.55), { kind: 'plain', colour: '#eef6fa', light: '#e2f4ff', glow: 1 });
+  model.flat(round(T.helipad, padAt + 0.55), { kind: 'plain', colour: '#fbfbf8', open: true });
+  model.flat(round(T.helipad - 1.3, padAt + 0.6), { kind: 'plain', colour: '#2f7fd2', open: true });
+
+  // The masts of the cradle on two corners of the roof (its north-eastern and south-western, in the model's
+  // own frame): each a post with an arm across its top that reaches out over the corner, and the red lamp on it.
+  const [inset, mastHigh] = T.mast;
+  const metal = { kind: 'plain', colour: '#dcdddb', open: true };
+  const beacons = [];
+  for (const k of [0, 2]) {
+    const corner = square[k];
+    const far = Math.hypot(corner[0], corner[1]);
+    const out = [corner[0] / far, corner[1] / far];
+    const post = [corner[0] - out[0] * inset, corner[1] - out[1] * inset];
+    const top = roofAt + mastHigh;
+    beam(model, [post[0], post[1], roofAt], [post[0], post[1], top + 0.3], 0.4, metal, { ends: true });
+    beam(model, [post[0] - out[0] * 3, post[1] - out[1] * 3, top], [post[0] + out[0] * 4, post[1] + out[1] * 4, top], 0.3, metal, { deep: 0.45, ends: true });
+    for (const [along, size] of [[3.6, 0.8], [-2.6, 0.6]]) beam(model, [post[0] + out[0] * along, post[1] + out[1] * along, top - size], [post[0] + out[0] * along, post[1] + out[1] * along, top], size, metal, { ends: true });
+    beacons.push([post[0], post[1], top + 0.6]);
+  }
 
   // The canopy at its foot, towards the road: glass on white ribs, curving round the tower from its western
   // side to its southern, and reaching furthest out before its south-western corner.
   const [ends, most, high, low] = T.canopy;
   const pane = { kind: 'glass', colour: '#a9bcc6', storey: 3.2, bay: 3, lit: 0.6, floors: 0, mirror: 0.5, ridge: 1 };
   const [from, sweep, pieces] = [(-185 * Math.PI) / 180, (110 * Math.PI) / 180, 12];
-  // (It begins at the tower's glass, which at that height has turned four degrees.)
-  const turned = (T.turn * Math.PI) / 180 * (high / T.deck);
+  // (It begins at the tower's glass, which at that height stands turned as the tower has turned.)
+  const turned = ((T.turn * Math.PI) / 180) * (1 - high / T.deck);
   const spot = (k, part, height) => {
     const angle = from + (sweep * k) / pieces;
-    const inner = (T.half + 0.7) / Math.max(Math.abs(Math.cos(angle + turned)), Math.abs(Math.sin(angle + turned)));
-    const outer = ends + (most - ends) * (1 - ((2 * k) / pieces - 1) ** 2);
+    const inner = (T.half + 0.7) / Math.max(Math.abs(Math.cos(angle - turned)), Math.abs(Math.sin(angle - turned)));
+    // (Where a corner of the tower comes out towards its end, it reaches round the corner.)
+    const outer = Math.max(ends + (most - ends) * (1 - ((2 * k) / pieces - 1) ** 2), inner + 2.5);
     const radius = inner + (outer - inner) * part;
     return [Math.cos(angle) * radius, Math.sin(angle) * radius, height];
   };
@@ -654,7 +782,7 @@ export function majdoulTower(model) {
     }
     if (k % 2 === 1) lathe(model, frame([0, 0], 0), [spot(k, 0.95, 0)[0], spot(k, 0.95, 0)[1]], [[0.28, 0], [0.28, low + 0.15]], white, { cuts: 6 });
   }
-  return { beacons: [[peak[0] * 0.97, peak[1] * 0.97, peak[2] + 3.6]] };
+  return { beacons };
 }
 
 /**
@@ -665,6 +793,53 @@ export function majdoulTower(model) {
 export function majdoulAnnex() {
   const outline = [[28, -0.9], [41, 4.6], [61.6, 8.9], [58.9, 19.8], [74.6, 22.5], [60, 54.5], [47.5, 41.4], [42.1, 51.7], [36.6, 46.3], [41, 38.2], [20.4, 29], [12, 18], [24.5, 12]];
   return [{ outline, base: 0, top: 9, paint: '#e9e6dc', roof: true, north: true }];
+}
+
+// ── The Al Rajhi Bank headquarters ────────────────────────────────────────
+
+// Its measures, in metres east and north of its middle: the corners of its square (from the south,
+// anticlockwise), how wide each slab of gold is along the front, how far the black glass between them
+// stands back from the front and the back, and the heights of the slabs and of the glass between.
+export const RAJHI = { corners: [[-13.8, -38.9], [38.3, -15], [13.9, 38.7], [-38.2, 15.4]], slab: 17, cut: 2.5, top: 205, middle: 196 };
+
+/**
+ * The head office of Al Rajhi Bank, on King Fahd Road north of Al Majdoul Tower, 205 m: a square of some
+ * 58 m whose two ends are tall slabs clad in gold, and between them, right through from front to back, a
+ * cut of black glass that stands back from the gold and stops a little short of its top. By night the gold
+ * is lit, a line of warm light along every floor, and the glass between is dark but for its offices.
+ *
+ * (Its outline and height are the buildings data's. The two slabs of gold and the black glass between them,
+ * and that the glass stops short of the top, are as photographs from the street show them; how wide the
+ * slabs are, how deep the cut and how much lower the glass, are judged from them and from the satellite
+ * photo the app shows.)
+ */
+export function rajhiTower(model) {
+  const { corners, slab, cut, top, middle } = RAJHI;
+  const [south, east, , west] = corners;
+  const length = Math.hypot(east[0] - south[0], east[1] - south[1]);
+  const depth = Math.hypot(west[0] - south[0], west[1] - south[1]);
+  const along = [(east[0] - south[0]) / length, (east[1] - south[1]) / length];
+  const back = [(west[0] - south[0]) / depth, (west[1] - south[1]) / depth];
+  /** A place so far along the front from its western end, and so far back from the front. */
+  const at = (s, t) => [south[0] + along[0] * s + back[0] * t, south[1] + along[1] * s + back[1] * t];
+  const box = (s0, s1, t0, t1) => [at(s0, t0), at(s1, t0), at(s1, t1), at(s0, t1)];
+  const gold = { kind: 'glass', colour: '#b48a52', storey: 4.1, bay: 1.5, lit: 0.12, floors: 0.3, mirror: 0.45, ridge: 0.4, light: '#ffcf8a', glow: 0.35 };
+  const black = { kind: 'glass', colour: '#1b2127', storey: 4.1, bay: 1.5, lit: 0.4, floors: 0.4, mirror: 0.35, ridge: 0.2 };
+  const lobby = [{ from: 0, to: 12, stuff: { kind: 'glass', colour: '#6e8794', storey: 4, bay: 3, lit: 1, mirror: 0.3, floors: 0.4 } }];
+  const beacons = [];
+  // The two slabs of gold, at the two ends of the front.
+  for (const [s0, s1] of [[0, slab], [length - slab, length]]) {
+    const ring = box(s0, s1, 0, depth);
+    between(model, raised(ring, 0), raised(ring, top), gold, { bands: lobby, lines: [false, true, false, false] });
+    model.flat(raised(ring, top), { kind: 'plain', colour: '#8f8a80' });
+    beacons.push([...at((s0 + s1) / 2, depth / 2), top + 0.6]);
+  }
+  // The black glass between them, standing back from the front and the back. (Its ends stand just inside
+  // the slabs, where nothing shows of them.)
+  const glass = box(slab - 0.05, length - slab + 0.05, cut, depth - cut);
+  between(model, raised(glass, 0), raised(glass, middle), black, { bands: lobby });
+  model.flat(raised(glass, middle), { kind: 'plain', colour: '#2a2f35' });
+  return { beacons };
 }
 
 // ── Burj Rafal ────────────────────────────────────────────────────────────

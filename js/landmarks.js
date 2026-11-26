@@ -18,7 +18,7 @@
 // Nothing here touches the browser. Measurements are in metres.
 
 import { WORLD_PARTS, worldPlace } from './boulevard.js';
-import { FAMOUS, KAFD_STATION, kafdStation, majdoulAnnex, majdoulTower, rafalTower, stationShades, tvTower, waterTower } from './famous.js';
+import { FAMOUS, KAFD_STATION, kafdStation, majdoulAnnex, majdoulTower, rafalTower, rajhiTower, stationShades, tvTower, waterTower } from './famous.js';
 import { KAFD_PARTS, kafdPlace } from './kafd.js';
 import { Model, ModelMesh } from './models.js';
 import { PROPS } from './props.js';
@@ -870,7 +870,8 @@ export const LANDMARKS = [
   // only lies across the road in a photograph: that goes altogether, with its shadow. See ghostsOfLandmarks.)
   { id: 'burj-rafal', name: 'Burj Rafal', at: [46.632342, 24.792398], bearing: 83, height: 308, clear: 62, reach: 105, model: rafalTower, ghosts: [[-47.5, 19.3]] },
   // (The buildings data has the tower's foot, its canopy and its low wing as one outline, 69 m from its middle to its far end: that is cleared with the tower's own.)
-  { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20.5, height: 244, clear: 44, build: majdoulAnnex, model: majdoulTower, nights: { '#e9e6dc': '#57534a' } },
+  { id: 'al-majdoul', name: 'Al Majdoul Tower', at: [46.659233, 24.739117], bearing: 20.5, height: 222, clear: 44, build: majdoulAnnex, model: majdoulTower, nights: { '#e9e6dc': '#57534a' } },
+  { id: 'al-rajhi-hq', name: 'Al Rajhi Bank headquarters', at: [46.653541, 24.750123], bearing: 0, height: 205, clear: 44, model: rajhiTower },
   // (It stands on open ground: nothing is cleared for it, and it brings its own shadow.)
   { id: 'tv-tower', name: 'Riyadh TV Tower', at: [46.69601, 24.64322], bearing: 0, height: 170, clear: 0, reach: 16, model: tvTower, shade: { radius: 5, height: 150 } },
   // (The buildings data has the round of its bowl as if that stood on the ground: it goes altogether (ghosts). The tower's

@@ -122,9 +122,19 @@ map opens on the city and keeps to it, and places are looked for in it.
   white. Never in a building, on a road, on a pavement or against a tree.
 - **Riyadh's landmarks, modelled by hand.** Kingdom Centre with its arch and
   sky bridge, Al Faisaliah with its golden globe, the PIF Tower, Burj Rafal,
-  the twisting Al Majdoul Tower, the TV Tower, the striped water tower and
-  the KAFD metro station each have their own shape, built from reference
-  photos on the building's real outline, in place of a plain block.
+  the twisting Al Majdoul Tower, the two gold slabs of the Al Rajhi Bank
+  headquarters, the TV Tower, the striped water tower and the KAFD metro
+  station each have their own shape, built from reference photos on the
+  building's real outline, in place of a plain block.
+- **Al Majdoul Tower, as photographed.** Each of its 54 floors stands turned
+  2.5 degrees from the one below, 135 degrees from the ground to the roof,
+  so from any side it seems to narrow half way up and widen again. A white
+  fin runs along every floor and stops at the silver spines that wind up its
+  four corners. By night the foot of every fin is a line of cool light, the
+  glass under it is washed blue, rows of ceiling lamps show through, two
+  floors high up glow warm and the spines are dark lines across it all. On
+  the flat roof stand a drum of glass, the helipad with its ring of light,
+  and the masts of the cradle that cleans the glass.
 - **The Ministry of Interior.** The upside-down pyramid on King Fahd Road
   that the city calls the flying saucer is built with its details: five
   floors, each wider than the one below, as leaning bands of stone over dark
@@ -174,7 +184,9 @@ map opens on the city and keeps to it, and places are looked for in it.
   blue glass under level louvres, folded along slanting lines picked out in
   broad bands of bright metal and cut off aslant, as blue as the sky they
   mirror; white towers pierced with diamond windows; blocks of tan stone;
-  low blocks in copper fins; the World Trade Center's two shafts in a lace of
+  low blocks in copper fins that flare out at their foot; the Riyad Bank
+  tower in close-set bronze fins, its top one great slant clad like its
+  walls; the World Trade Center's two shafts in a lace of
   white panels pierced with diamonds of every size, with a seam of ribbed dark
   glass between them; the bank tower of silver studs, each a small pyramid,
   under a crown of teeth, a roof that reaches out past it and a spire of 70 m;
@@ -581,7 +593,8 @@ Everything is free and needs no account or key.
 | What stands at Boulevard World, and where | The satellite photo above (Esri World Imagery, taken in September 2025): the lagoon's shore was traced from it and every thing's place measured on it. Sixteen photographs of the place by night and the fairground's own booklet for the 2026-27 season, both sent by the app's owner | Studied, not shown: the models are built by hand from them. No photograph and no page of the booklet is in the app or fetched by it |
 | The King Abdullah Financial District, building by building | Outlines and thirty-four heights: the buildings data below (Overture Maps), kept in `js/kafd-data.js` (see `tools/kafd/`). The other heights, six outlines the data lacks, and the colours of roofs and walls: the satellite photo above (Esri World Imagery), read by hand. What the towers look like from the ground: seven photographs on [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:King_Abdullah_Financial_District) (six by Kolaiel, CC0; one by Ahmed, CC BY-SA 4.0), seven more taken in the district and given for this, and Wikipedia's articles on the district, its World Trade Center and its Grand Mosque. The bank tower's plan and spire: its architects' page ([Foster + Partners](https://fosterandpartners.com/projects/snb-head-office)); the height and floors of the tower of chevrons: the [Skyscraper Center](https://www.skyscrapercenter.com/building/aramco-tower/17179) (both found by a web search) | Studied, not shown: the models are built by hand from them. No photograph is in the app or fetched by it |
 | The Ministry of Interior | Its plan and what stands on its roof: the satellite photo above (Esri World Imagery), measured by hand. What it looks like from the road, by day and by night: six photographs found through [Openverse](https://openverse.org) on Flickr (by Rupert Affen, IMP1, Bakar_88, Mohd Azli Abdul Malek and airbus777, under Creative Commons licences) and Wikipedia's article on the building | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
-| Al Majdoul Tower | Its square, its turn, its fins, its roof and the canopy at its foot: the satellite photo above (Esri World Imagery), read by hand, and the buildings data's outline. Its height, floors and architects: Wikipedia's article on the tower and the Council on Tall Buildings' record of it, as found by a web search | Studied, not shown: the model is built by hand from them |
+| Al Majdoul Tower | Its square, which way it turns, its roof and the canopy at its foot: the satellite photo above (Esri World Imagery), read by hand, and the buildings data's outline. Its turn of 2.5 degrees a floor, 135 in all: the project page of its builders ([UNEC](https://unec.co/?p=1093)) and Wikipedia's list of twisted buildings. Its floors and architects: Wikipedia's article on the tower and the Council on Tall Buildings' record of it (all found by a web search). Its fins, its spines, its bands of plant, its drum, helipad and masts, its light by night and the height of its roof: photographs of it by day and by night, sent by the app's owner | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
+| The Al Rajhi Bank headquarters | Its outline and height: the buildings data (Overture Maps). Its two slabs of gold with the black glass between them: photographs from the street, sent by the app's owner | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | Burj Rafal | Its plan, its masts, its podium's roof and its forecourt: the satellite photo above (Esri World Imagery), read by hand, and the buildings data's outlines. Its height, floors, architects and what it is made of: Wikipedia's article on the tower, the Council on Tall Buildings' record of it and its cost managers' and a trade paper's accounts, as found by a web search | Studied, not shown: the model is built by hand from them |
 | The Riyadh TV Tower | Its lantern's plan: the satellite photo above (Esri World Imagery), measured by hand. Its height, its architect and that its shaft is of concrete: Wikipedia's article on the tower and its record at Structurae, as found by a web search | Studied, not shown: the model is built by hand from them |
 | The Riyadh Water Tower | Its rim and its roof: the satellite photo above (Esri World Imagery) and the buildings data's outline. Its outline from the side, its stripes and their colours: four photographs found through [Openverse](https://openverse.org) on Flickr (by EVITAS WEBFOTOS, CC BY-NC-SA 2.0; distar97, CC BY-ND 2.0; and oboudiold, public domain mark). Its height, its designer and the tower it was modelled on: Wikipedia's article on the tower and Saudipedia's, as found by a web search | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
@@ -741,15 +754,20 @@ metres), and the side away from the road, which no photograph showed: it is
 built as the mirror of the other. Its lattice is drawn in openings that stand
 on their points, every one cut; the real openings are of many sizes.
 
-Al Majdoul Tower (`js/famous.js`). What is real: its 244 m and 54 floors, as
-published; and, read off the satellite photo, which shows two of its walls
-from top to bottom: its square of 38 m that does not narrow, its quarter turn
-and which way it goes (clockwise as it rises, seen from above), the white fin
-at every floor, the helipad, and the screen round the roof with its one high
-corner. What is a judgement, no photograph from the ground having been had:
-the colour of its glass, the height of the roof under the screen (214 m), and
-how high the canopy at its foot stands. The low wing beside it is built
-plainly, on the buildings data's outline.
+Al Majdoul Tower (`js/famous.js`). What is real: its 54 floors and its turn of
+2.5 degrees a floor, 135 in all, as published; read off the satellite photo:
+its square of 38 m that does not narrow, which way it turns (clockwise as it
+rises, seen from above) and how its roof stands; and as photographs of it by
+day and by night show it: the white fins, the silver spines up its corners
+where the fins stop, the three bands of plant behind louvres, the flat roof
+with its railing, the drum of glass, the helipad and its ring of light, the
+two masts of the cradle, and its light by night. The height of its roof,
+214 m, was measured on two of those photographs against the width of its
+square; the heights published for it, 232 m and 244 m, are higher than the
+photographs show, and do not agree with each other. What is a judgement: how
+far the fins and spines stand out, the height of the drum, which floors the
+plant is on, the two warm floors, and how high the canopy at its foot stands.
+The low wing beside it is built plainly, on the buildings data's outline.
 
 Burj Rafal (`js/famous.js`). What is real: its 307.9 m, taken as the tips of
 its two masts, its 68 floors, and that it is silvery glass on a podium of six
@@ -857,8 +875,9 @@ mosque's two minarets stand is a judgement. The glass and its louvres, the
 lace of the World Trade Center, the studs, crown and spire of the bank tower
 (diamond in plan about its atrium, with a spire of 70 m, as its architects,
 Foster + Partners, publish), the zigzag of the tower of chevrons (160 m and
-32 floors, as published of the tower that stands there) and the copper fins
-were matched to photographs of the district taken from the street; how many
+32 floors, as published of the tower that stands there), the bronze fins of
+the Riyad Bank tower and the copper fins with their flare at the foot were
+matched to photographs of the district taken from the street; how many
 studs, teeth and chevrons there are, and how deep, is a likeness. Six buildings that the data does
 not have were traced from the satellite photo, corners and heights to a few
 metres only; others it does not have, in the west and the north of the

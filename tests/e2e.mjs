@@ -1035,7 +1035,7 @@ try {
   });
   check(
     '3D City: the landmark towers are modelled by hand',
-    marks.known === 'kingdom-centre,al-faisaliah,pif-tower,burj-rafal,al-majdoul,tv-tower,water-tower,kafd-station' && marks.stayed === 'wadi-laban' && marks.slabs > 800 && marks.kind === 'fill-extrusion' && marks.height === '["get","t"]' && marks.base === '["get","b"]' && marks.colour === '["get","c"]' && marks.inOrder,
+    marks.known === 'kingdom-centre,al-faisaliah,pif-tower,burj-rafal,al-majdoul,al-rajhi-hq,tv-tower,water-tower,kafd-station' && marks.stayed === 'wadi-laban' && marks.slabs > 800 && marks.kind === 'fill-extrusion' && marks.height === '["get","t"]' && marks.base === '["get","b"]' && marks.colour === '["get","c"]' && marks.inOrder,
     JSON.stringify({ ...marks, known: undefined }),
   );
   check('3D City: Kingdom Centre stands 302 m tall in place of its plain block', marks.kingdom > 60 && marks.top === 302 && marks.seen.includes('kingdom-centre') && scene.buildings.replaced >= 1, JSON.stringify({ kingdom: marks.kingdom, top: marks.top, seen: marks.seen, replaced: scene.buildings.replaced }));

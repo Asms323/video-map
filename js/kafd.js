@@ -67,6 +67,8 @@ const SKINS = {
   lace: { kind: 'pierced', colour: '#efece5', bay: 4.2, storey: 4.4, diamonds: true, holes: 0.38, lit: 0.35, light: '#fff1d8', glow: 0.22 },
   // Dark glass behind upright fins of dark grey metal, one to every metre and a half: the seam between them.
   ribbed: { kind: 'glass', colour: '#4c545b', bay: 1.6, lit: 0.45, ribs: true, floors: 0.25, mirror: 0.3, ridge: 0.5, light: EDGE_LIGHT, glow: 0.12 },
+  // Bronze fins, close-set, over dark glass: the Riyad Bank tower.
+  bronze: { kind: 'glass', colour: '#a37a4a', bay: 1.5, storey: 4.2, lit: 0.4, ribs: true, floors: 0.2, mirror: 0.3, ridge: 0.4, light: '#ffe1b0', glow: 0.12 },
   // Copper fins over dark glass: the low blocks by the station.
   copper: { kind: 'glass', colour: '#a0613f', bay: 1.9, storey: 4.2, lit: 0.35, ribs: true, floors: 0.3, mirror: 0.2, ridge: 0.3, light: '#ffd9b0', glow: 0.12 },
   // Silver metal in studs, each a small pyramid on its point: the bank tower with the spire.
@@ -88,7 +90,7 @@ const SKINS = {
 };
 
 /** The colour of a roof under each skin. */
-const ROOFS = { dark: '#39434b', blue: '#56677a', ice: '#aebfcc', steel: '#4a5661', black: '#23292e', facet: '#5b6f81', lace: '#e6e3dc', ribbed: '#4a5158', copper: '#7d5240', studs: '#c3ccd2', lattice: '#ebe8e0', mesh: '#d9d4c8', screen: '#eeebe5', stone: '#d6ccb8', white: '#ebe8e1', bands: '#e6e6e2', sand: '#efe8d8' };
+const ROOFS = { bronze: '#5f4b37', dark: '#39434b', blue: '#56677a', ice: '#aebfcc', steel: '#4a5661', black: '#23292e', facet: '#5b6f81', lace: '#e6e3dc', ribbed: '#4a5158', copper: '#7d5240', studs: '#c3ccd2', lattice: '#ebe8e0', mesh: '#d9d4c8', screen: '#eeebe5', stone: '#d6ccb8', white: '#ebe8e1', bands: '#e6e6e2', sand: '#efe8d8' };
 
 /**
  * How each building is built. skin: one of SKINS. For the rest, what is not said is as follows.
@@ -104,6 +106,9 @@ const ROOFS = { dark: '#39434b', blue: '#56677a', ice: '#aebfcc', steel: '#4a566
  *     from the building's middle;
  *   spire: a mast on its top, reaching the building's height: the roof itself is this much lower;
  *   taper: how much smaller its outline is at the top than at the foot (1: no smaller);
+ *   roofed: 'skin' for a slanting roof clad as its walls are (else it is plain, of the colour of ROOFS);
+ *   flare: fins that stand out from its walls at its foot, curving further out the nearer the ground:
+ *     { height: how high they rise, out: how far out they reach at the ground, every: how far apart };
  *   height: what to build it to, where that is not the data's height.
  * (What the photographs show of each is said beside it; a building with nothing beside it was seen only
  * from above.)
@@ -112,8 +117,9 @@ const PLANS = {
   // The World Trade Center: see tradeCentre.
   2: { skin: 'lace', tiers: 5, swing: 0.025 },
   5: { skin: 'lace', tiers: 4, swing: 0.025 },
-  // Dark, its top one great slant of glass that rises to the north-west.
-  3: { skin: 'steel', drop: 64, high: 322, tiers: 4, swing: 0.03 },
+  // The Riyad Bank tower: close-set bronze fins from its glass foot to its top, which is one great slant
+  // that rises to the north-west; its walls stand straight.
+  3: { skin: 'bronze', drop: 44, high: 322, tiers: 0, roofed: 'skin' },
   // The bank tower with the spire: see studdedTower. (The data's 231 m is the tip of the spire.)
   4: { skin: 'studs', spire: 70 },
   // The palest of the towers, under a crown of facets like a cut stone: the photo shows its point some
@@ -137,7 +143,7 @@ const PLANS = {
   22: { skin: 'stone' }, // the long terraced block of beige stone along the ring road
   23: { skin: 'screen', top: 'peak', rise: 16, tiers: 0 }, // white, pricked all over with dark holes, its roof in facets
   24: { skin: 'white' },
-  25: { skin: 'copper' }, // red roofs in ridges; copper fins on its walls
+  25: { skin: 'copper', flare: { height: 11, out: 2.8, every: 2.2 } }, // red roofs in ridges; copper fins on its walls, which flare out at its foot
   26: { skin: 'stone' },
   27: { skin: 'copper' },
   28: { skin: 'copper' },
@@ -296,6 +302,35 @@ export function crystal(model, building, plan) {
     }
   }
 
+  // Fins at its foot that flare out, like the skirt of a robe: each a thin plate across the wall, its
+  // outer edge curving out to the ground.
+  if (plan.flare) {
+    const { height: rise, out: reachOut, every } = plan.flare;
+    const fin = { kind: 'plain', colour: skin.colour, ridge: 0.3, light: skin.light, glow: 0.2 };
+    const steps = 5;
+    const depthAt = (z) => 0.45 + (reachOut - 0.45) * (1 - z / rise) ** 2;
+    for (let i = 0; i < count; i += 1) {
+      const [from, to] = [ring[i], ring[(i + 1) % count]];
+      const run = [to[0] - from[0], to[1] - from[1]];
+      const long = Math.hypot(run[0], run[1]);
+      const way = [run[0] / long, run[1] / long];
+      const outward = outOf(from, to);
+      const size = Math.hypot(outward[0], outward[1]) || 1;
+      const away = [outward[0] / size, outward[1] / size];
+      const fins = Math.floor(long / every);
+      for (let k = 1; k < fins; k += 1) {
+        const at = [from[0] + way[0] * (long * k) / fins, from[1] + way[1] * (long * k) / fins];
+        const edge = (z, side) => [at[0] + away[0] * depthAt(z) + way[0] * side * 0.12, at[1] + away[1] * depthAt(z) + way[1] * side * 0.12, z];
+        const root = (z, side) => [at[0] + way[0] * side * 0.12, at[1] + way[1] * side * 0.12, z];
+        for (let step = 0; step < steps; step += 1) {
+          const [z0, z1] = [(rise * step) / steps, (rise * (step + 1)) / steps];
+          for (const side of [-1, 1]) model.quad(root(z0, side), edge(z0, side), edge(z1, side), root(z1, side), fin, { out: [way[0] * side, way[1] * side, 0], lines: [false, false, false, false] });
+          model.quad(edge(z0, -1), edge(z0, 1), edge(z1, 1), edge(z1, -1), fin, { out: [away[0], away[1], 0.2], lines: [false, false, false, false] });
+        }
+      }
+    }
+  }
+
   // The top. (It lies inside the block the map has for the building, or over one the map has too low: it
   // takes no shadow.)
   const rim = ring.map((_, i) => corner(i, levels));
@@ -311,7 +346,8 @@ export function crystal(model, building, plan) {
     }
     beacons.push([east, north, height + 0.6]);
   } else {
-    model.flat(rim, { kind: 'plain', colour: plan.roof ?? ROOFS[plan.skin], open: true });
+    // (A slant clad as the walls are, where the skin runs on over the top, as the bank tower's fins do.)
+    model.flat(rim, plan.roofed === 'skin' ? { ...stuff, lit: 0, open: true } : { kind: 'plain', colour: plan.roof ?? ROOFS[plan.skin], open: true });
     // (A lamp on its highest corner; and on a long roof, one on the corner furthest from it.)
     const highest = rim.reduce((best, one) => (one[2] > best[2] ? one : best));
     beacons.push([highest[0] * 0.94, highest[1] * 0.94, highest[2] + 0.6]);

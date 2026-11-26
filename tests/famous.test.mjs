@@ -361,66 +361,103 @@ test('Masmak Fort: four leaning walls of clay with a round tower at each corner,
   assert.ok(outer.every((face) => face.light === '#ffe08a'));
 });
 
-test('Al Majdoul Tower: a square that turns a quarter turn clockwise as it rises, a white fin at every floor, a slanting screen round its helipad', () => {
+test('Al Majdoul Tower: a square that turns 2.5 degrees a floor, clockwise as it rises; white fins lit at their foot, stopping at dark spines; a flat roof with a drum and a helipad', () => {
   const T = MAJDOUL;
   const storey = T.deck / T.floors;
   assert.ok(near(storey, 3.963, 1e-3));
-  // Its square at the ground; turned an eighth half-way up, a quarter at its roof: clockwise, seen from above (its north-eastern corner goes round by the east to the south-east).
-  assert.deepEqual(majdoulSquare(0), [[18.8, 18.8], [-18.8, 18.8], [-18.8, -18.8], [18.8, -18.8]]);
-  const half = majdoulSquare(T.deck / 2);
-  assert.ok(near(half[0][0], 18.8 * Math.SQRT2, 1e-9) && near(half[0][1], 0, 1e-9));
-  const roof = majdoulSquare(T.deck);
-  assert.ok(near(roof[0][0], 18.8, 1e-9) && near(roof[0][1], -18.8, 1e-9));
-  assert.deepEqual(majdoulSquare(999), roof, 'it turns no further above its roof');
+  // Its roof's square is the satellite photo's, its sides running east and north in the model's own frame;
+  // lower down it stands turned anticlockwise, 2.5 degrees a floor: 135 at the ground. (So, going up, it
+  // turns clockwise, seen from above.)
+  assert.deepEqual(majdoulSquare(T.deck), [[18.8, 18.8], [-18.8, 18.8], [-18.8, -18.8], [18.8, -18.8]]);
+  assert.deepEqual(majdoulSquare(999), majdoulSquare(T.deck), 'it turns no further above its roof');
+  const angleOf = (z) => (Math.atan2(majdoulSquare(z)[0][1], majdoulSquare(z)[0][0]) * 180) / Math.PI;
+  assert.ok(near(angleOf(T.deck), 45, 1e-9) && near(angleOf(T.deck / 2), 45 + 67.5, 1e-9) && near(angleOf(0), 180, 1e-9));
+  for (const floor of [0, 20, 53]) assert.ok(near(angleOf(floor * storey) - angleOf((floor + 1) * storey), 2.5, 1e-9), `floor ${floor}`);
   // (It does not narrow: every corner is 26.6 m from the middle at any height.)
   for (const z of [0, 50, 133, 214]) assert.ok(majdoulSquare(z).every((corner) => near(Math.hypot(...corner), 18.8 * Math.SQRT2, 1e-9)));
 
   const mesh = new ModelMesh();
   const made = majdoulTower(new Model(mesh));
   const faces = facesOf(mesh);
-  // Four twisted walls of glass, a floor at a time: fifty-four floors, the lowest two a lobby with its lamps on.
-  const glass = faces.filter((face) => face.kind === 'glass' && face.colour === '#5d7d94');
+  // Four twisted walls of glass, a floor at a time: fifty-four floors. The lowest two are a lobby with its
+  // lamps on; three bands of two floors are plant behind louvres (over the lobby, half way up, at the top);
+  // two floors high up have warm lamps, all on; the rest is blue glass, a quarter of its floors lit by night.
+  const glass = faces.filter((face) => face.kind === 'glass' && face.colour === '#5288c0');
   const lobby = faces.filter((face) => face.kind === 'glass' && face.colour === '#7c98a8');
-  assert.deepEqual([glass.length, lobby.length], [52 * 8, 2 * 8]);
+  const plant = faces.filter((face) => face.kind === 'glass' && face.colour === '#5a554c');
+  assert.deepEqual([glass.length, lobby.length, plant.length], [46 * 8, 2 * 8, 6 * 8]);
   assert.ok(lobby.every((face) => face.lit === 1 && Math.max(...face.corners.map((corner) => corner[2])) <= 2 * storey + 1e-3));
-  // (A twisted wall leans out at one end and in at the other: by as much as eight degrees, its corners going round 0.77 m with every floor.)
-  assert.ok(glass.every((face) => near(face.storey, storey, 1e-3) && Math.abs(face.normal[2]) < 0.15), 'upright, but for their twist');
-  assert.ok(glass.some((face) => face.normal[2] > 0.1) && glass.some((face) => face.normal[2] < -0.1));
-  // A fin at the top of every floor: white, 0.8 m out of the glass, with an upper side, an underside and an edge.
-  const white = faces.filter((face) => face.colour === '#f1f2f1');
+  assert.ok(plant.every((face) => face.louvres && face.lit < 0.05));
+  const floorOf = (face) => Math.round(Math.min(...face.corners.map((corner) => corner[2])) / storey);
+  assert.deepEqual([...new Set(plant.map(floorOf))].sort((x, y) => x - y), [2, 3, 25, 26, 52, 53]);
+  const warm = glass.filter((face) => face.light === '#ffc277');
+  assert.ok(warm.length === 16 && warm.every((face) => face.lit === 1 && [39, 40].includes(floorOf(face))));
+  assert.ok(glass.filter((face) => face.light !== '#ffc277').every((face) => near(face.lit, 0.25, 0.01) && face.light === '#7fb2e6'), 'washed in cool blue by night');
+  // (The light falls on a twisted wall as on the sheet it is part of: upright, looking the way the wall looks
+  // at its foot and at its top, which differ by the 2.5 degrees of a floor.)
+  assert.ok(glass.every((face) => near(face.storey, storey, 1e-3) && face.normals.every((normal) => Math.abs(normal[2]) < 1e-6)));
+  const lean = (face) => (Math.acos(Math.min(1, face.normals[0][0] * face.normals[2][0] + face.normals[0][1] * face.normals[2][1])) * 180) / Math.PI;
+  assert.ok(glass.some((face) => near(lean(face), 2.5, 0.01)));
+
+  // At the top of every floor, along each wall from spine to spine, a fin 1.3 m out of the glass: white on
+  // top, warm grey underneath, its face 1.15 m deep, the foot of it a line of cool light by night and the rest
+  // of it washed by that light.
+  const fins = faces.filter((face) => ['#f1f2f1', '#d9d2c4', '#f4f6f6'].includes(face.colour) && face.corners.every((corner) => corner[2] < T.deck + 1));
+  const lamps = fins.filter((face) => face.colour === '#f4f6f6' && face.glow === 1);
+  assert.ok(lamps.length === T.floors * 8 && lamps.every((face) => face.light === '#a8cff5'));
   for (const floor of [1, 27, 54]) {
-    const fin = white.filter((face) => face.corners.every((corner) => Math.abs(corner[2] - floor * storey) <= 0.121));
-    assert.equal(fin.length, 24, `floor ${floor}`);
-    assert.ok(near(Math.max(...fin.flatMap((face) => face.corners.map((corner) => Math.hypot(corner[0], corner[1])))), (18.8 + T.fin) * Math.SQRT2, 1e-3));
+    const high = floor * storey;
+    const fin = fins.filter((face) => face.corners.every((corner) => corner[2] <= high + 0.25 + 1e-3 && corner[2] >= high + 0.25 - T.edge - 1e-3));
+    assert.equal(fin.length, 32, `floor ${floor}`);
     assert.equal(fin.filter((face) => face.normal[2] > 0.99).length, 8);
     assert.equal(fin.filter((face) => face.normal[2] < -0.99).length, 8);
-    // (It has turned with the tower: its corners are the tower's at that height, further out.)
-    const corners = majdoulSquare(floor * storey, 18.8 + T.fin);
-    assert.ok(corners.every(([east, north]) => fin.some((face) => face.corners.some((corner) => near(corner[0], east, 1e-3) && near(corner[1], north, 1e-3)))));
+    // (Its corners are the tower's at that height, along the walls and further out: they stop short of the
+    // corners, at the spines.)
+    const square = majdoulSquare(high);
+    const way = [(square[1][0] - square[0][0]) / 37.6, (square[1][1] - square[0][1]) / 37.6];
+    const start = [square[0][0] + way[0] * T.spine[0] + way[1] * T.fin, square[0][1] + way[1] * T.spine[0] - way[0] * T.fin];
+    assert.ok(fin.some((face) => face.corners.some((corner) => near(corner[0], start[0], 1e-3) && near(corner[1], start[1], 1e-3))), `floor ${floor}`);
+    assert.ok(fin.every((face) => face.corners.every((corner) => Math.hypot(corner[0], corner[1]) < (18.8 + T.fin) * Math.SQRT2 - 0.1)));
   }
-  // The screen round the roof: its top one slanting plane, 244 m at the north-western corner and 217.5 m across the roof from it.
-  const screen = faces.filter((face) => face.colour === '#7d9bb0');
-  assert.equal(screen.length, 8);
-  const rim = screen.flatMap((face) => face.corners).filter((corner) => corner[2] > T.deck + 1);
-  for (const [east, north, up] of rim) assert.ok(near(up, T.low + (T.top - T.low) * ((north - east) / 37.6 + 1) / 2, 1e-3));
-  assert.ok(rim.some((corner) => near(corner[0], -18.8, 1e-3) && near(corner[1], 18.8, 1e-3) && near(corner[2], 244, 1e-3)));
-  assert.ok(rim.some((corner) => near(corner[0], 18.8, 1e-3) && near(corner[1], -18.8, 1e-3) && near(corner[2], 217.5, 1e-3)));
-  assert.ok(screen.every((face) => face.glow > 0.4), 'lit by night');
-  // Inside it, the roof and the helipad: a blue round of 12 m in a white ring.
+  // Up each corner a spine of silver, which stands out past the fins and turns with the tower from the ground
+  // to the top of the railing: its two sides and its front, a floor at a time; no lamp on it, so by night it
+  // is dark.
+  const spines = faces.filter((face) => face.colour === '#c4c7c7');
+  assert.equal(spines.length, 4 * (T.floors + 1) * 3 * 2 + 4 * 2);
+  assert.ok(spines.every((face) => face.glow === 0));
+  const reachOf = (z) => Math.max(...spines.filter((face) => face.corners.every((corner) => Math.abs(corner[2] - z) < storey + 1e-3)).flatMap((face) => face.corners.map((corner) => Math.hypot(corner[0], corner[1]))));
+  assert.ok(near(reachOf(100), Math.hypot(18.8 - T.spine[0], 18.8 + T.spine[1]), 1e-3) && reachOf(100) > Math.hypot(18.8 - T.spine[0], 18.8 + T.fin));
+  assert.ok(near(Math.max(...heights(spines)), T.deck + 0.25 + T.rail, 1e-3) && near(Math.min(...heights(spines)), 0, 1e-9));
+  // By night, rows of the lamps in the ceilings show through the glass, under the fins of most office floors.
+  const ceiling = faces.filter((face) => face.kind === 'lamp');
+  assert.ok(ceiling.length > 1000 && ceiling.every((face) => face.light === '#f2f7ff' && face.glow === 1));
+  // The roof is flat, with a railing round it on the last fin. On it a drum of glass, lit by night, and on the
+  // drum the helipad, 222 m up: blue, in a white ring, overhanging the drum, its rim a ring of light by night.
+  const roof = faces.filter((face) => face.colour === '#cfd0cc');
+  assert.ok(roof.length === 2 && roof.every((face) => face.open && face.corners.every((corner) => near(corner[2], T.deck + 0.25, 1e-9))));
+  const rail = faces.filter((face) => face.colour === '#8f9599');
+  assert.ok(rail.length > 200 && near(Math.max(...heights(rail)), T.deck + 0.25 + T.rail + 0.04, 0.01));
+  const drum = faces.filter((face) => face.colour === '#6f8f8c');
+  assert.ok(drum.length === 48 && drum.every((face) => face.kind === 'glass' && face.corners.every((corner) => near(Math.hypot(corner[0], corner[1]), T.drum[0], 1e-6))));
   const pad = faces.filter((face) => face.colour === '#2f7fd2');
-  assert.ok(pad.length === 26 && pad.every((face) => face.open && face.normal[2] > 0.99 && face.corners.every((corner) => near(corner[2], T.deck + 0.4, 1e-3) && Math.hypot(corner[0], corner[1]) <= T.helipad + 1e-3)));
-  // A rod on the high corner, and the red lamp on it.
-  assert.ok(near(Math.max(...heights(faces)), 247, 1e-3));
-  assert.deepEqual(made.beacons.map((lamp) => lamp.map((part) => Math.round(part * 10) / 10)), [[-18.2, 18.2, 247.6]]);
+  assert.ok(pad.length === 26 && pad.every((face) => face.open && face.normal[2] > 0.99 && face.corners.every((corner) => near(corner[2], 222.15, 1e-3))));
+  const halo = faces.filter((face) => face.colour === '#eef6fa');
+  assert.ok(halo.length === 56 && halo.every((face) => face.glow === 1 && face.corners.every((corner) => Math.hypot(corner[0], corner[1]) > T.drum[0] + 2.9)));
+  // On two corners of the roof, the masts of the cradle that cleans the glass, each with its arm and the red
+  // lamp on it; nothing stands higher than the helipad.
+  assert.deepEqual(made.beacons.map((lamp) => lamp.map((part) => Math.round(part * 100) / 100)), [[16.82, 16.82, 220.25], [-16.82, -16.82, 220.25]]);
+  assert.ok(near(Math.max(...heights(faces)), 222.15, 1e-3));
+  assert.ok(!faces.some((face) => face.colour === '#7d9bb0'), 'no screen round the roof');
   // At its foot the canopy: glass on ribs, from the tower's glass out to 38 m at most, 11 m high at the tower and 8 m at its edge, on six columns; lit from below by night.
   const canopy = faces.filter((face) => face.colour === '#a9bcc6');
   assert.equal(canopy.length, 12 * 2 * 4);
   const spots = canopy.flatMap((face) => face.corners);
   assert.ok(near(Math.max(...spots.map((spot) => Math.hypot(spot[0], spot[1]))), 38, 1e-3) && spots.every((spot) => spot[2] >= 8 - 1e-3 && spot[2] <= 11 + 1e-3));
-  // (Outside the tower's glass as it stands at the canopy's own height, where it has turned four degrees.)
+  // (Outside the tower's glass as it stands at the canopy's own height.)
   const outside = ([east, north, up]) => {
-    const angle = ((T.turn * Math.PI) / 180) * (up / T.deck);
-    return Math.max(Math.abs(east * Math.cos(angle) - north * Math.sin(angle)), Math.abs(east * Math.sin(angle) + north * Math.cos(angle))) > 18.8 + 0.5;
+    // (The tower's square at that height stands turned anticlockwise from its roof's: turn it back.)
+    const angle = ((T.turn * Math.PI) / 180) * (1 - up / T.deck);
+    return Math.max(Math.abs(east * Math.cos(angle) + north * Math.sin(angle)), Math.abs(-east * Math.sin(angle) + north * Math.cos(angle))) > 18.8 + 0.5;
   };
   assert.ok(spots.every(outside), 'outside the tower');
   assert.ok(spots.every((spot) => spot[0] < 7 && spot[1] < 4), 'on its western and southern sides');

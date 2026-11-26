@@ -43,13 +43,13 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   // (And after those the financial district, every building of it a landmark as well: see kafd.test.mjs.
   // And last the famous buildings that are not towers: see famous.test.mjs.)
   const world = [...WORLD_PARTS.map((one) => one.id), ...KAFD_PARTS.map((one) => one.id), ...FAMOUS.map((one) => one.id)];
-  assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station', ...world]);
+  assert.deepEqual(LANDMARKS.map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'al-rajhi-hq', 'tv-tower', 'water-tower', 'kafd-station', ...world]);
   // Every one of them is a true model now: the halls some towers stand on are the only slabs left.
-  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'tv-tower', 'water-tower', 'kafd-station', ...world.filter((id) => id !== 'kafd')]);
+  assert.deepEqual(LANDMARKS.filter((one) => one.model).map((one) => one.id), ['kingdom-centre', 'al-faisaliah', 'hamad-tower', 'al-anoud-tower', 'al-anoud-tower-2', 'islamic-affairs', 'olaya-tower', 'olaya-tower-2', 'pif-tower', 'burj-rafal', 'al-majdoul', 'al-rajhi-hq', 'tv-tower', 'water-tower', 'kafd-station', ...world.filter((id) => id !== 'kafd')]);
   assert.ok(landmarkSlabs().features.every((feature) => feature.properties.t <= 20));
   // (The towers of the city that are true models: built for a view from anywhere. The metro station is low: only from near it.)
   const city = LANDMARKS.filter((one) => one.model && !world.includes(one.id) && !one.within).length;
-  assert.equal(city, 13);
+  assert.equal(city, 14);
   assert.equal(landmark('kafd-station').within, 6000);
   for (const one of LANDMARKS) {
     assert.ok(one.at[0] > 46.4 && one.at[0] < 46.9 && one.at[1] > 24.5 && one.at[1] < 24.9, 'in Riyadh');
@@ -110,9 +110,10 @@ test('every landmark is a stack of slabs, or a true model, standing where the bu
   // (The PIF Tower stands 2.9 km west and 7.1 km north of there; Kingdom Centre 0.4 km east and 1.3 km north; Hamad Tower 1.3 km east and 0.9 km south.)
   for (const corner of facesOf(mesh).flatMap((face) => face.corners)) {
     // (And the two Al Anoud Towers across the road from that one, and Al Faisaliah a little south and east of it.)
-    // (And Al Majdoul Tower up King Fahd Road, 1.1 km west and 4.4 km north; and Burj Rafal further up it, with its podium;
-    // and the TV Tower in the old town, 2.6 km east and 6.3 km south, and the water tower beyond it.)
-    const spots = [[-2880, 7090], [446, 1263], [1297, -883], [1169, -913], [1518, -1091], [1244, -767], [1242, -317], [-1089, 4354], [2630, -6321], [4275, -6109]];
+    // (And Al Majdoul Tower up King Fahd Road, 1.1 km west and 4.4 km north, and the Al Rajhi Bank headquarters beyond it,
+    // 1.7 km west and 5.6 km north; and Burj Rafal further up it, with its podium; and the TV Tower in the old town, 2.6 km
+    // east and 6.3 km south, and the water tower beyond it.)
+    const spots = [[-2880, 7090], [446, 1263], [1297, -883], [1169, -913], [1518, -1091], [1244, -767], [1242, -317], [-1089, 4354], [-1665, 5580], [2630, -6321], [4275, -6109]];
     if (Math.hypot(corner[0] + 3809, corner[1] - 10286) < 105) continue;
     // (…the ministry's tower north of Hamad Tower, and the Olaya Towers beyond Tahlia Street. The district's towers stand round the PIF Tower, within 800 m of it.)
     // (And each famous building where it stands: the ministry 2.6 km east and 3.3 km south, a hundred metres from its middle to its corners.)
@@ -279,12 +280,12 @@ test('Al Faisaliah: a square that rises to a point in one arc between four corne
   assert.ok(lamp.length === 1 && near(lamp[0][2], 267.6, 0.01) && Math.hypot(...from(one, lamp[0])) < 0.1);
 });
 
-test('Al Majdoul turns a quarter of a turn on its way up; Burj Rafal is one body, then two horns', () => {
+test('Al Majdoul turns 135 degrees on its way up; Burj Rafal is one body, then two horns', () => {
   // (Al Majdoul Tower is a true model: see famous.test.mjs for all of it. Here: that it stands where the tower stands, as tall, and turned.)
   const one = landmark('al-majdoul');
-  assert.deepEqual([one.bearing, one.height, one.clear], [20.5, 244, 44]);
+  assert.deepEqual([one.bearing, one.height, one.clear], [20.5, 222, 44]);
   const faces = modelOf('al-majdoul');
-  const glass = faces.filter((face) => face.kind === 'glass' && face.colour === '#5d7d94');
+  const glass = faces.filter((face) => face.kind === 'glass' && face.colour === '#5288c0');
   /** Which way the tower's walls look at a height, in degrees from east, as a square does: the same every quarter turn. */
   const facing = (z) => {
     const face = glass.find((wall) => Math.min(...wall.corners.map((corner) => corner[2])) <= z && Math.max(...wall.corners.map((corner) => corner[2])) >= z);
@@ -292,8 +293,9 @@ test('Al Majdoul turns a quarter of a turn on its way up; Burj Rafal is one body
   };
   // (Clockwise as it rises, seen from above: the way its walls look goes down through the degrees.)
   const turned = (a, b) => (((facing(a) - facing(b)) % 90) + 90) % 90;
-  assert.ok(near(turned(10, 107), 41, 2), `${turned(10, 107)}° by half way`);
-  assert.ok(near(turned(10, 205), 82, 2), `${turned(10, 205)}° near the top`);
+  // (2.5 degrees a floor: from the foot of its sixth floor to the foot of its thirty-first, 62.5; to the foot of its fifty-first, 112.5, which a square shows as 22.5.)
+  assert.ok(near(turned(21, 120), 62.5, 0.5), `${turned(21, 120)}° by half way`);
+  assert.ok(near(turned(21, 200), 22.5, 0.5), `${turned(21, 200)}° near the top`);
   // Its low wing is a slab beside it, two storeys, with a roof to be furnished.
   const wing = slabsOf('al-majdoul');
   assert.ok(wing.length === 1 && wing[0].properties.t === 9 && wing[0].properties.b === 0);
