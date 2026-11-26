@@ -318,7 +318,7 @@ test('PIF Tower: a crystal of six sides in six tiers that does not taper, folded
   const tier = (369 - foot) / 6;
   const storey = tier / 14;
   const levels = [0, 1, 2, 3, 4, 5, 6].map((level) => foot + level * tier);
-  const body = '#2f4649';
+  const body = '#26364a';
   const dark = '#1e2b2c';
   // The skin between the hall at its foot and the crown: glass, and the dark walls of the clefts.
   const skin = faces.filter((face) => face.corners.every((corner) => corner[2] >= foot - 1e-3 && corner[2] <= 369 + 1e-3) && (face.colour === body || face.colour === dark) && Math.abs(face.normal[2]) < 0.5);
@@ -422,11 +422,16 @@ test('PIF Tower: a crystal of six sides in six tiers that does not taper, folded
   const [n1, n2] = [lower, upper].map((key) => key.split(',').map(Number));
   const across = [n1[1] * n2[2] - n1[2] * n2[1], n1[2] * n2[0] - n1[0] * n2[2], n1[0] * n2[1] - n1[1] * n2[0]];
   assert.ok(Math.hypot(...across) > 0.03, 'they are not in one plane');
-  // Every glass face of the skin looks outwards; and every line of it is drawn: the folds, the levels, the corners.
+  // Every glass face of the skin looks outwards, under louvres; and its folds and corners are lined in broad
+  // bands of metal, but not the levels between two tiers (the folds run on across them): one edge of each
+  // triangle that spans a whole tier has no line.
   for (const face of glass) {
     const middle = [0, 1].map((k) => (face.corners[0][k] + face.corners[1][k] + face.corners[2][k]) / 3);
     assert.ok(face.normal[0] * middle[0] + face.normal[1] * middle[1] > 0, 'outwards');
-    assert.ok(face.ridge === 1 && face.fins > 0.5);
+    assert.ok(face.ridge === 1 && face.bold && face.outlined && face.louvres && face.fins === 0);
+    const heights = face.corners.map((corner) => corner[2]);
+    const whole = levels.some((level) => near(Math.min(...heights), level, 1e-3)) && levels.some((level) => near(Math.max(...heights), level, 1e-3));
+    if (whole) assert.equal([0, 1, 2].filter((e) => face.edges.every((corner) => corner[e] >= 1000)).length, 1);
   }
 
   // The clefts: beside each apex, on the side towards the pleat before it, a recess with dark walls, from
@@ -481,14 +486,14 @@ test('PIF Tower: a crystal of six sides in six tiers that does not taper, folded
   const under = faces.filter((face) => face.normal[2] < -0.99);
   assert.ok(under.length >= 4 && under.every((face) => face.glow > 0.5 && face.light === '#ffe9c8'), 'its underside is lit by the lamps of the hall');
 
-  // By night: a line of violet light along the edge of every floor, strongest on the crown and the tier
-  // under it; offices with their lamps on in every tier but the top one; and two bands of floors that are
-  // lit from end to end.
+  // By night: its folds lines of violet light, the edges of its floors only faintly so but for the crown
+  // and the tier under it; offices with their lamps on in every tier but the top one; and two bands of
+  // floors that are lit from end to end.
   assert.ok(glass.every((face) => face.light === '#a428f5' && near(face.storey, storey, 1e-3) && face.bay === 3));
   const tierOf = (face) => Math.floor((face.corners.reduce((sum, corner) => sum + corner[2], 0) / 3 - foot) / tier);
-  assert.ok(glass.filter((face) => tierOf(face) === 5).every((face) => face.glow === 1 && face.lit === 0));
-  assert.ok(glass.filter((face) => tierOf(face) < 5).every((face) => near(face.glow, 0.8, 0.003) && face.lit > 0.25));
-  assert.ok(outer.filter((face) => face.colour === body).every((face) => face.glow === 1 && face.lit === 0));
+  assert.ok(glass.filter((face) => tierOf(face) === 5).every((face) => near(face.glow, 0.45, 0.003) && face.lit === 0));
+  assert.ok(glass.filter((face) => tierOf(face) < 5).every((face) => near(face.glow, 0.05, 0.003) && face.lit > 0.25));
+  assert.ok(outer.filter((face) => face.colour === body).every((face) => near(face.glow, 0.45, 0.003) && face.lit === 0));
   const bright = glass.filter((face) => face.lit === 1);
   assert.ok(bright.length > 20 && bright.every((face) => tierOf(face) === 4));
   const bands = [[foot + 57 * storey, foot + 58 * storey], [foot + 65 * storey, foot + 68 * storey]];

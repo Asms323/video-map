@@ -65,6 +65,7 @@ const POOL_STRENGTH = 0.27;
 const POOL_CORE = 0.45; // how far out the bright middle of a pool reaches, as a part of its radius
 const POOL_SKIRT = 0.3; // and how much of its strength is left there, to fade out over the rest
 const POOL_FINE_WITHIN_METERS = 900; // further off than this a pool is drawn more simply
+const LAMPS_APART_METERS = 11; // no two lamps' heads nearer each other than this
 const HEAD_GLOW_METERS = 1.3;
 const ROAD_SQUARE_METERS = 48;
 
@@ -181,6 +182,23 @@ export function drawLamps(posts, glow, network, light, { most = 3000, built = nu
   };
   const postTop = lit(HEAD_PAINT, 0, 0, 1);
 
+  // Where the heads of the lamps already stood are, filed by squares of ground: no lamp stands where another
+  // already lights the road. (Two ways that run side by side, a carriageway and its twin, a road and its
+  // slip road, would each stand a lamp at much the same spot, and their pools of light would pile up into
+  // one bright disc.)
+  const heads0 = new Map();
+  const headSquare = (x, y) => squareOf(Math.floor(x / LAMPS_APART_METERS), Math.floor(y / LAMPS_APART_METERS));
+  const crowded = (x, y) => {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (const [ox, oy] of heads0.get(headSquare(x + dx * LAMPS_APART_METERS, y + dy * LAMPS_APART_METERS)) ?? []) {
+          if (Math.hypot(ox - x, oy - y) < LAMPS_APART_METERS) return true;
+        }
+      }
+    }
+    return false;
+  };
+
   /** One lamp: its post from the ground (or the deck) up, the arm, the head at the end of it, and its light. */
   const stand = (way, rule, s, side) => {
     pointAlong(way, s, spot);
@@ -195,6 +213,12 @@ export function drawLamps(posts, glow, network, light, { most = 3000, built = nu
     const px = x + outEast * across;
     const py = y + outNorth * across;
     if (!deck && ((built && built(px, py)) || onRoad(px, py, way))) return false;
+    if (crowded(px - outEast * rule.arm, py - outNorth * rule.arm)) return false;
+    {
+      const key = headSquare(px - outEast * rule.arm, py - outNorth * rule.arm);
+      if (!heads0.has(key)) heads0.set(key, []);
+      heads0.get(key).push([px - outEast * rule.arm, py - outNorth * rule.arm]);
+    }
     const foot = lift + (deck ? BRIDGE_PARAPET_METERS : 0);
     const top = lift + rule.tall;
     const h = POST_HALF_METERS;

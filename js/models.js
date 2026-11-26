@@ -20,7 +20,9 @@
 import earcut from '../vendor/earcut/earcut.js';
 
 /** What a face can be made of: its place in this list is what the drawing goes by. */
-export const STUFFS = ['plain', 'glass', 'lamp', 'pierced'];
+export const STUFFS = ['plain', 'glass', 'lamp', 'pierced', 'studs'];
+/** The marks a face can carry besides (see facet()): each a bit of one number, kept in a byte as that number times 4. */
+export const MARKS = { open: 1, changing: 2, louvres: 4, bold: 8, ribs: 16, outlined: 32 };
 /** A face has a number of its own, from 0 to this, so that no two faces of glass look quite alike. */
 export const OWN_NUMBERS = 32;
 /** What is added to the distance from an edge along which no line is drawn. */
@@ -41,8 +43,8 @@ export class ModelMesh {
     // The colour of the light the face gives by night, and how strong.
     this.lights = new Uint8Array(corners * 4);
     // The share of its rooms that are lit by night; how much of a net of fins lies over it (for a pierced
-    // skin: how much of it is cut away); how bright the lines along its edges; and (x 85) 1 if it takes no
-    // shadow, 2 if its light changes colour, 3 if both.
+    // skin: how much of it is cut away); how bright the lines along its edges; and (x 4) its marks, as
+    // MARKS has them: whether it takes no shadow, whether its light changes colour, and so on.
     this.more = new Uint8Array(corners * 4);
     this.count = 0;
     this.faces = 0;
@@ -154,13 +156,20 @@ export class Model {
    *     lit: for glass, the share of its floors whose rooms are lit by night (1: every room of every floor),
    *       and for a pierced skin the share of its windows,
    *     fins: for glass, how much of a net of slanting fins lies over it (0 to 1),
+   *     louvres: true for glass with level fins across it, two to a storey, which catch the light,
+   *     ribs: true for glass behind upright fins, one to a bay, of the face's colour (the glass between
+   *       them is dark),
    *     floors: for glass, how plainly the edge of each floor shows (0 to 1; 1 unless told),
    *     mirror: for glass, how much of a mirror it is (0: dark glass that shows a little of the sky;
    *       1: silvered, and little but the sky),
    *     changing: true for a light that changes colour slowly, all night (its own colour is then not used),
    *     ridge: how bright the lines along its edges are (0 to 1),
+   *     bold: true if those lines are broad bands of bright metal,
+   *     outlined: true if by night they are lines of light all along (else, points of light along them),
    *     open: true for a face that takes no shadow: one that lies inside the block the map has for the
    *       building, whose shadow would otherwise always fall on it (a roof behind its parapets) }
+   * Studs are a skin of small pyramids of bright metal, set on their points in a net that slants: colour
+   *     is the metal's, storey and bay the height and width of one, mirror how much of a mirror it is.
    * A pierced skin is stone, or panels, with windows cut in it: colour is the skin's, and
    *     storey, bay: how tall and how wide one window with the skin round it is,
    *     diamonds: true for windows that stand on their points, in a net that slants (each as wide as a
@@ -244,7 +253,8 @@ export class Model {
           mesh.edges[n * 4 + 3] = pierced ? (made.diamonds ? 0 : 1) : Math.min(Math.max(made.floors ?? 1, 0), 1);
           mesh.tints.set([colour[0], colour[1], colour[2], kind * OWN_NUMBERS + number], n * 4);
           mesh.lights.set([light[0], light[1], light[2], glow], n * 4);
-          mesh.more.set([byte(made.lit ?? 0), byte(pierced ? made.holes ?? 0.4 : made.fins ?? 0), byte(made.ridge ?? 0), ((made.open ? 1 : 0) + (made.changing ? 2 : 0)) * 85], n * 4);
+          const marks = Object.entries(MARKS).reduce((sum, [name, bit]) => sum + (made[name] ? bit : 0), 0);
+          mesh.more.set([byte(made.lit ?? 0), byte(pierced ? made.holes ?? 0.4 : made.fins ?? 0), byte(made.ridge ?? 0), marks * 4], n * 4);
           mesh.count += 1;
         }
       }

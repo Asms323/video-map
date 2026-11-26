@@ -49,22 +49,30 @@ const EDGE_LIGHT = '#dcebff';
  * window with the skin round it, and how much is cut away (see models.js).
  */
 const SKINS = {
-  // Dark glass under a net of fins, the folds picked out in pale lines: the PIF Tower's family.
-  dark: { kind: 'glass', colour: '#2c3f44', bay: 3, lit: 0.45, fins: 0.75, mirror: 0.15, ridge: 1, light: EDGE_LIGHT, glow: 0.2 },
+  // Dark blue-grey glass under level louvres that catch the light, its folds broad bands of bright metal:
+  // the PIF Tower's family. (In the sun the glass is as blue as the sky it mirrors.)
+  dark: { kind: 'glass', colour: '#26343f', bay: 3, lit: 0.45, louvres: true, floors: 0.45, mirror: 0.45, ridge: 1, bold: true, light: EDGE_LIGHT, glow: 0.2 },
   // Blue glass that mirrors the sky.
-  blue: { kind: 'glass', colour: '#4c7a9f', bay: 3, lit: 0.4, floors: 0.45, mirror: 0.6, ridge: 0.9, light: EDGE_LIGHT, glow: 0.16 },
+  blue: { kind: 'glass', colour: '#3f6888', bay: 3, lit: 0.4, floors: 0.5, mirror: 0.7, ridge: 0.9, bold: true, light: EDGE_LIGHT, glow: 0.16 },
   // Glass so pale that it is nearly white where the sky is in it.
-  ice: { kind: 'glass', colour: '#9db8cb', bay: 3, lit: 0.35, floors: 0.35, mirror: 0.8, ridge: 1, light: '#eef6ff', glow: 0.3 },
+  ice: { kind: 'glass', colour: '#9db8cb', bay: 3, lit: 0.35, floors: 0.35, mirror: 0.8, ridge: 1, bold: true, light: '#eef6ff', glow: 0.3 },
   // Grey-blue glass, every floor a strong pale line.
-  steel: { kind: 'glass', colour: '#3a4f62', bay: 3, lit: 0.45, floors: 1, mirror: 0.35, ridge: 0.6, light: EDGE_LIGHT, glow: 0.14 },
+  steel: { kind: 'glass', colour: '#3a4f62', bay: 3, lit: 0.45, floors: 1, mirror: 0.45, ridge: 0.6, light: EDGE_LIGHT, glow: 0.14 },
   // Black glass, in great flat facets.
-  black: { kind: 'glass', colour: '#1c242a', bay: 4, lit: 0.25, floors: 0.3, mirror: 0.3, ridge: 1, light: '#ffffff', glow: 0.25 },
+  black: { kind: 'glass', colour: '#1c242a', bay: 4, lit: 0.25, floors: 0.3, mirror: 0.3, ridge: 1, bold: true, light: '#ffffff', glow: 0.25 },
   // Clear glass in a white frame: the facets of the hall.
-  facet: { kind: 'glass', colour: '#6f93ad', bay: 3.5, lit: 0.6, floors: 0.25, mirror: 0.7, ridge: 1, light: '#ffffff', glow: 0.4 },
-  // Pale grey panels in a fine slanting net over glass: the World Trade Center.
-  pale: { kind: 'glass', colour: '#8794a0', bay: 2.4, lit: 0.35, fins: 1, floors: 0.3, mirror: 0.45, ridge: 1, light: '#ffffff', glow: 0.35 },
+  facet: { kind: 'glass', colour: '#6f93ad', bay: 3.5, lit: 0.6, floors: 0.25, mirror: 0.7, ridge: 1, bold: true, light: '#ffffff', glow: 0.4 },
+  // White panels pierced with diamonds of every size, in drifts, the glass dark behind them: the lace of
+  // the World Trade Center's two shafts.
+  lace: { kind: 'pierced', colour: '#efece5', bay: 4.2, storey: 4.4, diamonds: true, holes: 0.38, lit: 0.35, light: '#fff1d8', glow: 0.22 },
+  // Dark glass behind upright fins of dark grey metal, one to every metre and a half: the seam between them.
+  ribbed: { kind: 'glass', colour: '#4c545b', bay: 1.6, lit: 0.45, ribs: true, floors: 0.25, mirror: 0.3, ridge: 0.5, light: EDGE_LIGHT, glow: 0.12 },
+  // Copper fins over dark glass: the low blocks by the station.
+  copper: { kind: 'glass', colour: '#a0613f', bay: 1.9, storey: 4.2, lit: 0.35, ribs: true, floors: 0.3, mirror: 0.2, ridge: 0.3, light: '#ffd9b0', glow: 0.12 },
+  // Silver metal in studs, each a small pyramid on its point: the bank tower with the spire.
+  studs: { kind: 'studs', colour: '#a9b8c3', bay: 3, storey: 3, mirror: 0.45, lit: 0.45, ridge: 0.5, light: '#e8f0ff', glow: 0.14 },
   // White panels with diamond windows, some large and some small.
-  lattice: { kind: 'pierced', colour: '#ece9e1', bay: 3.4, storey: 4.2, diamonds: true, holes: 0.45, lit: 0.3, light: '#fff1d8', glow: 0.22 },
+  lattice: { kind: 'pierced', colour: '#ece9e1', bay: 4.4, storey: 4.4, diamonds: true, holes: 0.45, lit: 0.3, light: '#fff1d8', glow: 0.22 },
   // A cream mesh of diamonds, wide open, with the glass behind it.
   mesh: { kind: 'pierced', colour: '#e4dccb', bay: 5.5, storey: 2.6, diamonds: true, holes: 0.95, lit: 0.3, light: '#fff1d8', glow: 0.2 },
   // White panels pricked with small holes.
@@ -75,14 +83,12 @@ const SKINS = {
   white: { kind: 'pierced', colour: '#e9e6de', bay: 3, holes: 0.3, lit: 0.3, light: '#fff1d8', glow: 0.2 },
   // White bands and bands of glass, by turns, right round.
   bands: { kind: 'pierced', colour: '#e8e8e4', bay: 3, holes: 0.7, lit: 0.4, light: '#fff1d8', glow: 0.15 },
-  // The red-brown of the low blocks by the station.
-  terracotta: { kind: 'pierced', colour: '#8c5140', bay: 3, holes: 0.35, lit: 0.3, light: '#ffd9b0', glow: 0.18 },
   // The mosque's stone: no windows to speak of, and lamps trained on it by night.
   sand: { kind: 'plain', colour: '#e2d8c2', ridge: 0.5, light: '#ffe6bd', glow: 0.55 },
 };
 
 /** The colour of a roof under each skin. */
-const ROOFS = { dark: '#39434b', blue: '#56677a', ice: '#aebfcc', steel: '#4a5661', black: '#23292e', facet: '#5b6f81', pale: '#c9cfd4', lattice: '#ebe8e0', mesh: '#d9d4c8', screen: '#eeebe5', stone: '#d6ccb8', white: '#ebe8e1', bands: '#e6e6e2', terracotta: '#96503f', sand: '#efe8d8' };
+const ROOFS = { dark: '#39434b', blue: '#56677a', ice: '#aebfcc', steel: '#4a5661', black: '#23292e', facet: '#5b6f81', lace: '#e6e3dc', ribbed: '#4a5158', copper: '#7d5240', studs: '#c3ccd2', lattice: '#ebe8e0', mesh: '#d9d4c8', screen: '#eeebe5', stone: '#d6ccb8', white: '#ebe8e1', bands: '#e6e6e2', sand: '#efe8d8' };
 
 /**
  * How each building is built. skin: one of SKINS. For the rest, what is not said is as follows.
@@ -104,12 +110,12 @@ const ROOFS = { dark: '#39434b', blue: '#56677a', ice: '#aebfcc', steel: '#4a566
  */
 const PLANS = {
   // The World Trade Center: see tradeCentre.
-  2: { skin: 'pale', drop: 26, high: 20, tiers: 5 },
-  5: { skin: 'pale', drop: 30, high: 200, tiers: 4 },
+  2: { skin: 'lace', tiers: 5, swing: 0.025 },
+  5: { skin: 'lace', tiers: 4, swing: 0.025 },
   // Dark, its top one great slant of glass that rises to the north-west.
   3: { skin: 'steel', drop: 64, high: 322, tiers: 4, swing: 0.03 },
-  // Dark glass under a low pyramid, and a mast on it: the data's 231 m is the tip of the mast.
-  4: { skin: 'dark', top: 'peak', rise: 22, spire: 44, tiers: 3 },
+  // The bank tower with the spire: see studdedTower. (The data's 231 m is the tip of the spire.)
+  4: { skin: 'studs', spire: 70 },
   // The palest of the towers, under a crown of facets like a cut stone: the photo shows its point some
   // fifty metres over the data's height, which is taken here as its eaves.
   6: { skin: 'ice', top: 'peak', height: 250, rise: 48, tiers: 3, taper: 0.86 },
@@ -131,10 +137,10 @@ const PLANS = {
   22: { skin: 'stone' }, // the long terraced block of beige stone along the ring road
   23: { skin: 'screen', top: 'peak', rise: 16, tiers: 0 }, // white, pricked all over with dark holes, its roof in facets
   24: { skin: 'white' },
-  25: { skin: 'terracotta' }, // red roofs in ridges
+  25: { skin: 'copper' }, // red roofs in ridges; copper fins on its walls
   26: { skin: 'stone' },
-  27: { skin: 'terracotta' },
-  28: { skin: 'terracotta' },
+  27: { skin: 'copper' },
+  28: { skin: 'copper' },
   29: { skin: 'stone' },
   32: { skin: 'white' },
   33: { skin: 'steel' },
@@ -156,7 +162,7 @@ const PLANS = {
   57: { skin: 'white' },
   58: { skin: 'stone' },
   60: { skin: 'blue', high: 200 },
-  61: { skin: 'steel', swing: 0.07, tiers: 5 },
+  61: { skin: 'steel', from: 0.42, folds: 12, swing: 0.09, floors: 32 }, // the tower of chevrons: see zigzagTower
   62: { skin: 'blue' },
   63: { skin: 'ice' },
   64: { skin: 'stone' },
@@ -279,12 +285,13 @@ export function crystal(model, building, plan) {
       if (!glass || tiers === 0) {
         model.quad(a, b, c, d, stuff, { ...more, lines: [false, false, false, false] });
       } else if ((i + level) % 2 === 0) {
-        // (The fold runs from the corner that stands out below to the one that stands out above.)
-        model.facet(a, b, c, stuff, more);
-        model.facet(a, c, d, stuff, more);
+        // (The fold runs from the corner that stands out below to the one that stands out above. The folds
+        // and the corners are lined, not the levels between two tiers: the folds run on across them.)
+        model.facet(a, b, c, stuff, { ...more, lines: [false, true, true] });
+        model.facet(a, c, d, stuff, { ...more, lines: [true, false, true] });
       } else {
-        model.facet(a, b, d, stuff, more);
-        model.facet(b, c, d, stuff, more);
+        model.facet(a, b, d, stuff, { ...more, lines: [false, true, true] });
+        model.facet(b, c, d, stuff, { ...more, lines: [true, false, true] });
       }
     }
   }
@@ -321,8 +328,9 @@ export function crystal(model, building, plan) {
 /**
  * The KAFD World Trade Center (Gensler; 303 m, 67 floors above ground): the second-tallest tower of the
  * city. Its designers describe a solid rock split in two, with a wadi between: two shafts, the northern
- * one a third taller than the southern, in a skin of pale panels set in a fine slanting net, and between
- * them a seam of clear glass that runs the whole height.
+ * one a third taller than the southern, each in a lace of white panels pierced with diamonds of every
+ * size (as photographs from the street show them), and between them a seam of dark glass behind upright
+ * fins that runs the whole height.
  *
  * (The two shafts and their heights are the buildings data's, which has them apart: 304 m and 221 m. The
  * seam joins them here. How each top is cut is judged from the satellite photo.)
@@ -339,7 +347,7 @@ function tradeCentre(model, tall, short) {
   const nearest = (ring, towards) => [...ring].sort((p, q) => Math.hypot(p[0] - towards[0], p[1] - towards[1]) - Math.hypot(q[0] - towards[0], q[1] - towards[1])).slice(0, 2);
   const a = nearest(tall.ring, off);
   const b = nearest(moved.ring, [0, 0]);
-  const seam = { kind: 'glass', colour: '#7fa3bd', storey: 4.4, bay: 2, lit: 1, mirror: 0.5, floors: 0.3, ridge: 0.6, light: '#ffffff', glow: 0.8 };
+  const seam = { ...SKINS.ribbed, storey: 4.4, lit: 1, glow: 0.5 };
   const until = short.height * 0.86;
   // (Each wall of the seam runs from a corner of the taller shaft to the nearer corner of the shorter.)
   const pair = (from) => b.reduce((best, one) => (Math.hypot(one[0] - from[0], one[1] - from[1]) < Math.hypot(best[0] - from[0], best[1] - from[1]) ? one : best));
@@ -376,6 +384,107 @@ class Shifted {
   flat(points, stuff, more = {}) {
     this.model.flat(points.map((point) => this.moved(point)), stuff, { ...more, holes: (more.holes ?? []).map((hole) => hole.map((point) => this.moved(point))) });
   }
+}
+
+/** The lobby at the foot of a tower: two storeys of clear glass with every lamp on. */
+const LOBBY = [{ from: 0, to: 9, stuff: { kind: 'glass', colour: '#6e8794', storey: 4.5, bay: 3, lit: 1, mirror: 0.3, floors: 0.4 } }];
+
+/**
+ * The head office of the bank whose tower carries the district's spire (Foster + Partners): diamond in
+ * plan, about an atrium the whole height of the building. Its skin is a net of studs of silver metal, each
+ * a small pyramid on its point, so that the walls sparkle; at its top a crown of teeth leans out all
+ * round, under a roof that reaches out past it, most at the corners; and over the roof stands a spire of
+ * 70 m, lit by night (it is a radiator, too, that catches the cooling northerly breeze).
+ *
+ * (Its outline is the buildings data's, its small corners taken out; the data's height is the tip of the
+ * spire, and the spire's height is as published. The crown is as photographs from the street show it.)
+ */
+function studdedTower(model, building, plan) {
+  const skin = SKINS[plan.skin];
+  const ring = thinned(building.ring, 12);
+  const count = ring.length;
+  const tip = plan.height ?? building.height;
+  const roof = tip - (plan.spire ?? 70); // the top of the roof, over the crown
+  const body = roof - 9; // the top of the studded walls: the crown stands over them
+  for (let i = 0; i < count; i += 1) {
+    const [from, to] = [ring[i], ring[(i + 1) % count]];
+    model.quad(raised(from, 0), raised(to, 0), raised(to, body), raised(from, body), skin, { out: outOf(from, to), along: [to[0] - from[0], to[1] - from[1]], from, bands: LOBBY, lines: [false, true, false, true] });
+  }
+  // The crown: behind the teeth a band of plain metal up to the roof; the teeth lean out from it, each a
+  // triangle that stands on the band and points up and out.
+  const metal = { kind: 'plain', colour: '#d3dade', ridge: 0.7, light: '#e8f0ff', glow: 0.45 };
+  const teeth = { kind: 'plain', colour: '#c9d2d8', ridge: 0.9, light: '#e8f0ff', glow: 0.55 };
+  for (let i = 0; i < count; i += 1) {
+    const [from, to] = [ring[i], ring[(i + 1) % count]];
+    const out = outOf(from, to);
+    const size = Math.hypot(out[0], out[1]) || 1;
+    const way = [out[0] / size, out[1] / size];
+    model.quad(raised(from, body), raised(to, body), raised(to, roof), raised(from, roof), metal, { out, lines: [false, false, false, false] });
+    const long = Math.hypot(to[0] - from[0], to[1] - from[1]);
+    const pieces = Math.max(Math.round(long / 4.6), 2);
+    for (let k = 0; k < pieces; k += 1) {
+      const at = (part, by) => [from[0] + (to[0] - from[0]) * part + way[0] * by, from[1] + (to[1] - from[1]) * part + way[1] * by];
+      const [p, q] = [at(k / pieces, 0.6), at((k + 1) / pieces, 0.6)];
+      const point = at((k + 0.5) / pieces, 4.2);
+      model.facet(raised(p, body - 1.5), raised(q, body - 1.5), raised(point, roof - 0.5), teeth, { out: [way[0], way[1], 0.6] });
+      // (Its underside, seen from the street.)
+      model.facet(raised(p, body - 1.5), raised(q, body - 1.5), raised(point, roof - 0.5), { ...teeth, colour: '#9aa6ae', open: true }, { out: [-way[0], -way[1], -0.6], lines: [false, false, false] });
+    }
+  }
+  // The roof: a thin slab that reaches out past the crown, furthest at the corners, where it ends in points.
+  const middle = ring.reduce((sum, corner) => [sum[0] + corner[0] / count, sum[1] + corner[1] / count], [0, 0]);
+  const eaves = ring.map(([east, north]) => [middle[0] + (east - middle[0]) * 1.16, middle[1] + (north - middle[1]) * 1.16]);
+  const slab = { kind: 'plain', colour: '#e4e8ea', ridge: 0.6, light: '#e8f0ff', glow: 0.35 };
+  model.flat(eaves.map((place) => raised(place, roof)), slab);
+  model.flat(eaves.map((place) => raised(place, roof - 1.2)), { ...slab, colour: '#b9c2c8', open: true }, { out: [0, 0, -1] });
+  for (let i = 0; i < count; i += 1) {
+    const [from, to] = [eaves[i], eaves[(i + 1) % count]];
+    model.quad(raised(from, roof - 1.2), raised(to, roof - 1.2), raised(to, roof), raised(from, roof), slab, { out: outOf(from, to), lines: [false, false, false, false] });
+  }
+  // The spire: a slender pyramid of four faces from the middle of the roof, white, and lit by night.
+  const spire = { kind: 'plain', colour: '#eef1f2', ridge: 0.6, light: '#f2f6ff', glow: 0.8 };
+  const base = 3.4;
+  const foot = [[-base, -base], [base, -base], [base, base], [-base, base]].map(([east, north]) => raised([middle[0] + east, middle[1] + north], roof));
+  const top = [middle[0], middle[1], tip];
+  for (let i = 0; i < 4; i += 1) {
+    const [p, q] = [foot[i], foot[(i + 1) % 4]];
+    model.facet(p, q, top, spire, { out: [(p[0] + q[0]) / 2 - middle[0], (p[1] + q[1]) / 2 - middle[1], 0.05] });
+  }
+  return { beacons: [[middle[0], middle[1], tip + 0.6]] };
+}
+
+/**
+ * The tower of chevrons in the north of the district (160 m, 32 floors): up to some two fifths of its
+ * height it stands straight, and above that its walls lean out and back by turns every two floors or so,
+ * so that its edges zigzag up the sky. Every floor shows as a band of glass over a pale line.
+ *
+ * (Its outline and height are the buildings data's, which match what is published of the tower that
+ * stands there; where the folds begin, and how many there are, is counted off photographs from the street.)
+ */
+function zigzagTower(model, building, plan) {
+  const ring = thinned(building.ring, 2.5);
+  const count = ring.length;
+  const top = plan.height ?? building.height;
+  const skin = { ...SKINS[plan.skin], storey: top / (plan.floors ?? Math.round(top / 4.1)) };
+  const straight = top * (plan.from ?? 0.4);
+  const folds = plan.folds ?? 12;
+  const swing = plan.swing ?? 0.09;
+  const crown = top - 7; // the top two floors stand straight again, over the last fold
+  // The levels at which the walls turn: each [its height, how far out they stand there, as a part of
+  // their distance from the middle].
+  const levels = [[0, 0], [straight, 0]];
+  for (let k = 1; k <= folds; k += 1) levels.push([straight + ((crown - straight) * k) / folds, k % 2 === 1 ? swing : 0]);
+  levels.push([top, 0]);
+  const at = (corner, [up, out]) => [corner[0] * (1 + out), corner[1] * (1 + out), up];
+  for (let k = 0; k < levels.length - 1; k += 1) {
+    for (let i = 0; i < count; i += 1) {
+      const [from, to] = [ring[i], ring[(i + 1) % count]];
+      const more = { out: outOf(from, to), along: [to[0] - from[0], to[1] - from[1]], from, lines: [k > 1, true, false, true], ...(k === 0 ? { bands: LOBBY } : {}) };
+      model.quad(at(from, levels[k]), at(to, levels[k]), at(to, levels[k + 1]), at(from, levels[k + 1]), skin, more);
+    }
+  }
+  model.flat(ring.map((corner) => raised(corner, top)), { kind: 'plain', colour: ROOFS[plan.skin], open: true });
+  return { beacons: ring.filter((_, i) => i % 2 === 0).map(([east, north]) => [east * 0.94, north * 0.94, top + 0.6]) };
 }
 
 /**
@@ -570,7 +679,7 @@ export const KAFD_PARTS = [
     const plan = PLANS[one.n];
     const height = plan.height ?? one.height;
     const area = Math.abs(one.ring.reduce((sum, corner, i) => sum + corner[0] * one.ring[(i + 1) % one.ring.length][1] - one.ring[(i + 1) % one.ring.length][0] * corner[1], 0)) / 2;
-    const model = one.n === 2 ? (to) => tradeCentre(to, one, building(5)) : one.n === 46 ? (to) => grandMosque(to, one) : one.n === 90 ? (to) => hall(to, one, plan) : (to) => crystal(to, one, plan);
+    const model = one.n === 2 ? (to) => tradeCentre(to, one, building(5)) : one.n === 46 ? (to) => grandMosque(to, one) : one.n === 90 ? (to) => hall(to, one, plan) : one.n === 4 ? (to) => studdedTower(to, one, plan) : one.n === 61 ? (to) => zigzagTower(to, one, plan) : (to) => crystal(to, one, plan);
     return {
       id: `kafd-${one.n}`,
       name: one.n === 2 ? 'KAFD World Trade Center' : one.n === 46 ? 'KAFD Grand Mosque' : `King Abdullah Financial District, building ${one.n}`,

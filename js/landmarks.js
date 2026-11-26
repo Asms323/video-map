@@ -653,9 +653,10 @@ const FAISALIAH = {
  * south-west. Under the lowest level stands a glass hall, with a canopy
  * that reaches out past the tower.
  *
- * By night a line of violet light runs along the edge of every floor, the
- * folds are picked out in points of light, and below the top sixty metres
- * most floors are offices with their lamps on.
+ * Its glass is dark blue-grey under fins that run across it, and its folds
+ * are broad bands of bright metal. By night the folds are lines of violet
+ * light, the floors only faintly so, and below the top sixty metres most
+ * floors are offices with their lamps on.
  *
  * Where it stands is from the buildings data; its height, the shape of its
  * plan ("apex and pleat points") and the size of its floors are as
@@ -725,9 +726,11 @@ function pifTower(model) {
   };
 
   const violet = PIF_LIGHT;
-  // The glass of each tier: how strongly its floors are lined with light, and what share of them are lit offices.
+  // The glass of each tier: dark blue-grey, under the fins that run across it and catch the light (as the
+  // photographs show it, as blue as the sky it mirrors); its folds broad bands of bright metal, lit along
+  // their length in violet by night, the floors only faintly. And what share of its floors are lit offices.
   const lit = [0.3, 0.45, 0.55, 0.6, 0.55, 0];
-  const glassOf = (t) => ({ kind: 'glass', colour: '#2f4649', storey, bay: 3, light: violet, glow: t === tiers - 1 ? 1 : 0.8, lit: lit[t], fins: 0.8, ridge: 1 });
+  const glassOf = (t) => ({ kind: 'glass', colour: '#26364a', storey, bay: 3, light: violet, glow: t === tiers - 1 ? 0.45 : 0.05, lit: lit[t], louvres: true, floors: 0.4, mirror: 0.5, ridge: 1, bold: true, outlined: true });
   const cleft = { kind: 'plain', colour: '#1e2b2c' };
   // (Two bands of floors that are lit before any other as the day ends: a sky lobby and the plant under it.)
   const bright = { ...glassOf(4), lit: 1 };
@@ -744,12 +747,13 @@ function pifTower(model) {
   const side = (from, to, fromUp, toUp, fromIsOut, stuff, more = {}) => {
     const out = [-(to[1] - from[1]), to[0] - from[0], 0];
     const along = { along: [to[0] - from[0], to[1] - from[1]], from: [from[0], from[1]] };
+    // (The folds and the corners are lined, not the levels: the folds run on across them.)
     if (fromIsOut) {
-      model.facet(from, to, toUp, stuff, { out, ...along, ...more });
-      model.facet(from, toUp, fromUp, stuff, { out, ...along, ...more });
+      model.facet(from, to, toUp, stuff, { out, ...along, ...more, lines: [false, true, true] });
+      model.facet(from, toUp, fromUp, stuff, { out, ...along, ...more, lines: [true, false, true] });
     } else {
-      model.facet(from, to, fromUp, stuff, { out, ...along, ...more });
-      model.facet(to, toUp, fromUp, stuff, { out, ...along, ...more });
+      model.facet(from, to, fromUp, stuff, { out, ...along, ...more, lines: [false, true, true] });
+      model.facet(to, toUp, fromUp, stuff, { out, ...along, ...more, lines: [true, false, true] });
     }
   };
   /** A wall of a cleft between two levels: dark, and no line is drawn along its edges. */

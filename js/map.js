@@ -1352,6 +1352,11 @@ export class MapView {
         const light = lightFrom(sun);
         this.scene.sun = light ? [light.east, light.north, light.up] : [0.3, -0.5, 0.8];
         this.scene.day = light ? 1 : 0;
+        // (Low in the sky, from some 15 degrees up until it is 8 below the horizon, the sun turns the sky
+        // round it gold, and the glass that looks its way mirrors that.)
+        const way = (sun.azimuth * Math.PI) / 180;
+        const gold = Math.min(Math.max((sun.altitude + 8) / 8, 0), 1) * Math.min(Math.max((15 - sun.altitude) / 12, 0), 1);
+        this.scene.sunset = [Math.sin(way), Math.cos(way), gold];
         // And as the sun goes down the city goes dark, and its lamps come on.
         this.night = darkness(sun);
         this.scene.night = this.night;

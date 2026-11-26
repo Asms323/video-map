@@ -641,6 +641,7 @@ uniform float u_pixel;   // metres to a pixel of the screen, for each unit of de
 uniform vec3 u_skyHigh;  // the colour of the sky overhead
 uniform vec3 u_skyLow;   // and where it meets the ground
 uniform float u_time;    // seconds, for the lights that change colour
+uniform vec3 u_sunset;   // the way to the sun along the ground (east, north), and how gold the sky round it is (0 to 1)
 uniform float u_opacity;
 varying vec3 v_world;
 varying vec4 v_normal;   // which way the face looks; and how much of a mirror it is
@@ -648,7 +649,7 @@ varying vec4 v_surf;     // along the face, up from the ground, the height of a 
 varying vec4 v_edge;     // how far it is to each edge of the face; and how plainly the edges of its floors show
 varying vec4 v_tint;     // the face's colour; and what it is made of (x 32) with the face's own number
 varying vec4 v_light;    // the light it gives by night, and how strong
-varying vec4 v_more;     // the share of its rooms that are lit; the net of fins over it; the lines along its edges; and (x 3) 1 if it takes no shadow, 2 if its light changes colour
+varying vec4 v_more;     // the share of its rooms that are lit; the net of fins over it; the lines along its edges; and (x 4) its marks: 1 if it takes no shadow, 2 if its light changes colour, 4 louvres, 8 bold lines, 16 upright fins, 32 lines lit all along
 
 float chance(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -662,6 +663,15 @@ float lines(float value, float wide) {
   return 1.0 - smoothstep(0.0, wide, 0.5 - abs(fract(value) - 0.5));
 }
 
+// With the sun low, or just down, the sky round it is gold: what a mirror shows of it, looking the way thrown.
+vec3 sunsetIn(vec3 thrown) {
+  if (u_sunset.z < 0.004) return vec3(0.0);
+  vec2 level = thrown.xy / max(length(thrown.xy), 0.001);
+  float towards = pow(max(dot(level, u_sunset.xy), 0.0), 3.0);
+  float band = (1.0 - smoothstep(0.0, 0.5, thrown.z)) * smoothstep(-0.12, 0.02, thrown.z);
+  return vec3(1.0, 0.68, 0.40) * towards * band * u_sunset.z;
+}
+
 void main() {
   vec3 normal = normalize(v_normal.xyz);
   vec3 eye = normalize(u_eye - v_world);
@@ -669,12 +679,17 @@ void main() {
   // at its rim looks a little away from the eye while the piece itself does not: so the line is drawn a
   // little past edge-on.)
   if (dot(normal, eye) < -0.12) discard;
-  float marks = floor(v_more.w * 3.0 + 0.5);
-  float changing = step(1.5, marks);
+  // (Its marks, as models.js keeps them: the bits of one number, times 4.)
+  float marks = floor(v_more.w * 255.0 / 4.0 + 0.5);
   float open = mod(marks, 2.0);
+  float changing = mod(floor(marks / 2.0), 2.0);
+  float louvred = mod(floor(marks / 4.0), 2.0);
+  float bold = mod(floor(marks / 8.0), 2.0);
+  float ribbed = mod(floor(marks / 16.0), 2.0);
+  float outlined = floor(marks / 32.0);
   float pixel = u_pixel / gl_FragCoord.w;
   float style = floor(v_tint.a * 255.0 + 0.5);
-  float kind = floor(style / 32.0);   // 0 plain, 1 glass, 2 a lamp, 3 a skin pierced with windows
+  float kind = floor(style / 32.0);   // 0 plain, 1 glass, 2 a lamp, 3 a skin pierced with windows, 4 studs
   float own = style - kind * 32.0;    // the face's own number, 0 to 31
   float up = v_surf.y;
 
@@ -697,8 +712,9 @@ void main() {
   vec3 ownLight = mix(v_light.rgb, mix(vec3(1.0), turning, 0.82), changing) * v_light.a;
 
   if (kind > 0.5 && kind < 1.5) {
-    // Glass. No two faces are of quite the same tone.
-    vec3 body = v_tint.rgb * (0.90 + 0.20 * fract(own * 0.618034));
+    // Glass. No two faces are of quite the same tone. (Behind upright fins the glass is dark, and the fins
+    // are of the face's colour.)
+    vec3 body = mix(v_tint.rgb, vec3(0.17, 0.21, 0.25), ribbed) * (0.90 + 0.20 * fract(own * 0.618034));
     float storey = max(v_surf.z, 0.5);
     float bay = max(v_surf.w, 0.5);
     float rise = up / storey;
@@ -719,7 +735,7 @@ void main() {
     vec3 streets = mix(vec3(0.58, 0.54, 0.47), vec3(0.22, 0.15, 0.09), u_night);
     vec3 above = mix(u_skyLow, u_skyHigh, smoothstep(0.0, 0.35, thrown.z));
     vec3 below = mix(u_skyLow * 0.62, streets * 0.85, smoothstep(0.0, -0.2, thrown.z));
-    vec3 seen = mix(below, above, smoothstep(-0.04, 0.04, thrown.z));
+    vec3 seen = mix(below, above, smoothstep(-0.04, 0.04, thrown.z)) + sunsetIn(thrown);
     // (Glass mirrors more, the more it is looked along; and what shows in tinted glass takes its tint.)
     float glance = pow(1.0 - max(dot(normal, eye), 0.0), 3.0);
     float silvered = 0.18 + 0.5 * v_normal.w;
@@ -736,6 +752,24 @@ void main() {
     // The edge of each floor, with the walkway outside it: a paler line across the top of every storey.
     float edge = 1.0 - smoothstep(0.10 - softY, 0.10 + softY, abs(fract(fy + 0.6) - 0.5));
     pane = mix(pane, vec3(0.52, 0.58, 0.59) * light, 0.5 * v_edge.w * mix(0.2, edge, fineFloors));
+    // Level louvres, two to a storey, that catch the light: the glass reads as finely striped, and paler.
+    // (From afar, the even mixture of them.)
+    float slats = 0.0;
+    if (louvred > 0.5) {
+      float halfStorey = storey * 0.5;
+      float softS = clamp(pixel / halfStorey, 0.001, 0.5);
+      float slat = 1.0 - smoothstep(0.10 - softS, 0.10 + softS, abs(fract(rise * 2.0) - 0.5));
+      slats = mix(0.2, slat, smoothstep(1.2, 3.0, halfStorey / pixel));
+      pane = mix(pane, vec3(0.68, 0.74, 0.78) * light, 0.5 * slats);
+    }
+    // Upright fins, one to a bay, of the face's own colour: lit on one side, shaded on the other.
+    if (ribbed > 0.5) {
+      float rib = 1.0 - smoothstep(0.18 - softX, 0.18 + softX, abs(fx - 0.5));
+      vec3 fin = v_tint.rgb * light * mix(1.08, 0.80, step(0.5, fx));
+      float ribs = mix(0.36, rib, fineBays);
+      pane = mix(pane, fin, 0.9 * ribs);
+      slats = max(slats, ribs);
+    }
     colour = pane;
 
     // By night that edge is a line of light in the building's own colour, which spills over the glass
@@ -760,9 +794,46 @@ void main() {
       vec3 white = vec3(0.88, 0.92, 1.0) * 0.84;
       vec3 byFloor = white * mix(0.07, mix(0.70, 1.0, always), floorOn) * 0.86 * glassY;
       vec3 even = white * mix(share * 0.70 + (1.0 - share) * 0.07, 1.0, always) * 0.86 * 0.64;
-      // (And silvered glass lets less of a lamp through.)
-      glow = mix(even, mix(byFloor, rooms, fineBays), fineFloors) * mix(0.3 + 0.7 * smoothstep(0.4, 0.9, u_night), 1.0, always) * (1.0 - 0.4 * v_normal.w);
+      // (And silvered glass lets less of a lamp through, and louvres or fins over it less again.)
+      glow = mix(even, mix(byFloor, rooms, fineBays), fineFloors) * mix(0.3 + 0.7 * smoothstep(0.4, 0.9, u_night), 1.0, always) * (1.0 - 0.4 * v_normal.w) * (1.0 - 0.6 * slats);
     }
+  } else if (kind > 3.5) {
+    // Studs: small pyramids of bright metal on their points, in a net that slants. Each of a pyramid's
+    // four faces leans its own way, so each takes the sun and shows the sky its own way, and the skin
+    // sparkles; from afar it is the even mixture of them.
+    float storey = max(v_surf.z, 0.5);
+    float bay = max(v_surf.w, 0.5);
+    vec2 at = vec2(v_surf.x / bay, up / storey);
+    vec2 grid = vec2(at.x + at.y, at.x - at.y);
+    vec2 within = grid - floor(grid) - 0.5;
+    vec2 towards = abs(within.x) > abs(within.y) ? vec2(sign(within.x), 0.0) : vec2(0.0, sign(within.y));
+    vec2 lean = vec2(towards.x + towards.y, towards.x - towards.y) * 0.7071;
+    vec3 across = vec3(-normal.y, normal.x, 0.0);
+    across = length(across) > 0.01 ? normalize(across) : vec3(1.0, 0.0, 0.0);
+    vec3 rising = cross(normal, across);
+    float near = smoothstep(1.0, 2.6, min(storey, bay) / pixel);
+    vec3 faceTo = normalize(normal + 0.75 * near * (across * lean.x + rising * lean.y));
+    // (The shadow the face is in, if any, falls on every stud of it.)
+    float facing = max(dot(normal, u_sun), 0.0) * u_day;
+    float unshaded = facing > 0.001 ? sunned / facing : 1.0;
+    float sunnedHere = max(dot(faceTo, u_sun), 0.0) * u_day * unshaded;
+    vec3 skyHere = vec3(0.60, 0.63, 0.70) * (0.88 + 0.12 * faceTo.z);
+    vec3 lightHere = mix(vec3(0.80, 0.82, 0.88), skyHere + sunlight * sunnedHere, u_day);
+    lightHere = mix(lightHere, vec3(0.15, 0.17, 0.25), u_night);
+    vec3 thrown = reflect(-eye, faceTo);
+    vec3 streets = mix(vec3(0.58, 0.54, 0.47), vec3(0.22, 0.15, 0.09), u_night);
+    vec3 above = mix(u_skyLow, u_skyHigh, smoothstep(0.0, 0.35, thrown.z));
+    vec3 below = mix(u_skyLow * 0.62, streets * 0.85, smoothstep(0.0, -0.2, thrown.z));
+    vec3 seen = mix(below, above, smoothstep(-0.04, 0.04, thrown.z)) + sunsetIn(thrown);
+    float mirror = 0.2 + 0.6 * v_normal.w;
+    colour = v_tint.rgb * lightHere * (1.0 - 0.5 * mirror) + seen * mirror * 0.85;
+    colour += vec3(1.0, 0.96, 0.86) * pow(max(dot(reflect(-u_sun, faceTo), eye), 0.0), 24.0) * 0.6 * step(0.001, sunnedHere);
+    // (Between the studs, a hairline of shadow.)
+    float seam = 1.0 - smoothstep(0.03, 0.06, 0.5 - max(abs(within.x), abs(within.y)));
+    colour *= 1.0 - 0.35 * seam * near;
+    // By night: lamps trained on it, and the light of the offices behind it showing between the studs.
+    glow = v_tint.rgb * ownLight * (1.0 - changing) + vec3(1.0, 0.92, 0.78) * 0.18 * v_more.x;
+    show = v_tint.rgb * ownLight * changing;
   } else if (kind > 2.5) {
     // A skin pierced with windows: stone, or pale panels, with glass in the holes. The windows are
     // diamonds standing on their points in a net that slants, some cut and some not, of many sizes; or
@@ -798,12 +869,15 @@ void main() {
     vec3 streets = mix(vec3(0.58, 0.54, 0.47), vec3(0.22, 0.15, 0.09), u_night);
     vec3 above = mix(u_skyLow, u_skyHigh, smoothstep(0.0, 0.35, thrown.z));
     vec3 below = mix(u_skyLow * 0.62, streets * 0.85, smoothstep(0.0, -0.2, thrown.z));
-    vec3 seen = mix(below, above, smoothstep(-0.04, 0.04, thrown.z));
+    vec3 seen = mix(below, above, smoothstep(-0.04, 0.04, thrown.z)) + sunsetIn(thrown);
     vec3 pane = vec3(0.13, 0.17, 0.20) * light + seen * 0.30;
     colour = mix(skin, pane, window);
-    // By night: lamps trained on the skin, and behind some of the windows a room with its lamp on.
+    // By night: lamps trained on the skin; and behind the windows of a lit floor, its rooms with their
+    // lamps on (on a dark floor, a room here and there).
+    float row = mix(floor((cell.x - cell.y) * 0.5 + 0.5), cell.y, upright);
+    float floorOn = step(1.0 - v_more.x, chance(vec2(row * 0.61 + own * 0.37, 7.3)));
     float room = chance(cell * vec2(2.9, 1.3) + own * 1.7);
-    float on = step(1.0 - v_more.x, room);
+    float on = mix(step(0.94, room), step(0.12, room), floorOn);
     vec3 lampOfRoom = mix(vec3(1.0, 0.90, 0.74), vec3(0.86, 0.92, 1.0), step(0.6, fract(room * 5.7)));
     glow = lampOfRoom * 0.8 * mix(v_more.x, on, smoothstep(1.2, 3.0, size / pixel)) * window + v_tint.rgb * ownLight * (1.0 - changing) * (1.0 - window);
     show = v_tint.rgb * ownLight * changing * (1.0 - window);
@@ -822,13 +896,15 @@ void main() {
   // Along the edges of the face, where it is folded against its neighbour: a ridge that catches the light
   // by day, and by night is picked out in points of light. (A line no wider than a pixel is drawn a pixel
   // wide and fainter, but never so faint that the folds are lost from across the city.)
+  // (Bold lines are broad bands of bright metal; outlined ones are lit all along by night.)
   float ridge = v_more.z;
   if (ridge > 0.004) {
     float nearest = min(min(v_edge.x, v_edge.y), v_edge.z);
-    float wide = max(0.4, 1.1 * pixel);
-    float line = (1.0 - smoothstep(wide * 0.5, wide, nearest)) * ridge * clamp(0.4 / (1.1 * pixel), 0.45, 1.0);
-    colour = mix(colour, vec3(0.74, 0.79, 0.80) * light, 0.7 * line);
-    show += mix(mix(v_light.rgb, turning, changing), vec3(1.0), 0.3) * step(0.004, v_light.a) * line * (0.25 + 0.35 * step(0.5, fract(up / 8.5)));
+    float broad = mix(0.4, 0.65, bold);
+    float wide = max(broad, 1.1 * pixel);
+    float line = (1.0 - smoothstep(wide * 0.5, wide, nearest)) * ridge * clamp(broad / (1.1 * pixel), 0.45, 1.0);
+    colour = mix(colour, mix(vec3(0.74, 0.79, 0.80), vec3(0.88, 0.91, 0.93), bold) * light, mix(0.7, 0.92, bold) * line);
+    show += mix(mix(v_light.rgb, turning, changing), vec3(1.0), 0.3) * step(0.004, v_light.a) * line * mix(0.25 + 0.35 * step(0.5, fract(up / 8.5)), 0.8, outlined);
   }
   gl_FragColor = vec4(min(toned(colour) + glow * u_lamps + show * smoothstep(0.5, 0.85, u_night), vec3(1.0)) * u_opacity, u_opacity);
 }`;
@@ -1146,6 +1222,7 @@ export class SceneLayer {
     this.sky = { night: -1, high: [0.5, 0.7, 0.9], low: [0.9, 0.9, 0.9] }; // the sky that shows in their glass
     // What the walls are lit and drawn by.
     this.sun = [0.4, -0.6, 0.7]; // the way to the sun: east, north, up
+    this.sunset = [0, 1, 0]; // the way to the sun along the ground, and how gold the sky round it is (see map.js)
     this.day = 1; // 1 while the sun is up, 0 once it is down
     this.night = 0; // how dark it is: 0 by day, 1 by night, in between at dusk and dawn
     this.pixel = 1; // metres to a pixel of the screen, in the middle of the picture
@@ -1197,7 +1274,7 @@ export class SceneLayer {
     this.open.target = null;
     this.open.ready = false;
     this.modelProgram = link(gl, MODEL_VERTEX, MODEL_FRAGMENT);
-    this.modelAt = places(gl, this.modelProgram, ['pos', 'normal', 'surf', 'edge', 'tint', 'light', 'more'], ['matrix', 'opacity', 'sun', 'day', 'night', 'lamps', 'eye', 'pixel', 'skyHigh', 'skyLow', 'time', ...SHADOW_UNIFORMS]);
+    this.modelAt = places(gl, this.modelProgram, ['pos', 'normal', 'surf', 'edge', 'tint', 'light', 'more'], ['matrix', 'opacity', 'sun', 'day', 'night', 'lamps', 'eye', 'pixel', 'skyHigh', 'skyLow', 'time', 'sunset', ...SHADOW_UNIFORMS]);
     this.propProgram = link(gl, PROP_VERTEX, PROP_FRAGMENT);
     this.propAt = places(gl, this.propProgram, ['pos', 'normal', 'uv', 'tint'], ['matrix', 'opacity', 'sun', 'day', 'night', 'at', 'turn', 'tall', 'picture', 'lit', 'byDay', ...SHADOW_UNIFORMS]);
     this.hazeProgram = link(gl, HAZE_VERTEX, HAZE_FRAGMENT);
@@ -1947,6 +2024,7 @@ export class SceneLayer {
       gl.uniform3f(at.skyLow, this.sky.low[0], this.sky.low[1], this.sky.low[2]);
       // (Counted round the hour, so that the number stays small enough to be told finely.)
       gl.uniform1f(at.time, (performance.now() / 1000) % 3600);
+      gl.uniform3f(at.sunset, this.sunset[0], this.sunset[1], this.sunset[2]);
       this.shadowsFor(gl, at);
       if (!this.models.buffers) this.models.buffers = { positions: gl.createBuffer(), normals: gl.createBuffer(), surfaces: gl.createBuffer(), edges: gl.createBuffer(), tints: gl.createBuffer(), lights: gl.createBuffer(), more: gl.createBuffer() };
       const buffers = this.models.buffers;

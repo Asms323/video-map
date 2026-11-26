@@ -1351,14 +1351,16 @@ test('cityModelStyle by night: a dark over the ground, the lamps along the roads
   assert.ok(JSON.stringify(wide[8]).includes('["+",["match",["get","class"]') && JSON.stringify(wide[8]).includes(',9],1.1]'), JSON.stringify(wide[8]));
   assert.deepEqual(glow.paint['line-blur'][4].at(-1), 0.5, 'soft from the middle outwards');
   assert.deepEqual(glow.paint['line-blur'][8].at(-1), 0.5);
-  // And the lamps themselves: points of light along the streets, a dot to every ten widths, which give way
-  // to the lamps the app stands along the streets from close by.
+  // And the lamps themselves: soft points of light along the streets, a dot to every ten widths, which are
+  // gone before the app stands its own lamps along the streets from close by (from zoom 15): in a tilted
+  // view a dot near the eye would otherwise be drawn as wide as the road.
   const lamps = of(night, 'city-lamps');
   assert.deepEqual(lamps.paint['line-dasharray'], [0, 10]);
   assert.equal(lamps.layout['line-cap'], 'round', 'a dash of no length with round ends is a dot');
+  assert.ok(lamps.paint['line-blur'], 'soft-edged');
   assert.deepEqual(lamps.paint['line-opacity'].slice(0, 3), ['interpolate', ['linear'], ['zoom']]);
   assert.equal(lamps.paint['line-opacity'].at(-1), 0);
-  assert.equal(lamps.paint['line-opacity'].at(-2), 15.6);
+  assert.ok(lamps.paint['line-opacity'].at(-2) <= 15);
   assert.ok(lamps.paint['line-opacity'][6] > 0.8, 'bright at zoom 14');
   assert.deepEqual(of(day, 'city-lamps').paint['line-opacity'].filter((part, i) => i > 2 && i % 2 === 0), [0, 0, 0, 0], 'by day there is no light in them');
   assert.ok(JSON.stringify(lamps.filter).includes('"motorway","trunk","primary","secondary","tertiary","minor","busway"') && !JSON.stringify(lamps.filter).includes('service'));

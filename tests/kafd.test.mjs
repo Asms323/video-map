@@ -133,7 +133,11 @@ test('a crystal: glass is folded along slanting lines and cut off aslant, a pier
   // and each is folded along the line from the corner that stands out below to the one that stands out above.
   const waist = faces.flatMap((face) => face.corners).filter((corner) => near(corner[2], 54, 1e-3)).map(([east, north]) => Math.hypot(east, north) / Math.hypot(20, 20));
   assert.ok(waist.some((by) => near(by, 1.04, 1e-3)) && waist.some((by) => near(by, 0.96, 1e-3)) && waist.every((by) => near(by, 1.04, 1e-3) || near(by, 0.96, 1e-3)));
-  assert.ok(walls.every((face) => face.ridge === 1 && face.edges.flat().every((far) => far < 1000)), 'a line along every edge');
+  // The folds and the corners are lined, in broad bands of metal, but not the levels between two tiers:
+  // the folds run on across them. (So one edge of every triangle that spans a whole tier has no line.)
+  assert.ok(walls.every((face) => face.ridge === 1 && face.bold && face.louvres));
+  const spanning = walls.filter((face) => [0, 54, 108].some((z) => face.corners.some((corner) => near(corner[2], z, 1e-3))) && face.corners.some((corner) => near(corner[2], 54, 1e-3) || near(corner[2], 108, 1e-3)) && Math.min(...face.corners.map((corner) => corner[2])) >= 9 - 1e-3);
+  assert.ok(spanning.length >= 8 && spanning.every((face) => [0, 1, 2].filter((e) => face.edges.every((corner) => corner[e] >= 1000)).length === 1), String(spanning.length));
   // At its foot a hall of clear glass with the lamps on, two storeys.
   const hall = faces.filter((face) => face.kind === 'glass' && face.lit > 0.99);
   assert.ok(hall.length >= 8 && hall.every((face) => Math.max(...face.corners.map((corner) => corner[2])) <= 9 + 1e-3));
@@ -165,16 +169,21 @@ test('the skins of the district: dark and blue glass, pale panels with diamond w
     const walls = built(n).faces.filter((face) => Math.abs(face.normal[2]) < 0.6 && face.lit < 0.99 && Math.max(...face.corners.map((corner) => corner[2])) > 12);
     return walls.sort((a, b) => walls.filter((face) => face.colour === b.colour).length - walls.filter((face) => face.colour === a.colour).length)[0];
   };
-  // Dark glass under a net of fins; blue glass that mirrors the sky; glass nearly white.
-  assert.deepEqual([skinOf(4).kind, skinOf(4).colour, skinOf(4).ridge], ['glass', '#2c3f44', 1]);
-  assert.ok(near(skinOf(4).fins, 0.75, 0.01));
-  assert.ok(skinOf(12).kind === 'glass' && near(skinOf(12).mirror, 0.6, 0.01));
+  // Dark blue-grey glass under louvres, its folds broad bands of metal; blue glass that mirrors the sky;
+  // glass nearly white.
+  assert.deepEqual([skinOf(7).kind, skinOf(7).colour, skinOf(7).ridge, skinOf(7).louvres, skinOf(7).bold], ['glass', '#26343f', 1, true, true]);
+  assert.ok(near(skinOf(7).fins, 0, 0.01));
+  assert.ok(skinOf(12).kind === 'glass' && near(skinOf(12).mirror, 0.7, 0.01));
   assert.ok(skinOf(6).kind === 'glass' && near(skinOf(6).mirror, 0.8, 0.01));
   // White panels with diamond windows (floors: 0 says diamonds); a mesh, wide open; stone, upright windows; bands right round.
   assert.deepEqual([skinOf(75).kind, skinOf(75).colour, skinOf(75).floors], ['pierced', '#ece9e1', 0]);
   assert.ok(near(skinOf(75).fins, 0.45, 0.01) && near(skinOf(38).fins, 0.95, 0.01) && skinOf(38).floors === 0);
   assert.deepEqual([skinOf(13).kind, skinOf(13).colour, skinOf(13).floors], ['pierced', '#cdbb9b', 1]);
   assert.ok(near(skinOf(15).fins, 0.7, 0.01) && skinOf(15).floors === 1);
+  // Silver studs: the bank tower with the spire. Copper fins over dark glass: the low blocks by the station.
+  assert.ok(built(4).faces.filter((face) => face.kind === 'studs').every((face) => face.colour === '#a9b8c3'));
+  assert.ok(built(4).faces.filter((face) => face.kind === 'studs').length >= 8);
+  assert.deepEqual([skinOf(25).kind, skinOf(25).colour, skinOf(25).ribs], ['glass', '#a0613f', true]);
   // Every building is as tall as told, stands on the ground, and keeps to its outline (a fold stands a little out).
   for (const one of KAFD_PARTS.slice(1)) {
     const n = Number(one.id.slice(5));
@@ -184,35 +193,37 @@ test('the skins of the district: dark and blue glass, pale panels with diamond w
     assert.equal(Math.min(...corners.map((corner) => corner[2])), 0, one.id);
     assert.ok(near(Math.max(...corners.map((corner) => corner[2])), one.height, n === 90 ? 2.1 : 0.11), `${one.id}: ${Math.max(...corners.map((corner) => corner[2]))} m for ${one.height} m`);
     const reach = Math.max(...building(n).ring.map((corner) => Math.hypot(...corner)));
-    assert.ok(Math.max(...corners.map(([east, north]) => Math.hypot(east, north))) < (n === 2 ? 75 : n === 46 ? reach + 30 : reach * 1.08 + 3), one.id);
+    // (The crown and the roof of the bank tower reach out past its walls.)
+    assert.ok(Math.max(...corners.map(([east, north]) => Math.hypot(east, north))) < (n === 2 ? 75 : n === 46 ? reach + 30 : n === 4 ? reach * 1.2 + 4 : reach * 1.08 + 3), one.id);
     for (const face of faces) {
       assert.ok(near(Math.hypot(...face.normal), 1, 1e-4), one.id);
-      assert.ok(['plain', 'glass', 'pierced'].includes(face.kind) && /^#[0-9a-f]{6}$/.test(face.colour), one.id);
-      if (face.kind !== 'plain') assert.ok(face.storey >= 2 && face.storey < 7 && face.bay >= 2 && face.bay <= 5.5, `${one.id}: ${face.storey} by ${face.bay}`);
+      assert.ok(['plain', 'glass', 'pierced', 'studs'].includes(face.kind) && /^#[0-9a-f]{6}$/.test(face.colour), one.id);
+      if (face.kind !== 'plain') assert.ok(face.storey >= 2 && face.storey < 7 && face.bay >= 1.5 && face.bay <= 5.5, `${one.id}: ${face.storey} by ${face.bay}`);
     }
     // Something of each shows by night.
     assert.ok(faces.some((face) => face.glow > 0 || face.lit > 0), one.id);
   }
 });
 
-test('the World Trade Center: two shafts of pale panels, 304 m and 221 m, with a seam of glass between', () => {
+test('the World Trade Center: two shafts in a lace of white panels, 304 m and 221 m, with a seam of ribbed glass between', () => {
   const { faces, made } = built(2);
   assert.ok(near(topOf(faces), 304, 0.01));
   // The taller shaft stands at the landmark's middle; the shorter some thirty metres south of it.
   const [tall, short] = [building(2), building(5)];
   const off = [short.at[0] - tall.at[0], short.at[1] - tall.at[1]];
   assert.ok(near(Math.hypot(...off), 32.8, 0.5) && off[1] < -30);
-  const pale = faces.filter((face) => face.colour === '#8794a0' && Math.abs(face.normal[2]) < 0.5);
-  assert.ok(pale.length > 60 && pale.every((face) => face.kind === 'glass' && face.fins === 1 && face.ridge === 1));
+  // (White panels pierced with diamonds: floors 0 says diamonds.)
+  const pale = faces.filter((face) => face.colour === '#efece5' && Math.abs(face.normal[2]) < 0.5);
+  assert.ok(pale.length > 60 && pale.every((face) => face.kind === 'pierced' && face.floors === 0 && near(face.fins, 0.38, 0.01)), String(pale.length));
   // (The taller shaft's walls reach 12 m south of its middle at most; the shorter one's begin beyond that.)
   const highest = (shaft) => Math.max(...shaft.flatMap((face) => face.corners.map((corner) => corner[2])));
   const [north, south] = [pale.filter((face) => face.corners.every((corner) => corner[1] > -13.5)), pale.filter((face) => face.corners.every((corner) => corner[1] < -13.5))];
   assert.equal(north.length + south.length, pale.length);
   assert.ok(near(highest(north), 304, 0.01) && near(highest(south), 221.1, 0.01), `${highest(north)} ${highest(south)}`);
-  // The seam: clear glass, lit in every room, from the ground to the shorter shaft's shoulder.
-  const seam = faces.filter((face) => face.colour === '#7fa3bd');
+  // The seam: dark glass behind upright fins, lit in every room, from the ground to the shorter shaft's shoulder.
+  const seam = faces.filter((face) => face.colour === '#4c545b');
   assert.equal(seam.length, 4);
-  assert.ok(seam.every((face) => face.kind === 'glass' && face.lit === 1 && face.glow > 0.7));
+  assert.ok(seam.every((face) => face.kind === 'glass' && face.ribs && face.lit === 1 && near(face.glow, 0.5, 0.003)));
   assert.ok(near(Math.max(...seam.flatMap((face) => face.corners.map((corner) => corner[2]))), 221.1 * 0.86, 0.01));
   assert.ok(seam.flatMap((face) => face.corners).every(([, north]) => north < -3 && north > -22), 'between the two');
   // A red lamp on the top of each (and one on the far corner of the shorter one's long roof).

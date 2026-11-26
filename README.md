@@ -170,13 +170,20 @@ map opens on the city and keeps to it, and places are looked for in it.
   to 19 m at the edge, so the honeycomb lifts like a crystal at its rim.
 - **The financial district, building by building.** Round the PIF Tower the
   King Abdullah Financial District stands as it is built: seventy-four
-  buildings, each a model on its own outline. Crystals of dark and blue glass, folded
-  along slanting lines and cut off aslant; white towers pierced with diamond
-  windows; blocks of tan stone; the World Trade Center's two pale shafts with
-  the seam of glass between them; the Grand Mosque with its two minarets; the
-  faceted glass hall. Between the towers run the district's skywalks, glazed
-  bridges three storeys up. By night the floors, the rooms and the edges of
-  the towers are lit.
+  buildings, each a model on its own outline. Crystals of dark blue-grey and
+  blue glass under level louvres, folded along slanting lines picked out in
+  broad bands of bright metal and cut off aslant, as blue as the sky they
+  mirror; white towers pierced with diamond windows; blocks of tan stone;
+  low blocks in copper fins; the World Trade Center's two shafts in a lace of
+  white panels pierced with diamonds of every size, with a seam of ribbed dark
+  glass between them; the bank tower of silver studs, each a small pyramid,
+  under a crown of teeth, a roof that reaches out past it and a spire of 70 m;
+  the tower of chevrons in the north, whose upper half zigzags up the sky; the
+  Grand Mosque with its two minarets; the faceted glass hall. Between the
+  towers run the district's skywalks, glazed bridges three storeys up. With
+  the sun low, the glass that looks its way mirrors the gold of the sky. By
+  night the floors, the rooms and the edges of the towers are lit, floor by
+  floor, and the PIF Tower's folds are lines of violet light.
 - **Bridges you can drive over.** Flyovers, interchange ramps and metro
   viaducts are built in 3D: a deck with parapets on piers, with the traffic
   and the trains up on it. A bridge is as high as what it passes over: one
@@ -572,7 +579,7 @@ Everything is free and needs no account or key.
 | Satellite photos | Esri World Imagery | © Esri, Maxar, Earthstar Geographics. Shown only in the Satellite look. How sharp the photo comes differs from place to place: the service is asked, a square of tiles at a time, and only what it has is fetched. In the 3D city the photo is never shown: it is read on the phone, at one middling level of sharpness, for trees, shadows and the colours of roofs, and the service is asked once per area for the day the photo was taken |
 | What Riyadh's houses and house streets look like | [OpenStreetView-5M](https://huggingface.co/datasets/osv5m/osv5m) (Astruc and others, CVPR 2024): street photographs by Mapillary contributors, CC BY-SA 4.0 | Studied, not shown: the 1,629 photographs taken inside Riyadh were looked through and the houses are built by rules drawn from them. No photograph is in the app or fetched by it |
 | What stands at Boulevard World, and where | The satellite photo above (Esri World Imagery, taken in September 2025): the lagoon's shore was traced from it and every thing's place measured on it. Sixteen photographs of the place by night and the fairground's own booklet for the 2026-27 season, both sent by the app's owner | Studied, not shown: the models are built by hand from them. No photograph and no page of the booklet is in the app or fetched by it |
-| The King Abdullah Financial District, building by building | Outlines and thirty-four heights: the buildings data below (Overture Maps), kept in `js/kafd-data.js` (see `tools/kafd/`). The other heights, six outlines the data lacks, and the colours of roofs and walls: the satellite photo above (Esri World Imagery), read by hand. What the towers look like from the ground: seven photographs on [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:King_Abdullah_Financial_District) (six by Kolaiel, CC0; one by Ahmed, CC BY-SA 4.0) and Wikipedia's articles on the district, its World Trade Center and its Grand Mosque | Studied, not shown: the models are built by hand from them. No photograph is in the app or fetched by it |
+| The King Abdullah Financial District, building by building | Outlines and thirty-four heights: the buildings data below (Overture Maps), kept in `js/kafd-data.js` (see `tools/kafd/`). The other heights, six outlines the data lacks, and the colours of roofs and walls: the satellite photo above (Esri World Imagery), read by hand. What the towers look like from the ground: seven photographs on [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:King_Abdullah_Financial_District) (six by Kolaiel, CC0; one by Ahmed, CC BY-SA 4.0), seven more taken in the district and given for this, and Wikipedia's articles on the district, its World Trade Center and its Grand Mosque. The bank tower's plan and spire: its architects' page ([Foster + Partners](https://fosterandpartners.com/projects/snb-head-office)); the height and floors of the tower of chevrons: the [Skyscraper Center](https://www.skyscrapercenter.com/building/aramco-tower/17179) (both found by a web search) | Studied, not shown: the models are built by hand from them. No photograph is in the app or fetched by it |
 | The Ministry of Interior | Its plan and what stands on its roof: the satellite photo above (Esri World Imagery), measured by hand. What it looks like from the road, by day and by night: six photographs found through [Openverse](https://openverse.org) on Flickr (by Rupert Affen, IMP1, Bakar_88, Mohd Azli Abdul Malek and airbus777, under Creative Commons licences) and Wikipedia's article on the building | Studied, not shown: the model is built by hand from them. No photograph is in the app or fetched by it |
 | Al Majdoul Tower | Its square, its turn, its fins, its roof and the canopy at its foot: the satellite photo above (Esri World Imagery), read by hand, and the buildings data's outline. Its height, floors and architects: Wikipedia's article on the tower and the Council on Tall Buildings' record of it, as found by a web search | Studied, not shown: the model is built by hand from them |
 | Burj Rafal | Its plan, its masts, its podium's roof and its forecourt: the satellite photo above (Esri World Imagery), read by hand, and the buildings data's outlines. Its height, floors, architects and what it is made of: Wikipedia's article on the tower, the Council on Tall Buildings' record of it and its cost managers' and a trade paper's accounts, as found by a web search | Studied, not shown: the model is built by hand from them |
@@ -846,7 +853,13 @@ towers that can be told apart in photographs are built as the photographs
 show them; a building seen only from above is given the nearest of the
 district's kinds of skin to the colours it shows there. The World Trade
 Center and the Grand Mosque follow what is published of them, but where the
-mosque's two minarets stand is a judgement. Six buildings that the data does
+mosque's two minarets stand is a judgement. The glass and its louvres, the
+lace of the World Trade Center, the studs, crown and spire of the bank tower
+(diamond in plan about its atrium, with a spire of 70 m, as its architects,
+Foster + Partners, publish), the zigzag of the tower of chevrons (160 m and
+32 floors, as published of the tower that stands there) and the copper fins
+were matched to photographs of the district taken from the street; how many
+studs, teeth and chevrons there are, and how deep, is a likeness. Six buildings that the data does
 not have were traced from the satellite photo, corners and heights to a few
 metres only; others it does not have, in the west and the north of the
 district, are still missing, and so are the

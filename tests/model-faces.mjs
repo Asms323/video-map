@@ -1,6 +1,6 @@
 // For the tests of the models: a mesh read back as triangles.
 
-import { OWN_NUMBERS, STUFFS } from '../js/models.js';
+import { MARKS, OWN_NUMBERS, STUFFS } from '../js/models.js';
 
 /** The triangles of a mesh, each with all that was put down for it. */
 export function facesOf(mesh) {
@@ -27,8 +27,7 @@ export function facesOf(mesh) {
       lit: mesh.more[n * 4] / 255,
       fins: mesh.more[n * 4 + 1] / 255,
       ridge: mesh.more[n * 4 + 2] / 255,
-      open: Math.round(mesh.more[n * 4 + 3] / 85) % 2 === 1,
-      changing: Math.round(mesh.more[n * 4 + 3] / 85) >= 2,
+      ...Object.fromEntries(Object.entries(MARKS).map(([name, bit]) => [name, (Math.round(mesh.more[n * 4 + 3] / 4) & bit) === bit])),
     });
   }
   return faces;

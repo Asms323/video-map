@@ -2075,16 +2075,19 @@ export function cityModelStyle(base, { buildings = null, night = 0, sunlight = 1
         { minzoom: 9, layout: round },
       ),
       // ... and the lamps themselves, a point of light every so many metres, until from close by the app
-      // stands them along the streets one by one (see lights.js).
+      // stands them along the streets one by one (see lights.js). (Soft-edged, and gone before the app's own
+      // stand: the map lies flat in a tilted view, and near the eye a dot of the map would be drawn as wide as
+      // the road, a pale disc on it.)
       lineLayer(
         'city-lamps',
         [['!', inTunnel], ['match', ['get', 'class'], LAMP_CLASSES, true, false]],
         {
           'line-color': '#fff2e0',
           'line-width': widthOfAny(0, ['match', ['get', 'class'], ['motorway', 'trunk'], 4.2, ['primary'], 3.8, ['secondary', 'tertiary'], 3.4, 3]),
+          'line-blur': widthOfAny(0, ['match', ['get', 'class'], ['motorway', 'trunk'], 2.5, ['primary'], 2.3, ['secondary', 'tertiary'], 2, 1.8]),
           // (A dash of no length with a round end is a dot: one to every ten widths of the line.)
           'line-dasharray': [0, 10],
-          'line-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0.5 * lamps, 14, 0.95 * lamps, 15.1, 0.95 * lamps, 15.6, 0],
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0.5 * lamps, 14, 0.9 * lamps, 14.4, 0.9 * lamps, 14.9, 0],
         },
         { minzoom: 12, layout: round },
       ),
